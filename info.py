@@ -153,7 +153,11 @@ IS_STREAM = is_enabled('IS_STREAM', True)
 
 # ================= WEB SEARCH / LOGIN =================
 # Web par ek page me kitne results dikhane hain (pagination / load-more)
-MAX_WEB_RESULTS = max(1, min(int(environ.get('MAX_WEB_RESULTS', '30')), 100))
+# 21 = 3 columns × 7 rows (desktop), mobile पर 21 rows
+MAX_WEB_RESULTS = max(1, min(int(environ.get('MAX_WEB_RESULTS', '21')), 100))
+
+# असली thumbnail image bytes MongoDB में save करें या सिर्फ़ RAM cache में रखें
+STORE_THUMBS_IN_DB = is_enabled('STORE_THUMBS_IN_DB', True)
 
 # Web login cookie ki validity (seconds) — default 7 din
 WEB_SESSION_TTL = int(environ.get('WEB_SESSION_TTL', 7 * 24 * 3600))

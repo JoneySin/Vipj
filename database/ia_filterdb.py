@@ -10,6 +10,7 @@ from typing import List, Tuple, Optional, Dict, Any
 from hydrogram.file_id import FileId
 from pymongo import MongoClient, TEXT, ASCENDING
 from pymongo.errors import DuplicateKeyError, OperationFailure
+from bson import Binary
 
 from info import (
     DATA_DATABASE_URL,
@@ -33,6 +34,10 @@ try:
     )
     db = client[DATABASE_NAME]
     collection = db[COLLECTION_NAME]
+    # 📸 असली thumbnail image bytes यहाँ persist होती हैं (file doc में सिर्फ़
+    # Telegram का thumb_file_id रहता है)। अलग collection रखने से files collection
+    # के search docs हल्के रहते हैं।
+    thumb_collection = db["file_thumbs"]
     # Test connection
     client.server_info()
     logger.info("✅ Database connected successfully")
@@ -291,6 +296,68 @@ async def update_file_meta(file_id: str, meta: dict) -> bool:
 
 
 # =====================================================
+# 📸 THUMBNAIL BYTES STORE (MongoDB में असली image)
+# =====================================================
+MAX_THUMB_DB_BYTES = 512 * 1024        # 512 KB से बड़ी poster save न करें
+
+
+async def save_thumb_bytes(file_id: str, data: bytes, thumb_file_id: str = "") -> bool:
+    """Web पर दिखी हुई असली thumbnail को DB में upsert करें.
+
+    ``thumb_file_id`` साथ store किया जाता है ताकि Telegram वाली thumbnail बदलने
+    पर पुरानी image serve न हो (thumb_version से URL भी बदलता है)।
+    """
+    if not file_id or not data or len(data) > MAX_THUMB_DB_BYTES:
+        return False
+    try:
+        await asyncio.to_thread(
+            thumb_collection.replace_one,
+            {"_id": file_id},
+            {
+                "_id": file_id,
+                "data": Binary(data),
+                "thumb_file_id": str(thumb_file_id or ""),
+                "size": len(data),
+                "saved_at": time.time(),
+            },
+            True,   # upsert
+        )
+        return True
+    except Exception as e:
+        logger.debug(f"thumb DB save skipped: {e}")
+        return False
+
+
+async def get_thumb_bytes(file_id: str):
+    """(bytes, thumb_file_id) या (None, '') — DB में poster मौजूद न हो तो।"""
+    if not file_id:
+        return None, ""
+    try:
+        doc = await asyncio.to_thread(thumb_collection.find_one, {"_id": file_id})
+        if doc and doc.get("data"):
+            return bytes(doc["data"]), str(doc.get("thumb_file_id") or "")
+    except Exception as e:
+        logger.debug(f"thumb DB read skipped: {e}")
+    return None, ""
+
+
+async def delete_thumb_bytes(file_id: str):
+    try:
+        await asyncio.to_thread(thumb_collection.delete_one, {"_id": file_id})
+    except Exception:
+        pass
+
+
+def _purge_thumbs(file_ids):
+    """File delete होने पर उसकी saved thumbnail bytes भी हटाओ (orphan न बचे)।"""
+    for fid in file_ids:
+        try:
+            thumb_collection.delete_one({"_id": fid})
+        except Exception:
+            pass
+
+
+# =====================================================
 # 🗑 DELETE FILES BY QUERY
 # =====================================================
 async def delete_files(query: str) -> int:
@@ -302,7 +369,9 @@ async def delete_files(query: str) -> int:
         escaped_query = re.escape(query.strip())
         regex = re.compile(escaped_query, re.IGNORECASE)
         
+        ids = [d["_id"] for d in collection.find({"file_name": regex}, {"_id": 1})]
         res = collection.delete_many({"file_name": regex})
+        _purge_thumbs(ids)
         
         # Clear cache after deletion
         cache_clear()
@@ -325,6 +394,10 @@ async def delete_all_files() -> int:
     try:
         # Delete all documents from collection
         res = collection.delete_many({})
+        try:
+            thumb_collection.delete_many({})   # सारी saved posters भी साफ़
+        except Exception:
+            pass
         
         # Clear cache after deletion
         cache_clear()
@@ -353,6 +426,7 @@ async def delete_file_by_id(file_id: str) -> bool:
         res = collection.delete_one({"_id": file_id})
         
         if res.deleted_count > 0:
+            _purge_thumbs([file_id])
             # Clear cache after deletion
             cache_clear()
             logger.info(f"✅ File deleted: {file_id}")
@@ -377,7 +451,9 @@ async def delete_by_quality(quality: str) -> int:
         return 0
     
     try:
+        ids = [d["_id"] for d in collection.find({"quality": quality}, {"_id": 1})]
         res = collection.delete_many({"quality": quality})
+        _purge_thumbs(ids)
         
         # Clear cache after deletion
         cache_clear()
@@ -478,6 +554,12 @@ async def save_file(media) -> str:
 
         except DuplicateKeyError:
             # File exists, update caption and quality
+            # ⚠️ अगर दोबारा index होने वाले message में thumbnail न हो तो पहले से
+            # save की हुई thumb_file_id को None से मिटाएँ नहीं।
+            fresh_meta = {
+                k: v for k, v in media_meta.items()
+                if v not in (None, "", 0)
+            }
             collection.update_one(
                 {"_id": file_id},
                 {
@@ -485,7 +567,7 @@ async def save_file(media) -> str:
                         "caption": caption,
                         "quality": quality,
                         "file_size": file_size,
-                        **media_meta,
+                        **fresh_meta,
                         "updated_at": datetime.utcnow()
                     }
                 }

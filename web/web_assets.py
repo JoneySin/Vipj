@@ -109,11 +109,10 @@ padding:5px 12px;cursor:pointer;font-weight:700;font-size:11px}
 .chip:hover{border-color:var(--red);color:var(--red)}
 .main{padding:18px 4% 60px;max-width:1700px;margin:0 auto}
 .meta{font-size:13px;color:var(--mut);font-weight:700;margin-bottom:14px}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
-@media(min-width:560px){.grid{grid-template-columns:repeat(3,1fr);gap:12px}}
-@media(min-width:850px){.grid{grid-template-columns:repeat(4,1fr);gap:14px}}
-@media(min-width:1200px){.grid{grid-template-columns:repeat(5,1fr);gap:16px}}
-@media(min-width:1600px){.grid{grid-template-columns:repeat(6,1fr)}}
+/* 📱 mobile: 1 video/row  ·  📟 tablet: 2  ·  🖥️ desktop: 3 (fix, बड़ी screen पर भी 3 ही) */
+.grid{display:grid;grid-template-columns:1fr;gap:12px}
+@media(min-width:600px){.grid{grid-template-columns:repeat(2,1fr);gap:14px}}
+@media(min-width:1024px){.grid{grid-template-columns:repeat(3,1fr);gap:18px}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;
 overflow:hidden;transition:transform .2s,border-color .2s}
 @media(hover:hover){.card:hover{transform:translateY(-3px);border-color:rgba(229,9,20,.6)}}

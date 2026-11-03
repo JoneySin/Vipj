@@ -12,8 +12,9 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | Feature | Detail |
 |---|---|
 | 🔐 Login / Register | Email + Password, registration Telegram bot PM में **OTP** से, forgot-password OTP reset, HttpOnly cookie session (RAM + MongoDB यानी restart पर भी login बना रहे) |
-| 🔍 Web Search | `/search` → `/api/search` → MongoDB text search + regex fallback, pagination / "और दिखाओ", खाली query पर **Recently Added** |
-| 📸 Real Thumbnails | Index के समय Telegram के `media.thumbs[0].file_id` DB में save; पुरानी फाइलों के लिए `send_cached_media()` से lazy backfill. RAM-bounded LRU + per-file lock + FloodWait retry |
+| 🔍 Web Search | `/search` → `/api/search` → MongoDB text search + regex fallback, **21 results प्रति पेज** (3 columns × 7 rows desktop), "और दिखाओ" pagination, खाली query पर **Recently Added** |
+| 📐 Responsive Grid | 🖥️ Desktop ≥1024px: **3 वीडियो / row** · 📟 Tablet: 2 · 📱 Mobile: **1 वीडियो / row** |
+| 📸 Real Thumbnails | Index के समय Telegram का `thumb_file_id` **files collection** में save; **असली image bytes `file_thumbs` collection में** persist (restart पर भी तुरंत poster), पुरानी फाइलों के लिए lazy backfill. Order: RAM LRU → MongoDB → Telegram |
 | ▶ Click-to-Stream | फाइल नाम पर क्लिक → `/api/stream` → BIN_CHANNEL में cached media → **HMAC-signed** `/watch/<id>` + `/download/<id>` → modal `<video>` player (Range/seek supported), Download, Player page, Copy link |
 | 🔗 Signed Links | `e` (expiry) + `s` (signature) — बिना सही signature के message-id guess करके file नहीं निकाली जा सकती। Telegram bot के Watch/Download buttons भी अब signed links बनाते हैं |
 | ⚡ Seek Performance | `media_info` cache (5 मिनट) से हर Range request पर `get_messages()` नहीं लगती; Range parser + `StreamResponse` hardened, आख़िरी chunk सही कटता है |
@@ -48,10 +49,11 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 
 | Var | Default | मतलब |
 |---|---|---|
-| `MAX_WEB_RESULTS` | `30` | एक page में maximum results (max 100) |
+| `MAX_WEB_RESULTS` | `21` | एक page में results (3×7 desktop); env से बदल सकते हैं |
 | `WEB_SESSION_TTL` | `604800` | Login cookie validity (seconds, 7 दिन) |
 | `WEB_STREAM_TTL` | `21600` | Web stream link validity (6 घंटे) |
 | `THUMB_CACHE_ITEMS` | `256` | RAM में कितने posters cache हों (24 MB byte-cap भी है) |
+| `STORE_THUMBS_IN_DB` | `True` | असली thumbnail image bytes `file_thumbs` collection में save करें (max 512 KB/thumb) |
 | `STREAM_SECRET` | `BOT_TOKEN` से derive | HMAC secret — production में **ज़रूर सेट करें**, बदलने पर पुराने links expire हो जाएँगे |
 | `ALLOW_UNSIGNED_LINKS` | `False` | Deploy से पहले बंटे पुराने unsigned `/watch/<id>` links को चालू रखने के लिए `True` करें |
 
@@ -78,11 +80,12 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 stream_security.py               → HMAC sign/verify (नया)
 database/users_chats_db.py       → WebAuthDB: web_users + web_sessions + PBKDF2 + OTP (नया)
 database/ia_filterdb.py          → save_file में thumb/meta fields, search projection,
-                                   get_recent_files(), update_file_meta()
+                                   get_recent_files(), update_file_meta(),
+                                   `file_thumbs` collection (save/get/delete_thumb_bytes)
 utils.py                         → temp.USER_SESSIONS / REG_PENDING
 web/web_assets.py                → get_auth(), CSS, login shell, search UI (नया)
 web/auth_routes.py               → login/register/OTP/logout routes (नया)
-web/thumb_engine.py              → real Telegram thumbnail fetch + LRU + backfill (नया)
+web/thumb_engine.py              → RAM → MongoDB → Telegram fetch + backfill (नया)
 web/search_routes.py             → /search, /api/search, /api/thumb, /api/stream (नया)
 web/utils/media_info.py          → media metadata cache (नया)
 web/utils/render_template.py     → signed player page + poster
