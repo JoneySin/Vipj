@@ -156,8 +156,8 @@ IS_STREAM = is_enabled('IS_STREAM', True)
 # 21 = 3 columns × 7 rows (desktop), mobile पर 21 rows
 MAX_WEB_RESULTS = max(1, min(int(environ.get('MAX_WEB_RESULTS', '21')), 100))
 
-# 📸 DB में सिर्फ Telegram thumbnail का file_id ("TG_ID:..." string) जाता है,
-# image bytes कभी नहीं — वे सिर्फ़ RAM LRU cache में रहती हैं (v5 जैसा logic)।
+# 📸 DB में सिर्फ Telegram thumbnail का file_id ("TG_ID:..." string) जाता है।
+# Image bytes न DB में, न server RAM cache में — browser के HTTP cache में रहती हैं।
 
 # Web login cookie ki validity (seconds) — default 7 din
 WEB_SESSION_TTL = int(environ.get('WEB_SESSION_TTL', 7 * 24 * 3600))
@@ -165,8 +165,11 @@ WEB_SESSION_TTL = int(environ.get('WEB_SESSION_TTL', 7 * 24 * 3600))
 # Web stream link ki validity (seconds) — default 6 ghante
 WEB_STREAM_TTL = int(environ.get('WEB_STREAM_TTL', 6 * 3600))
 
-# RAM me kitne thumbnails cache hon (har thumb ~10-60 KB)
-THUMB_CACHE_ITEMS = int(environ.get('THUMB_CACHE_ITEMS', '256'))
+# 📸 Thumbnail: server पर कोई RAM cache नहीं (Koyeb free 512MB)।
+# Browser अपने HTTP cache में poster रखेगा — ETag + max-age नीचे।
+THUMB_BROWSER_CACHE = int(environ.get('THUMB_BROWSER_CACHE', 7 * 24 * 3600))
+# एक साथ कितने Telegram thumbnail downloads चलें (FloodWait से बचाव)
+THUMB_FETCH_CONCURRENCY = max(1, min(int(environ.get('THUMB_FETCH_CONCURRENCY', '6')), 20))
 
 # Purane (unsigned) /watch/<id> links deploy se pehle bheje gaye ho sakte hain.
 # Default False = sirf signed links chalengi. True karke backward compatibility on karo.

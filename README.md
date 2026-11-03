@@ -14,7 +14,7 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | 🔐 Login / Register | Email + Password, registration Telegram bot PM में **OTP** से, forgot-password OTP reset, HttpOnly cookie session (RAM + MongoDB यानी restart पर भी login बना रहे) |
 | 🔍 Web Search | `/search` → `/api/search` → MongoDB text search + regex fallback, **21 results प्रति पेज** (3 columns × 7 rows desktop), "और दिखाओ" pagination, खाली query पर **Recently Added** |
 | 📐 Responsive Grid | 🖥️ Desktop ≥1024px: **3 वीडियो / row** · 📟 Tablet: 2 · 📱 Mobile: **1 वीडियो / row** |
-| 📸 Real Thumbnails | **DB में सिर्फ़ Telegram का thumbnail file_id** — v5 की तरह `thumb_url: "TG_ID:<file_id>"` string. **Image bytes कभी DB में save नहीं होतीं** (हज़ारों posters से DB भर जाता है); वे सिर्फ़ bounded **RAM LRU cache** में रहती हैं और Telegram `download_media()` से आती हैं. पुरानी फाइलों के लिए सिर्फ ID lazy backfill होती है |
+| 📸 Real Thumbnails | **DB में सिर्फ़ Telegram का thumbnail file_id** — v5 की तरह `thumb_url: "TG_ID:<file_id>"` string. **Image bytes न DB में, न server RAM में** (Koyeb free पर RAM भर जाता है)। `/api/thumb` उन्हें Telegram से लाकर तुरंत response देता है और `ETag` + `Cache-Control` से **ब्राउज़र की अपनी memory/disk cache** में रखवाता है (`If-None-Match` → 304, दोबारा कोई server/Telegram call नहीं) |
 | ▶ Click-to-Stream | फाइल नाम पर क्लिक → `/api/stream` → BIN_CHANNEL में cached media → **HMAC-signed** `/watch/<id>` + `/download/<id>` → modal `<video>` player (Range/seek supported), Download, Player page, Copy link |
 | 🔗 Signed Links | `e` (expiry) + `s` (signature) — बिना सही signature के message-id guess करके file नहीं निकाली जा सकती। Telegram bot के Watch/Download buttons भी अब signed links बनाते हैं |
 | ⚡ Seek Performance | `media_info` cache (5 मिनट) से हर Range request पर `get_messages()` नहीं लगती; Range parser + `StreamResponse` hardened, आख़िरी chunk सही कटता है |
@@ -52,7 +52,8 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | `MAX_WEB_RESULTS` | `21` | एक page में results (3×7 desktop); env से बदल सकते हैं |
 | `WEB_SESSION_TTL` | `604800` | Login cookie validity (seconds, 7 दिन) |
 | `WEB_STREAM_TTL` | `21600` | Web stream link validity (6 घंटे) |
-| `THUMB_CACHE_ITEMS` | `256` | RAM में कितने posters cache हों (24 MB byte-cap भी है) |
+| `THUMB_BROWSER_CACHE` | `604800` | ब्राउज़र poster कितने सेकंड अपने cache में रखे (7 दिन) |
+| `THUMB_FETCH_CONCURRENCY` | `6` | एक साथ कितने Telegram thumbnail download चलें (FloodWait बचाव) |
 | `STREAM_SECRET` | `BOT_TOKEN` से derive | HMAC secret — production में **ज़रूर सेट करें**, बदलने पर पुराने links expire हो जाएँगे |
 | `ALLOW_UNSIGNED_LINKS` | `False` | Deploy से पहले बंटे पुराने unsigned `/watch/<id>` links को चालू रखने के लिए `True` करें |
 
@@ -71,10 +72,12 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 
 > Thumbnail न मिलने पर card पर graceful placeholder दिखता है (कोई fake poster नहीं)।
 
-> **📸 Thumbnail storage (v5 जैसा):** `files` doc में `thumb_url: "TG_ID:<telegram_thumb_file_id>"`
-> — बस एक छोटी सी string। असली JPEG/PNG/WEBP bytes **सिर्फ़ RAM LRU cache** (`THUMB_CACHE_ITEMS`,
-> 24 MB cap) में रहती हैं, MongoDB में कभी नहीं। इससे DB size हमेशा छोटा रहता है; restart के
-> बाद पहली बार poster माँगे जाने पर Telegram से ~10–60 KB दोबारा download होती है।
+> **📸 Thumbnail storage:** `files` doc में `thumb_url: "TG_ID:<telegram_thumb_file_id>"`
+> — बस एक छोटी सी string (DB)। असली JPEG/PNG/WEBP bytes **न MongoDB में, न server RAM
+> cache में** — वे `/api/thumb` के `ETag` + `Cache-Control: private, max-age=...` से
+> **उसी ब्राउज़र/साइट की memory-disk cache** में रहती हैं। Server पर सिर्फ़ चल रही request
+> के दौरान ~10–60 KB transient buffer आता है और response के साथ free हो जाता है।
+> `v` (= thumb_url का hash) बदलने पर ETag/URL बदलता है, तो नया poster अपने आप आ जाता है।
 
 ---
 
@@ -89,7 +92,7 @@ database/ia_filterdb.py          → save_file में `thumb_url` (सिर�
 utils.py                         → temp.USER_SESSIONS / REG_PENDING
 web/web_assets.py                → get_auth(), CSS, login shell, search UI (नया)
 web/auth_routes.py               → login/register/OTP/logout routes (नया)
-web/thumb_engine.py              → RAM LRU → Telegram fetch, DB में सिर्फ ID backfill (नया)
+web/thumb_engine.py              → Telegram fetch (बिना किसी cache के), DB में सिर्फ ID backfill
 web/search_routes.py             → /search, /api/search, /api/thumb, /api/stream (नया)
 web/utils/media_info.py          → media metadata cache (नया)
 web/utils/render_template.py     → signed player page + poster

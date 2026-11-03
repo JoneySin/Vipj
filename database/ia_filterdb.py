@@ -447,8 +447,9 @@ async def save_file(media) -> str:
         quality = detect_quality(file_name)
 
         # 🖼️ REAL THUMBNAIL (v5 जैसा logic): DB में सिर्फ Telegram का thumbnail
-        # **file_id string** save होता है ("TG_ID:...") — image bytes कभी DB में
-        # नहीं जातीं (वो सिर्फ RAM LRU cache में रहती हैं), वरना DB जल्दी भर जाता है।
+        # **file_id string** save होता है ("TG_ID:...")। Image bytes कभी DB में
+        # नहीं जातीं और न server RAM में cache होती हैं — ब्राउज़र अपने HTTP cache
+        # में रखता है, वरना DB/RAM जल्दी भर जाते हैं।
         thumbs = getattr(media, "thumbs", None) or []
         thumb_file_id = thumbs[0].file_id if thumbs else None
         media_meta = {

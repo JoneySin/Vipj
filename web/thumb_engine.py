@@ -1,77 +1,36 @@
-"""📸 REAL THUMBNAIL ENGINE — v5 जैसा ही logic.
+"""📸 REAL THUMBNAIL ENGINE — DB में सिर्फ ID, bytes सिर्फ browser cache में।
 
-DB में **सिर्फ Telegram का thumbnail file_id** save होता है
-(`thumb_url: "TG_ID:<file_id>"`, v5 के समान)। **Image bytes कभी MongoDB में
-नहीं जातीं** — हज़ारों posters से DB तुरंत भर जाता है। Bytes सिर्फ़ RAM के
-bounded LRU cache में रहती हैं; bot restart पर Telegram से `download_media()`
-दोबारा (सस्ती, ~10-60 KB) call लगती है।
+Storage model (Koyeb free / 512 MB RAM के लिए):
+  * MongoDB   → सिर्फ Telegram thumbnail का **file_id string**
+                `thumb_url: "TG_ID:<file_id>"` (v5 जैसा)। कोई image bytes नहीं।
+  * Server RAM → **कोई thumbnail cache नहीं**। न LRU, न dict, न disk।
+                सिर्फ़ चल रही request के दौरान ~10–60 KB transient buffer,
+                response भेजते ही free।
+  * Browser   → `/api/thumb` `ETag` + `Cache-Control: private, max-age=...`
+                भेजता है, इसलिए poster **उसी साइट/ब्राउज़र की memory/disk cache**
+                में रहता है; दोबारा खोलने पर server/Telegram call ही नहीं लगती
+                (`If-None-Match` → 304)।
 
-यही कारण है कि index-time पर भी हम सिर्फ ID लिखते हैं (`save_file`) और पुरानी
-फाइलों के लिए `send_cached_media()` से ID निकालकर DB में backfill करते हैं।
-
-Read order: RAM LRU → Telegram (`download_media` / backfill) → RAM cache.
-RAM-bounded LRU + per-file asyncio.Lock (ek hi file ke 10 parallel <img>
-requests → sirf 1 Telegram call) + FloodWait retry.
+पुरानी फाइलों के लिए `send_cached_media()` से सिर्फ **ID** DB में backfill होती है।
+एक ही file के 21 parallel `<img>` requests एक ही in-flight fetch share करते हैं —
+ये कोई cache नहीं, request खत्म होते ही result हट जाता है।
 """
 
 import asyncio
 import logging
 import re
-import time
 import zlib
-from collections import OrderedDict
 
-from info import BIN_CHANNEL, THUMB_CACHE_ITEMS
+from info import BIN_CHANNEL, THUMB_FETCH_CONCURRENCY
 from utils import temp
 from database.ia_filterdb import collection, update_file_meta
 
 logger = logging.getLogger(__name__)
 
-_MISS = object()
-_CACHE_MAX_BYTES = 24 * 1024 * 1024     # 24 MB तक ही RAM में posters
-_NO_THUMB_TTL = 300                     # "no thumb" जल्दी re-check हो
-_OK_TTL = 6 * 3600                      # मिली हुई image 6 घंटे cache
-
-_semaphore = asyncio.Semaphore(6)
-_locks = {}
-
-
-class _LRU:
-    def __init__(self, max_items, max_bytes):
-        self.max_items = max_items
-        self.max_bytes = max_bytes
-        self.data = OrderedDict()   # fid -> (bytes|None, ts, size)
-        self.bytes = 0
-
-    def get(self, fid):
-        hit = self.data.get(fid)
-        if hit is None:
-            return _MISS
-        value, ts, size = hit
-        ttl = _NO_THUMB_TTL if value is None else _OK_TTL
-        if time.time() - ts > ttl:
-            self.pop(fid)
-            return _MISS
-        self.data.move_to_end(fid)
-        return value
-
-    def put(self, fid, value):
-        self.pop(fid)
-        size = len(value) if value else 0
-        self.data[fid] = (value, time.time(), size)
-        self.bytes += size
-        while len(self.data) > self.max_items or self.bytes > self.max_bytes:
-            old = next(iter(self.data))
-            self.pop(old)
-
-    def pop(self, fid):
-        old = self.data.pop(fid, None)
-        if old:
-            self.bytes -= old[2]
-        return old
-
-
-_cache = _LRU(THUMB_CACHE_ITEMS, _CACHE_MAX_BYTES)
+# सिर्फ़ concurrency control — कोई thumbnail data यहाँ store नहीं होता
+_semaphore = asyncio.Semaphore(THUMB_FETCH_CONCURRENCY)
+# fid -> asyncio.Task (सिर्फ़ चल रही request; done callback तुरंत हटा देता है)
+_INFLIGHT = {}
 
 
 def image_content_type(data: bytes) -> str:
@@ -83,13 +42,13 @@ def image_content_type(data: bytes) -> str:
 
 
 def thumb_version(fid: str, thumb_ref: str = "") -> str:
-    """v5 की तरह पूरे thumb_url का hash — thumbnail बदले तो browser cache bust हो।"""
+    """v5 की तरह पूरे thumb_url का hash — thumbnail बदले तो URL/ETag बदले।"""
     raw = f"{fid}:{thumb_ref}"
     return f"{zlib.crc32(raw.encode('utf-8')):08x}"
 
 
 def thumb_id_from_doc(doc) -> str:
-    """DB doc से Telegram thumbnail file_id निकालो (v5 `TG_ID:` + legacy alias)।"""
+    """DB doc से Telegram thumbnail file_id (v5 `TG_ID:` + legacy alias)।"""
     doc = doc or {}
     raw = str(doc.get("thumb_url") or "")
     if raw.startswith("TG_ID:"):
@@ -112,7 +71,7 @@ def _extract_media(msg):
 
 
 async def _download_thumb(thumb_file_id: str):
-    """Telegram से सिर्फ़ thumbnail की bytes लाओ — DB में कुछ भी save नहीं।"""
+    """Telegram से thumbnail की bytes लाओ — कहीं store नहीं, सीधे return।"""
     bot = getattr(temp, "BOT", None)
     if not bot or not thumb_file_id:
         return None
@@ -139,84 +98,76 @@ async def _probe_and_backfill(fid: str):
     bot = getattr(temp, "BOT", None)
     if bot is None:
         return None, ""
-    async with _semaphore:
-        for attempt in range(3):
-            try:
-                msg = await bot.send_cached_media(chat_id=BIN_CHANNEL, file_id=fid)
-            except Exception as e:
-                text = str(e)
-                m = re.search(r"wait of (\d+) seconds?", text)
-                wait = min(int(m.group(1)), 20) if m else 2
-                await asyncio.sleep(wait + 1)
-                continue
+    for attempt in range(3):
+        try:
+            msg = await bot.send_cached_media(chat_id=BIN_CHANNEL, file_id=fid)
+        except Exception as e:
+            text = str(e)
+            m = re.search(r"wait of (\d+) seconds?", text)
+            wait = min(int(m.group(1)), 20) if m else 2
+            await asyncio.sleep(wait + 1)
+            continue
 
-            media, thumb_file_id = _extract_media(msg)
-            meta = {}
-            if thumb_file_id:
-                meta["thumb_url"] = f"TG_ID:{thumb_file_id}"   # v5 format
-                meta["thumb_file_id"] = thumb_file_id          # legacy alias
-            if media:
-                for key, attr in (
-                    ("duration", "duration"), ("mime_type", "mime_type"),
-                    ("width", "width"), ("height", "height"),
-                    ("file_size", "file_size"),
-                ):
-                    val = getattr(media, attr, None)
-                    if val:
-                        meta[key] = int(val) if isinstance(val, (int, float)) else val
-                meta["file_type"] = "video" if getattr(msg, "video", None) else "document"
-            if meta:
-                await update_file_meta(fid, meta)
-            asyncio.create_task(_delete_later(msg.id))
+        media, thumb_file_id = _extract_media(msg)
+        meta = {}
+        if thumb_file_id:
+            meta["thumb_url"] = f"TG_ID:{thumb_file_id}"   # v5 format
+            meta["thumb_file_id"] = thumb_file_id          # legacy alias
+        if media:
+            for key, attr in (
+                ("duration", "duration"), ("mime_type", "mime_type"),
+                ("width", "width"), ("height", "height"),
+                ("file_size", "file_size"),
+            ):
+                val = getattr(media, attr, None)
+                if val:
+                    meta[key] = int(val) if isinstance(val, (int, float)) else val
+            meta["file_type"] = "video" if getattr(msg, "video", None) else "document"
+        if meta:
+            await update_file_meta(fid, meta)
+        asyncio.create_task(_delete_later(msg.id))
 
-            if thumb_file_id:
-                return await _download_thumb(thumb_file_id), thumb_file_id
-            return None, ""
+        if thumb_file_id:
+            return await _download_thumb(thumb_file_id), thumb_file_id
+        return None, ""
     return None, ""
 
 
-async def get_thumb(fid: str, retry: bool = False):
-    """Poster bytes ya None. ``retry=True`` सिर्फ़ RAM cache हटाकर Telegram से fresh लाता है।
+async def _fetch_once(fid: str):
+    """Telegram से poster लाओ। कोई module-level cache नहीं — bytes सीधे caller को।"""
+    doc = await asyncio.to_thread(
+        collection.find_one, {"_id": fid}, {"thumb_url": 1, "thumb_file_id": 1}
+    )
+    thumb_file_id = thumb_id_from_doc(doc)
 
-    डेटाबेस से सिर्फ़ thumbnail का **file_id** पढ़ा जाता है; image bytes हमेशा
-    Telegram से आती हैं और सिर्फ़ RAM LRU में cache होती हैं (v5 behaviour)।
+    # ⚠️ Semaphore सिर्फ़ यहाँ एक बार — nested acquisition से deadlock न हो।
+    async with _semaphore:
+        # 1️⃣ index-time पर save किया हुआ ID → सीधे Telegram से thumbnail
+        data = await _download_thumb(thumb_file_id) if thumb_file_id else None
+
+        # 2️⃣ पुरानी/बिना-ID वाली फाइल → probe करके DB में सिर्फ ID backfill
+        if data is None:
+            data, _new_id = await _probe_and_backfill(fid)
+    return data
+
+
+async def get_thumb(fid: str, retry: bool = False):
+    """Poster bytes या None. कोई persistent RAM cache नहीं।
+
+    सिर्फ़ एक ही समय में आई identical requests को एक fetch share करने दिया जाता
+    है (`_INFLIGHT`); task खत्म होते ही entry और result दोनों free हो जाते हैं।
     """
     if not fid or len(fid) > 512:
         return None
-    if retry:
-        _cache.pop(fid)
 
-    cached = _cache.get(fid)
-    if cached is not _MISS:
-        return cached
+    task = None if retry else _INFLIGHT.get(fid)
+    if task is None or task.done():
+        task = asyncio.ensure_future(_fetch_once(fid))
+        _INFLIGHT[fid] = task
 
-    lock = _locks.setdefault(fid, asyncio.Lock())
-    try:
-        async with lock:
-            cached = _cache.get(fid)
-            if cached is not _MISS:
-                return cached
+        def _cleanup(_t, f=fid, t=task):
+            if _INFLIGHT.get(f) is t:      # retry ने नया task रखा हो तो पुराना न हटाए
+                _INFLIGHT.pop(f, None)
 
-            doc = await asyncio.to_thread(
-                collection.find_one, {"_id": fid},
-                {"thumb_url": 1, "thumb_file_id": 1},
-            )
-            thumb_file_id = thumb_id_from_doc(doc)
-
-            # 1️⃣ index-time पर save किया हुआ ID → सीधे Telegram से thumbnail
-            data = await _download_thumb(thumb_file_id) if thumb_file_id else None
-
-            # 2️⃣ पुरानी/बिना-ID वाली फाइल → probe करके DB में सिर्फ ID backfill
-            if data is None:
-                data, _new_id = await _probe_and_backfill(fid)
-
-            # 3️⃣ bytes सिर्फ RAM में; DB में कोई image store नहीं
-            _cache.put(fid, data)
-            return data
-    finally:
-        _locks.pop(fid, None)
-
-
-def drop_thumb(fid: str):
-    """Thumbnail बदलने/फाइल delete होने पर सिर्फ़ RAM cache से हटाओ।"""
-    _cache.pop(fid)
+        task.add_done_callback(_cleanup)
+    return await asyncio.shield(task)

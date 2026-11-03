@@ -13,7 +13,12 @@ from urllib.parse import quote
 
 from aiohttp import web
 
-from info import BIN_CHANNEL, MAX_WEB_RESULTS, WEB_STREAM_TTL
+from info import (
+    BIN_CHANNEL,
+    MAX_WEB_RESULTS,
+    WEB_STREAM_TTL,
+    THUMB_BROWSER_CACHE,
+)
 from utils import temp, get_size
 from database.ia_filterdb import (
     get_search_results,
@@ -144,16 +149,27 @@ async def api_thumb(req):
         return web.Response(status=400)
     retry = req.query.get("retry", "false").lower() == "true"
 
+    # 🧠 Browser cache: server पर कोई RAM/DB cache नहीं। Poster ब्राउज़र की
+    # अपनी memory/disk में रहेगा; `v` (thumb_url का hash) बदले तो ETag बदलेगा।
+    etag = f'"{req.query.get("v") or thumb_version(fid)}"'
+    cache_headers = {
+        "Cache-Control": f"private, max-age={THUMB_BROWSER_CACHE}",
+        "ETag": etag,
+    }
+    if req.headers.get("If-None-Match") == etag and not retry:
+        return web.Response(status=304, headers=cache_headers)
+
     data = await get_thumb(fid, retry=retry)
     if not data:
-        return web.Response(status=404)     # UI अपना fallback दिखाएगा
+        # thumbnail न मिले तो गलती से 404 cache न हो जाए
+        return web.Response(status=404, headers={"Cache-Control": "no-store"})
 
     return web.Response(
         body=data,
         content_type=image_content_type(data),
         headers={
             "Content-Disposition": 'inline; filename="poster.jpg"',
-            "Cache-Control": "private, max-age=86400",
+            **cache_headers,
         },
     )
 
