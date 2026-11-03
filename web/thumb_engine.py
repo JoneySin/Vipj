@@ -1,14 +1,15 @@
-"""📸 REAL THUMBNAIL ENGINE
+"""📸 REAL THUMBNAIL ENGINE — v5 जैसा ही logic.
 
-Telegram हर video/document message के साथ असली thumbnail (frame) भेजता है।
-Index के समय उसका ``file_id`` DB में save हो जाता है (`save_file`). पुरानी
-फाइलों के लिए यह engine BIN_CHANNEL में एक temporary cached-media message
-भेजकर thumbnail निकालता है और DB में backfill कर देता है — अगली बार सीधे
-`download_media()` से poster मिल जाता है।
+DB में **सिर्फ Telegram का thumbnail file_id** save होता है
+(`thumb_url: "TG_ID:<file_id>"`, v5 के समान)। **Image bytes कभी MongoDB में
+नहीं जातीं** — हज़ारों posters से DB तुरंत भर जाता है। Bytes सिर्फ़ RAM के
+bounded LRU cache में रहती हैं; bot restart पर Telegram से `download_media()`
+दोबारा (सस्ती, ~10-60 KB) call लगती है।
 
-Read order: RAM LRU → MongoDB (`file_thumbs`) → Telegram (`download_media`
-/ `send_cached_media` backfill) → वापस RAM + DB में save.
+यही कारण है कि index-time पर भी हम सिर्फ ID लिखते हैं (`save_file`) और पुरानी
+फाइलों के लिए `send_cached_media()` से ID निकालकर DB में backfill करते हैं।
 
+Read order: RAM LRU → Telegram (`download_media` / backfill) → RAM cache.
 RAM-bounded LRU + per-file asyncio.Lock (ek hi file ke 10 parallel <img>
 requests → sirf 1 Telegram call) + FloodWait retry.
 """
@@ -20,12 +21,9 @@ import time
 import zlib
 from collections import OrderedDict
 
-from info import BIN_CHANNEL, THUMB_CACHE_ITEMS, STORE_THUMBS_IN_DB
+from info import BIN_CHANNEL, THUMB_CACHE_ITEMS
 from utils import temp
-from database.ia_filterdb import (
-    collection, update_file_meta,
-    save_thumb_bytes, get_thumb_bytes, delete_thumb_bytes,
-)
+from database.ia_filterdb import collection, update_file_meta
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +82,19 @@ def image_content_type(data: bytes) -> str:
     return "image/jpeg"
 
 
-def thumb_version(fid: str, thumb_file_id: str = "") -> str:
-    """Thumbnail बदलने पर browser cache bust करने के लिए ``v`` param."""
-    raw = f"{fid}:{thumb_file_id}"
+def thumb_version(fid: str, thumb_ref: str = "") -> str:
+    """v5 की तरह पूरे thumb_url का hash — thumbnail बदले तो browser cache bust हो।"""
+    raw = f"{fid}:{thumb_ref}"
     return f"{zlib.crc32(raw.encode('utf-8')):08x}"
+
+
+def thumb_id_from_doc(doc) -> str:
+    """DB doc से Telegram thumbnail file_id निकालो (v5 `TG_ID:` + legacy alias)।"""
+    doc = doc or {}
+    raw = str(doc.get("thumb_url") or "")
+    if raw.startswith("TG_ID:"):
+        return raw[len("TG_ID:"):]
+    return str(doc.get("thumb_file_id") or "")
 
 
 async def _delete_later(message_id: int, delay: int = 30):
@@ -105,6 +112,7 @@ def _extract_media(msg):
 
 
 async def _download_thumb(thumb_file_id: str):
+    """Telegram से सिर्फ़ thumbnail की bytes लाओ — DB में कुछ भी save नहीं।"""
     bot = getattr(temp, "BOT", None)
     if not bot or not thumb_file_id:
         return None
@@ -124,7 +132,10 @@ async def _download_thumb(thumb_file_id: str):
 
 
 async def _probe_and_backfill(fid: str):
-    """पुरानी फाइलों के लिए Telegram से thumb निकालो → (bytes, thumb_file_id)।"""
+    """पुरानी फाइलों के लिए Telegram से ID निकालो → (bytes, thumb_file_id)।
+
+    DB में वापस **सिर्फ ID string** (`thumb_url`) लिखी जाती है, image नहीं।
+    """
     bot = getattr(temp, "BOT", None)
     if bot is None:
         return None, ""
@@ -142,7 +153,8 @@ async def _probe_and_backfill(fid: str):
             media, thumb_file_id = _extract_media(msg)
             meta = {}
             if thumb_file_id:
-                meta["thumb_file_id"] = thumb_file_id
+                meta["thumb_url"] = f"TG_ID:{thumb_file_id}"   # v5 format
+                meta["thumb_file_id"] = thumb_file_id          # legacy alias
             if media:
                 for key, attr in (
                     ("duration", "duration"), ("mime_type", "mime_type"),
@@ -164,11 +176,10 @@ async def _probe_and_backfill(fid: str):
 
 
 async def get_thumb(fid: str, retry: bool = False):
-    """Poster bytes ya None. ``retry=True`` RAM cache हटाकर Telegram से fresh लाता है
-    (और DB की image भी overwrite कर देता है)।
+    """Poster bytes ya None. ``retry=True`` सिर्फ़ RAM cache हटाकर Telegram से fresh लाता है।
 
-    क्रम: RAM → MongoDB → Telegram. DB में साथ में ``thumb_file_id`` भी store है,
-    इसलिए thumbnail बदलने पर पुरानी image कभी serve नहीं होती।
+    डेटाबेस से सिर्फ़ thumbnail का **file_id** पढ़ा जाता है; image bytes हमेशा
+    Telegram से आती हैं और सिर्फ़ RAM LRU में cache होती हैं (v5 behaviour)।
     """
     if not fid or len(fid) > 512:
         return None
@@ -187,37 +198,25 @@ async def get_thumb(fid: str, retry: bool = False):
                 return cached
 
             doc = await asyncio.to_thread(
-                collection.find_one, {"_id": fid}, {"thumb_file_id": 1}
+                collection.find_one, {"_id": fid},
+                {"thumb_url": 1, "thumb_file_id": 1},
             )
-            thumb_file_id = str((doc or {}).get("thumb_file_id") or "")
+            thumb_file_id = thumb_id_from_doc(doc)
 
-            data = None
-            # 1️⃣ DB में पहले से असली image है? (restart पर यही काम आता है)
-            if STORE_THUMBS_IN_DB and not retry:
-                saved, saved_tid = await get_thumb_bytes(fid)
-                if saved and saved_tid == thumb_file_id:
-                    data = saved
+            # 1️⃣ index-time पर save किया हुआ ID → सीधे Telegram से thumbnail
+            data = await _download_thumb(thumb_file_id) if thumb_file_id else None
 
-            # 2️⃣ नहीं है → Telegram से लाओ (index-time id या lazy backfill)
+            # 2️⃣ पुरानी/बिना-ID वाली फाइल → probe करके DB में सिर्फ ID backfill
             if data is None:
-                if thumb_file_id:
-                    data = await _download_thumb(thumb_file_id)
-                if data is None:
-                    data, new_tid = await _probe_and_backfill(fid)
-                    if new_tid:
-                        thumb_file_id = new_tid
+                data, _new_id = await _probe_and_backfill(fid)
 
-                # 3️⃣ मिली हुई असली image DB में भी save करो
-                if data and STORE_THUMBS_IN_DB:
-                    await save_thumb_bytes(fid, data, thumb_file_id)
-
+            # 3️⃣ bytes सिर्फ RAM में; DB में कोई image store नहीं
             _cache.put(fid, data)
             return data
     finally:
         _locks.pop(fid, None)
 
 
-async def drop_thumb(fid: str):
-    """Thumbnail बदलने/फाइल delete होने पर RAM + DB दोनों से हटाओ।"""
+def drop_thumb(fid: str):
+    """Thumbnail बदलने/फाइल delete होने पर सिर्फ़ RAM cache से हटाओ।"""
     _cache.pop(fid)
-    await delete_thumb_bytes(fid)

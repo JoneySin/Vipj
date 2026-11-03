@@ -57,7 +57,9 @@ def _is_video(doc) -> bool:
 
 def _thumb_url(doc) -> str:
     fid = str(doc.get("_id") or "")
-    v = thumb_version(fid, str(doc.get("thumb_file_id") or ""))
+    # v5 की तरह पूरे thumb_url ("TG_ID:...") का hash — ID बदले तो URL भी बदले
+    thumb_ref = str(doc.get("thumb_url") or doc.get("thumb_file_id") or "")
+    v = thumb_version(fid, thumb_ref)
     return f"/api/thumb?file_id={quote(fid, safe='')}&v={v}"
 
 
