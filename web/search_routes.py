@@ -8,7 +8,9 @@ Login के बाद `/search` पर:
 
 import html
 import logging
+import re
 import time
+from collections import Counter
 from urllib.parse import quote
 
 from aiohttp import web
@@ -36,6 +38,65 @@ search_routes = web.RouteTableDef()
 # click karne par nayi message na bhej kar purani signed link re-sign होती है।
 _STREAM_CACHE = {}
 _VIDEO_EXT = (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts", ".wmv", ".flv", ".mpeg", ".mpg")
+
+# ── Group / UnGroup filter (v5 जैसा) ────────────────────────────────
+# fsv1 के files doc में group_id नहीं है, इसलिए "ग्रुप" का मतलब: एक ही
+# टाइटल की 2+ फाइलें (अलग quality / part / episode)। नाम से quality,
+# language, codec, extension जैसे tokens हटाकर title key बनाते हैं।
+# बड़े DB पर पूरा scan न हो इसलिए एक query में ज़्यादा-से-ज़्यादा इतने docs.
+_GROUP_SCAN_LIMIT = 500
+_GROUP_NOISE = frozenset("""
+144p 240p 360p 480p 576p 720p 1080p 1440p 2160p 4k 8k uhd hd sd
+hdr hdr10 hdr10plus dv sdr 10bit 8bit hevc x264 x265 h264 h265 avc xvid divx
+bluray blueray brrip bdrip bdremux remux webdl webrip web hdtv dvdrip dvd
+cam hdcam predvd ts tc hdrip dvdscr r5
+hindi english eng tamil telugu kannada malayalam bengali marathi punjabi
+dual multi audio org original esub esubs sub subs subtitle subtitles
+dd dd5 dd51 ddp ac3 aac mp3 flac truehd atmos 2ch 5ch 6ch
+imax extended proper repack unrated theatrical directors cut
+amzn nf netflix dsnp hmax hotstar prime zee sony
+mkv mp4 avi mov webm m4v wmv flv mpeg mpg m2ts vob 3gp iso
+www http https com net org
+""".split())
+_EPISODE_RE = re.compile(r"^[se]\d{1,3}$", re.IGNORECASE)
+
+
+def _title_key(name) -> str:
+    """File name → साफ़ movie/series title (quality/भाषा/extension हटाकर)।"""
+    text = re.sub(r"[\[(][^\])]*[\])]", " ", str(name or "").lower())
+    clean = []
+    for token in re.findall(r"[^\W_]+", text, re.UNICODE):
+        if token in _GROUP_NOISE or _EPISODE_RE.match(token):
+            continue
+        if len(token) <= 2 and token.isdigit():
+            continue
+        clean.append(token)
+        if len(clean) == 4:
+            break
+    return " ".join(clean)
+
+
+async def _group_page(q: str, offset: int, limit: int, mode: str):
+    """All / Group / UnGroup — 21 प्रति पेज, group membership पूरे query set पर।
+
+    सिर्फ़ file_name/_id जैसा हल्का metadata पढ़ता है — कोई image bytes, कोई
+    server-side thumbnail/RAM cache नहीं (Koyeb free पर RAM भरने वाला कुछ नहीं)।
+    """
+    if q:
+        scan, _, _ = await get_search_results(q, 0, _GROUP_SCAN_LIMIT)
+    else:
+        scan, _, _ = await get_recent_files(0, _GROUP_SCAN_LIMIT)
+    keys = [_title_key(d.get("file_name")) for d in scan]
+    counts = Counter(k for k in keys if k)
+    want_grouped = mode == "group"
+    matched = [
+        doc for doc, key in zip(scan, keys)
+        if key and (counts[key] > 1) == want_grouped
+    ]
+    total = len(matched)
+    page = matched[offset:offset + limit]
+    next_offset = str(offset + limit) if offset + limit < total else ""
+    return page, next_offset, total
 
 
 def _fmt_duration(seconds) -> str:
@@ -119,13 +180,19 @@ async def api_search(req):
     except ValueError:
         limit = MAX_WEB_RESULTS
 
+    group_mode = (req.query.get("group") or "all").strip().lower()
+    if group_mode not in ("all", "group", "ungroup"):
+        group_mode = "all"
+
     try:
-        if q:
+        if group_mode != "all":
+            docs, next_offset, total = await _group_page(q, offset, limit, group_mode)
+        elif q:
             docs, next_offset, total = await get_search_results(q, offset, limit)
         else:
             docs, next_offset, total = await get_recent_files(offset, limit)
     except Exception as e:
-        logger.error(f"Web search failed (q={q!r}): {e}")
+        logger.error(f"Web search failed (q={q!r}, group={group_mode}): {e}")
         return web.json_response({"error": "Search temporarily unavailable"}, status=500)
 
     return web.json_response({
@@ -133,6 +200,7 @@ async def api_search(req):
         "total": total,
         "next_offset": next_offset,
         "query": q,
+        "group": group_mode,
         "is_admin": role == "admin",
     })
 

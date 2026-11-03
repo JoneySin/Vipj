@@ -12,8 +12,10 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | Feature | Detail |
 |---|---|
 | 🔐 Login / Register | Email + Password, registration Telegram bot PM में **OTP** से, forgot-password OTP reset, HttpOnly cookie session (RAM + MongoDB यानी restart पर भी login बना रहे) |
-| 🔍 Web Search | `/search` → `/api/search` → MongoDB text search + regex fallback, **21 results प्रति पेज** (3 columns × 7 rows desktop), "और दिखाओ" pagination, खाली query पर **Recently Added** |
+| 🔍 Web Search | `/search` → `/api/search` → MongoDB text search + regex fallback, **टाइप करते ही auto-search** (Search बटन नहीं), **21 results प्रति पेज** (3 columns × 7 rows desktop), "और दिखाओ" pagination, खाली query पर **Recently Added** |
 | 📐 Responsive Grid | 🖥️ Desktop ≥1024px: **3 वीडियो / row** · 📟 Tablet: 2 · 📱 Mobile: **1 वीडियो / row** |
+| 🎛️ View / Filter | Search bar के नीचे 2 dropdowns — **Poster / Text** mode (Text में सिर्फ़ नाम + meta की कॉम्पैक्ट लिस्ट, कोई thumbnail request नहीं) और **All / Group / UnGroup** (एक ही टाइटल की 2+ फाइलें = Group, अकेली फाइल = UnGroup)। दोनों चुनाव browser में याद रहते हैं |
+| 📏 Size Chip | **File size thumbnail के अंदर** (नीचे-दाएँ badge) — फाइल नाम के नीचे की size/Stream लाइन हटा दी गई |
 | 📸 Real Thumbnails | **DB में सिर्फ़ Telegram का thumbnail file_id** — v5 की तरह `thumb_url: "TG_ID:<file_id>"` string. **Image bytes न DB में, न server RAM में** (Koyeb free पर RAM भर जाता है)। `/api/thumb` उन्हें Telegram से लाकर तुरंत response देता है और `ETag` + `Cache-Control` से **ब्राउज़र की अपनी memory/disk cache** में रखवाता है (`If-None-Match` → 304, दोबारा कोई server/Telegram call नहीं) |
 | ▶ Click-to-Stream | फाइल नाम पर क्लिक → `/api/stream` → BIN_CHANNEL में cached media → **HMAC-signed** `/watch/<id>` + `/download/<id>` → modal `<video>` player (Range/seek supported), Download, Player page, Copy link |
 | 🔗 Signed Links | `e` (expiry) + `s` (signature) — बिना सही signature के message-id guess करके file नहीं निकाली जा सकती। Telegram bot के Watch/Download buttons भी अब signed links बनाते हैं |
@@ -30,7 +32,7 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | POST | `/api/login`, `/api/register_step1`, `/api/register_step2`, `/api/forgot_password`, `/api/reset_password` | Auth APIs |
 | GET | `/logout` | Session खत्म (RAM + DB) |
 | GET | `/search` | Login-walled search UI |
-| GET | `/api/search?q=&offset=&limit=` | JSON results (`file_id`, `name`, `size`, `quality`, `duration`, `res`, `thumb`) |
+| GET | `/api/search?q=&offset=&limit=&group=` | JSON results (`file_id`, `name`, `size`, `quality`, `duration`, `res`, `thumb`); `group=all\|group\|ungroup` |
 | GET | `/api/thumb?file_id=&v=` | असली thumbnail image (login required) |
 | POST | `/api/stream` `{file_id}` | `{watch, download, stream, poster, expires_in}` |
 | GET | `/setup_stream?file_id=&mode=` | GET shortcut, signed watch/download पर redirect |
@@ -77,6 +79,11 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 
 > Thumbnail न मिलने पर card पर graceful placeholder दिखता है (कोई fake poster नहीं)।
 
+> **🗂️ Group / UnGroup:** fsv1 के DB में `group_id` field नहीं है, इसलिए फ़िल्टर file
+> name से चलता है — quality / भाषा / codec / extension tokens हटाने के बाद **एक ही
+> टाइटल की 2+ फाइलें = Group**, अकेली फाइल = **UnGroup**, **All** = सब। इसके लिए DB में
+> कोई नया field या bytes नहीं जोड़े गए; 21 प्रति पेज और "और दिखाओ" pagination वैसे ही हैं।
+
 > **📸 Thumbnail storage:** `files` doc में `thumb_url: "TG_ID:<telegram_thumb_file_id>"`
 > — बस एक छोटी सी string (DB)। असली JPEG/PNG/WEBP bytes **न MongoDB में, न server RAM
 > cache में** — वे `/api/thumb` के `ETag` + `Cache-Control: private, max-age=...` से
@@ -95,10 +102,11 @@ database/ia_filterdb.py          → save_file में `thumb_url` (सिर�
                                    search projection, get_recent_files(),
                                    update_file_meta() (सिर्फ ID backfill)
 utils.py                         → temp.USER_SESSIONS / REG_PENDING
-web/web_assets.py                → get_auth(), CSS, login shell, search UI (नया)
+web/web_assets.py                → get_auth(), CSS, login shell, search UI; auto-search,
+                                   Poster/Text + All/Group/UnGroup dropdowns, size-in-poster
 web/auth_routes.py               → login/register/OTP/logout routes (नया)
 web/thumb_engine.py              → Telegram fetch (बिना किसी cache के), DB में सिर्फ ID backfill
-web/search_routes.py             → /search, /api/search, /api/thumb, /api/stream (नया)
+web/search_routes.py             → /search, /api/search (group filter), /api/thumb, /api/stream (नया)
 web/utils/media_info.py          → media metadata cache (नया)
 web/utils/render_template.py     → signed player page + poster
 web/utils/custom_dl.py           → FileId support + आख़िरी Range chunk fix

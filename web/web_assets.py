@@ -94,19 +94,21 @@ padding:7px 13px;font-weight:700;font-size:12px;cursor:pointer;font-family:inher
 border-radius:10px;padding:13px 16px;color:var(--txt);font-size:15px;font-weight:600;
 font-family:inherit;outline:none;transition:border-color .18s}
 .sinput:focus{border-color:var(--red)}
-.sbtn{background:var(--red);color:#fff;border:0;border-radius:10px;padding:0 26px;
-font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;white-space:nowrap}
-.sbtn:hover{background:var(--red2)}
-.spin{display:none;position:absolute;right:118px;top:50%;transform:translateY(-50%);
+.spin{display:none;position:absolute;right:16px;top:50%;transform:translateY(-50%);
 width:17px;height:17px;border:2px solid var(--line);border-top-color:var(--red);
 border-radius:50%;animation:spin .6s linear infinite}
 .srow.loading .spin{display:block}
 @keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
-.hint{margin-top:10px;font-size:12px;color:var(--mut);display:flex;gap:8px;
-flex-wrap:wrap;align-items:center}
-.chip{background:var(--bg3);border:1px solid var(--line);border-radius:20px;
-padding:5px 12px;cursor:pointer;font-weight:700;font-size:11px}
-.chip:hover{border-color:var(--red);color:var(--red)}
+/* ── filter dropdowns (search bar के नीचे) ── */
+.filters{margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.fwrap{position:relative;display:inline-flex;align-items:center;gap:7px}
+.flabel{font-size:10px;color:var(--mut);font-weight:900;letter-spacing:.7px;text-transform:uppercase}
+.fsel{-webkit-appearance:none;appearance:none;background:var(--bg3);border:1px solid var(--line);
+color:var(--txt);border-radius:8px;padding:9px 30px 9px 12px;font-family:inherit;
+font-size:12px;font-weight:800;cursor:pointer;min-width:134px;outline:none}
+.fsel:hover,.fsel:focus{border-color:var(--red)}
+.fwrap::after{content:'▾';position:absolute;right:11px;top:50%;transform:translateY(-50%);
+pointer-events:none;color:var(--mut);font-size:11px;font-weight:900}
 .main{padding:18px 4% 60px;max-width:1700px;margin:0 auto}
 .meta{font-size:13px;color:var(--mut);font-weight:700;margin-bottom:14px}
 /* 📱 mobile: 1 video/row  ·  📟 tablet: 2  ·  🖥️ desktop: 3 (fix, बड़ी screen पर भी 3 ही) */
@@ -140,9 +142,24 @@ padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255
 font-size:13px;font-weight:700;line-height:1.45;cursor:pointer;min-height:38px;
 transition:color .18s}
 .fname:hover{color:var(--red)}
-.sub{margin-top:8px;font-size:11px;color:var(--mut);font-weight:600;
-display:flex;justify-content:space-between;gap:6px}
-.play-ico{color:var(--red);font-weight:900}
+.size-tag{position:absolute;right:7px;bottom:7px;z-index:2;pointer-events:none;
+background:rgba(0,0,0,.78);backdrop-filter:blur(6px);color:#fff;border-radius:5px;
+padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255,.14)}
+.tinfo{display:none;align-items:center;gap:5px;flex-shrink:0}
+.tsize{background:rgba(229,9,20,.14);color:var(--red);border:1px solid rgba(229,9,20,.35);
+border-radius:5px;padding:3px 7px;font-size:10px;font-weight:800;white-space:nowrap}
+/* Text mode: सिर्फ़ नाम + meta वाली कॉम्पैक्ट लिस्ट, कोई thumbnail नहीं */
+.grid.mode-text{display:block}
+.grid.mode-text .card{display:flex;align-items:center;gap:6px;padding:9px 11px;
+margin-bottom:8px;border-radius:8px}
+.grid.mode-text .poster{display:none}
+.grid.mode-text .body{display:flex;align-items:center;justify-content:space-between;
+gap:10px;padding:0;flex:1;min-width:0}
+.grid.mode-text .fname{display:block;flex:1;min-width:0;min-height:0;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:1}
+.grid.mode-text .tinfo{display:flex}
+.grid.mode-text .tg{font-size:9px;padding:2px 5px}
+@media(max-width:599px){.grid.mode-text .tinfo .tg{display:none}}
 .state{grid-column:1/-1;text-align:center;padding:70px 20px;color:var(--mut);
 font-weight:600;line-height:1.7}
 .more{display:none;margin:28px auto 0;padding:11px 30px;border-radius:8px;
@@ -192,8 +209,8 @@ padding:15px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;m
 font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 .links a:hover{color:var(--red)}
 .hr{border:0;border-top:1px solid var(--line);margin:24px 0}
-@media(max-width:520px){.srow{flex-direction:column}.sbtn{padding:13px}.spin{display:none!important}
-.auth-card{padding:24px}.grid{gap:8px}}
+@media(max-width:520px){.spin{display:none!important}
+.auth-card{padding:24px}.grid{gap:8px}.fwrap{width:100%}.fsel{flex:1}}
 """
 
 
@@ -251,14 +268,23 @@ SEARCH_HTML = """<!DOCTYPE html>
   <div class="srow" id="srow">
     <input class="sinput" id="q" type="search" placeholder="Movie / series / file name खोजें..." autocomplete="off">
     <div class="spin"></div>
-    <button class="sbtn" onclick="doSearch()">🔎 Search</button>
   </div>
-  <div class="hint"><span>टिप:</span>
-    <span class="chip" onclick="quick('')">🆕 Recent</span>
-    <span class="chip" onclick="quick('720p')">720p</span>
-    <span class="chip" onclick="quick('1080p')">1080p</span>
-    <span class="chip" onclick="quick('mkv')">MKV</span>
-    <span class="chip" onclick="quick('hindi')">Hindi</span>
+  <div class="filters">
+    <div class="fwrap">
+      <span class="flabel">Mode</span>
+      <select class="fsel" id="modeSel" onchange="setMode(this.value)">
+        <option value="poster">🖼️ Poster</option>
+        <option value="text">📄 Text</option>
+      </select>
+    </div>
+    <div class="fwrap">
+      <span class="flabel">Filter</span>
+      <select class="fsel" id="groupSel" onchange="setGroup(this.value)">
+        <option value="all">All</option>
+        <option value="group">Group</option>
+        <option value="ungroup">UnGroup</option>
+      </select>
+    </div>
   </div>
 </div>
 
@@ -290,10 +316,28 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let curQ='',offset=0,loading=false,hasMore=false,currentWatch='';
 let debounce=null;
+let viewMode=localStorage.getItem('ff_view_mode')||'poster';
+let groupMode=localStorage.getItem('ff_group_mode')||'all';
+if(viewMode!=='poster'&&viewMode!=='text')viewMode='poster';
+if(!['all','group','ungroup'].includes(groupMode))groupMode='all';
 
-function quick(q){$('#q').value=q;doSearch()}
+function applyMode(){
+  const text=viewMode==='text';
+  $('#grid').classList.toggle('mode-text',text);
+  $('#modeSel').value=viewMode;
+  $('#groupSel').value=groupMode;
+  if(!text){
+    // Poster mode पर लौटने तब तक कोई thumbnail request न गई हो → अब लाओ
+    document.querySelectorAll('#grid img[data-src]').forEach(img=>{
+      if(!img.getAttribute('src'))img.src=img.dataset.src;
+    });
+  }
+}
+function setMode(v){viewMode=(v==='text')?'text':'poster';localStorage.setItem('ff_view_mode',viewMode);applyMode()}
+function setGroup(v){groupMode=['all','group','ungroup'].includes(v)?v:'all';
+  localStorage.setItem('ff_group_mode',groupMode);applyMode();doSearch()}
 function doSearch(){curQ=$('#q').value.trim();load(true)}
-$('#q').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch()});
+$('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(debounce);doSearch()}});
 $('#q').addEventListener('input',()=>{clearTimeout(debounce);debounce=setTimeout(()=>{
   const v=$('#q').value.trim();if(v.length>=2||v==='')doSearch()},420)});
 
@@ -302,17 +346,20 @@ function card(f){
   const dur=f.duration?`<span class="tg gold">${esc(f.duration)}</span>`:'';
   const q=f.quality&&f.quality!=='unknown'?`<span class="tg blue">${esc(f.quality)}</span>`:'';
   const res=f.res?`<span class="tg">${esc(f.res)}</span>`:'';
+  // Text mode में thumbnail request ही न जाए — src तभी लगाओ जब Poster mode हो
+  const imgAttr=viewMode==='poster'?`src="${encodeURI(f.thumb)}"`:`data-src="${encodeURI(f.thumb)}"`;
   return `<div class="card">
     <div class="poster" id="pb-${fid}">
-      <img src="${encodeURI(f.thumb)}" alt="" loading="lazy"
+      <img ${imgAttr} alt="" loading="lazy"
            onload="this.classList.add('on')" onerror="thumbFail(this)">
       <div class="ph"><b>▶</b><span>NO THUMBNAIL</span></div>
       <div class="chips"><span class="tg">${esc(f.type)}</span>${q}${res}${dur}</div>
+      <span class="size-tag">${esc(f.size)}</span>
     </div>
     <div class="body">
       <div class="fname" data-fid="${fid}" data-name="${esc(f.name)}"
            title="Stream करने के लिए क्लिक करें">${esc(f.name)}</div>
-      <div class="sub"><span>${esc(f.size)}</span><span class="play-ico">▶ Stream</span></div>
+      <div class="tinfo"><span class="tg">${esc(f.type)}</span>${q}${res}${dur}<span class="tsize">${esc(f.size)}</span></div>
     </div></div>`;
 }
 function thumbFail(img){
@@ -325,7 +372,7 @@ async function load(reset){
   if(reset){offset=0;hasMore=false;$('#grid').innerHTML='';}
   loading=true;$('#srow').classList.add('loading');
   try{
-    const r=await fetch(`/api/search?q=${encodeURIComponent(curQ)}&offset=${offset}`,{credentials:'same-origin'});
+    const r=await fetch(`/api/search?q=${encodeURIComponent(curQ)}&offset=${offset}&group=${groupMode}`,{credentials:'same-origin'});
     if(r.status===401){location.href='/login?err='+encodeURIComponent('Session expired. Please sign in again.');return}
     const d=await r.json();
     const list=d.results||[];
@@ -333,9 +380,10 @@ async function load(reset){
     hasMore=!!d.next_offset;
     offset=hasMore?Number(d.next_offset):0;
     $('#more').classList.toggle('show',hasMore);
+    const gtag=groupMode==='group'?' · Group':groupMode==='ungroup'?' · UnGroup':'';
     $('#meta').innerHTML=curQ
-      ? `<b>"${esc(curQ)}"</b> — ${esc(d.total||list.length)} results`
-      : `🆕 Recently Added — ${esc(d.total||list.length)} files`;
+      ? `<b>"${esc(curQ)}"</b> — ${esc(d.total||list.length)} results${gtag}`
+      : `🆕 Recently Added — ${esc(d.total||list.length)} files${gtag}`;
     if(!$('#grid').children.length){
       $('#grid').innerHTML=`<div class="state">🔍 कोई फाइल नहीं मिली।<br>दूसरा नाम / keyword ट्राय करें।</div>`;
     }
@@ -385,6 +433,7 @@ function copyLink(){
   }).catch(()=>{$('#pNote').textContent=currentWatch});
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closePlayer()});
+applyMode();
 load(true);
 </script>
 </body></html>"""
