@@ -243,6 +243,39 @@ class WebAuthDB:
             self.col.update_one, {"tg_id": tg_id}, {"$set": {"last_login": time.time()}}
         )
 
+    # ───────────────── PROFILE SETTINGS (v5 जैसा) ─────────────────
+    async def get_profile(self, tg_id: int):
+        """/profile पेज के लिए हल्का doc (email + timestamps)।"""
+        doc = await asyncio.to_thread(
+            self.col.find_one,
+            {"tg_id": tg_id},
+            {"email": 1, "last_login": 1, "created_at": 1},
+        )
+        return doc or {}
+
+    async def email_taken(self, email: str, tg_id: int) -> bool:
+        """/api/update_profile — दूसरे अकाउंट का email न ले लें।"""
+        doc = await asyncio.to_thread(
+            self.col.find_one,
+            {"email": str(email).strip().lower(), "tg_id": {"$ne": tg_id}},
+            {"_id": 1},
+        )
+        return bool(doc)
+
+    async def update_profile(self, tg_id: int, email: str, password: str = ""):
+        """Email और (optional) नया password — v5 के /api/update_profile जैसा।
+
+        Password दिया गया तो उसे hash_password() से सेव करते हैं; sessions
+        invalidate करना route की ज़िम्मेदारी है (reset_password जैसा flow)।
+        """
+        data = {"email": str(email).strip().lower()}
+        if password:
+            data["password"] = hash_password(password)
+        await asyncio.to_thread(
+            self.col.update_one, {"tg_id": tg_id}, {"$set": data}, upsert=True
+        )
+        return True
+
     # ───────────────── PASSWORD RESET OTP ─────────────────
     async def generate_otp(self, tg_id: int):
         user = await asyncio.to_thread(

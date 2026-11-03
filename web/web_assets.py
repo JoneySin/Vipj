@@ -1,8 +1,8 @@
 """🎨 Shared web assets: session/auth helper, page shell, CSS and the search UI.
 
-`v5` के dashboard/miniapp जैसा look, पर fsv1 के लिए एक ही self-contained
-page (कोई extra template engine / CDN dependency नहीं — सिर्फ़ Plyr CSS/JS
-stream page पर optional है)।
+`v5` के dashboard/miniapp जैसा look — sidebar (Home / Database Stats /
+Profile Settings / Sign Out), stats cards और profile settings, पर fsv1 के
+लिए एक ही self-contained page (कोई extra template engine नहीं)।
 """
 
 import html
@@ -214,6 +214,180 @@ font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 """
 
 
+
+# ─────────────────────────────────────────────────────────────
+# 🧭 APP SHELL — JoneySin/v5 (web/web_assets.py) जैसा sidebar
+#    Home · Database Stats · Profile Settings + footer में Sign Out.
+#    "#<tg_id> · ADMIN" identity भी v5 की तरह sidebar header + Profile
+#    Settings में दिखती है (topbar वाला badge "जैसा है वैसा" बना रहा)।
+# ─────────────────────────────────────────────────────────────
+APP_CSS = """
+/* ── v5-style sidebar / app shell ── */
+.ham-btn{background:transparent;border:0;cursor:pointer;color:var(--txt);display:flex;
+flex-direction:column;gap:4px;padding:6px}
+.ham-line{width:21px;height:2px;background:currentColor;border-radius:2px}
+.topbar-right{display:flex;align-items:center;gap:8px}
+.sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.68);z-index:150;
+opacity:0;pointer-events:none;transition:opacity .2s}
+.sidebar-overlay.open{opacity:1;pointer-events:all}
+.sidebar{position:fixed;top:0;left:0;height:100%;width:260px;max-width:82vw;
+background:var(--bg2);border-right:1px solid var(--line);z-index:160;display:flex;
+flex-direction:column;transform:translateX(-100%);transition:transform .3s}
+.sidebar.open{transform:translateX(0)}
+.sb-header{padding:18px 18px 14px;border-bottom:1px solid var(--line);display:flex;
+align-items:center;justify-content:space-between}
+.sb-logo{font-size:14px;font-weight:900;color:var(--red);display:flex;align-items:center;
+gap:8px;letter-spacing:.6px}
+.sb-close{background:none;border:0;color:var(--mut);font-size:20px;cursor:pointer;line-height:1}
+.sb-user{margin:14px 14px 0;padding:10px 12px;background:var(--bg3);border:1px solid var(--line);
+border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sb-uid{font-size:12px;font-weight:800;color:var(--txt);white-space:nowrap;overflow:hidden;
+text-overflow:ellipsis}
+.sb-role{font-size:9px;font-weight:900;letter-spacing:.8px;color:#fff;background:var(--red);
+border-radius:20px;padding:3px 8px;flex-shrink:0}
+.sb-nav{padding:14px 10px;flex:1;overflow-y:auto}
+.sb-section{font-size:10px;font-weight:900;color:var(--mut);padding:8px 12px;
+letter-spacing:1.4px;text-transform:uppercase}
+.sb-link{display:block;padding:12px 15px;border-radius:8px;color:var(--mut);font-size:14px;
+font-weight:700;margin-bottom:4px;transition:background .15s,color .15s}
+.sb-link:hover{background:var(--bg3);color:var(--txt)}
+.sb-link.active{background:var(--red);color:#fff}
+.sb-footer{padding:14px 10px;border-top:1px solid var(--line)}
+.sb-logout{display:block;padding:12px;border-radius:8px;text-align:center;color:var(--txt);
+font-weight:800;font-size:13px;border:1px solid var(--line);background:var(--bg3)}
+.sb-logout:hover{border-color:var(--red);color:var(--red)}
+/* ── Database Stats (v5-style cards) ── */
+@keyframes ffFade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.anim-card{animation:ffFade .45s ease both}
+.stat-hero{background:linear-gradient(135deg,var(--card),var(--bg3));border:1px solid var(--line);
+border-radius:16px;padding:26px 30px;margin-bottom:20px;position:relative;overflow:hidden}
+.stat-hero::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;
+background:linear-gradient(90deg,#3399ff,#9933ff,var(--red))}
+.stat-hero-label{font-size:11px;font-weight:800;color:var(--mut);text-transform:uppercase;
+letter-spacing:1.4px;margin-bottom:8px}
+.stat-hero-num{font-size:50px;font-weight:900;letter-spacing:-2px;line-height:1;color:var(--red)}
+.stat-hero-sub{font-size:12px;color:var(--mut);margin-top:10px;line-height:1.6}
+.stat-title{font-size:24px;font-weight:900;margin-bottom:6px}
+.stat-lead{font-size:13px;color:var(--mut);margin-bottom:24px;line-height:1.6}
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px}
+.st-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;
+position:relative;overflow:hidden;transition:transform .2s,border-color .2s}
+.st-card:hover{transform:translateY(-2px);border-color:rgba(229,9,20,.55)}
+.st-bar{position:absolute;top:0;left:0;right:0;height:3px}
+.st-label{font-size:10px;font-weight:900;color:var(--mut);text-transform:uppercase;
+letter-spacing:.8px;margin:6px 0 10px}
+.st-val{font-size:32px;font-weight:900;letter-spacing:-1px;line-height:1;margin-bottom:10px}
+.st-sub{font-size:12px;color:var(--mut);line-height:1.5}
+.st-link{display:inline-block;margin-top:12px;font-size:12px;font-weight:800;color:var(--red)}
+@media(max-width:800px){.stat-grid{grid-template-columns:1fr 1fr}}
+/* ── Profile Settings (v5-style) ── */
+.scard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px}
+.scard-label{font-size:11px;font-weight:900;color:var(--mut);text-transform:uppercase;
+letter-spacing:.9px;margin-bottom:9px}
+.prof-status{background:var(--bg3);padding:18px;border-radius:10px;margin-bottom:22px}
+.prof-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(229,9,20,.14);
+border:1px solid rgba(229,9,20,.38);color:var(--red);font-size:12px;font-weight:900;
+padding:6px 12px;border-radius:20px;margin-bottom:14px}
+.prof-tab-bar{display:flex;gap:4px;background:var(--bg3);border:1px solid var(--line);
+border-radius:9px;padding:4px;margin-bottom:20px}
+.prof-tab{flex:1;padding:9px 0;border-radius:6px;border:0;cursor:pointer;font-size:13px;
+font-weight:800;font-family:inherit;background:transparent;color:var(--mut)}
+.prof-tab.active{background:var(--bg2);color:var(--txt);box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.prof-panel{display:none}.prof-panel.active{display:block}
+.prof-field{margin-bottom:18px}
+.prof-input{width:100%;background:var(--bg3);border:1.5px solid var(--line);border-radius:8px;
+padding:11px 14px;font-size:14px;color:var(--txt);font-family:inherit;outline:none;
+box-sizing:border-box;transition:border-color .15s}
+.prof-input:focus{border-color:var(--red)}.prof-input:disabled{opacity:.6;cursor:default}
+.prof-input.pass-input{padding-right:46px}.pass-wrap{position:relative}
+.pass-toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;
+border:0;cursor:pointer;color:var(--mut);padding:0;display:flex;align-items:center}
+.str-row{display:flex;gap:4px;margin-top:8px}
+.str-bar{flex:1;height:3px;border-radius:2px;background:var(--bg3)}
+.info-row{display:flex;align-items:center;gap:12px;background:var(--bg3);
+border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.info-row-lbl{font-size:11px;color:var(--mut);margin-bottom:2px}
+.info-row-val{font-size:13px;font-weight:800;color:var(--txt)}
+.prof-divider{border:0;border-top:1px solid var(--line);margin:18px 0}
+.prof-save-row{display:flex;justify-content:flex-end;margin-top:22px}
+.prof-save{background:var(--red);color:#fff;border:0;border-radius:8px;padding:12px 24px;
+font-weight:800;font-size:13px;cursor:pointer;font-family:inherit}
+.prof-save:hover{background:var(--red2)}
+@media(max-width:520px){.stat-grid{grid-template-columns:1fr}.stat-hero-num{font-size:38px}
+.scard{padding:20px}.tbadge{display:none}}
+"""
+
+# Theme + sidebar — सभी logged-in pages पर एक ही script (v5 की तरह shared head)
+SITE_JS = """
+(function(){if(localStorage.getItem('ff_theme')==='light')document.documentElement.classList.add('light')})();
+function toggleTheme(){var l=document.documentElement.classList.toggle('light');localStorage.setItem('ff_theme',l?'light':'dark')}
+function openSidebar(){var s=document.getElementById('sidebar'),o=document.getElementById('sbOverlay');if(s)s.classList.add('open');if(o)o.classList.add('open')}
+function closeSidebar(){var s=document.getElementById('sidebar'),o=document.getElementById('sbOverlay');if(s)s.classList.remove('open');if(o)o.classList.remove('open')}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSidebar()});
+"""
+
+# v5 के NAV_MENU जैसा — Database Stats admin-only है
+NAV_MENU = (
+    ("dash",    "/search",  "🏠 Home"),
+    ("stats",   "/stats",   "📊 Database Stats"),
+    ("profile", "/profile", "⚙️ Profile Settings"),
+)
+
+
+def identity_badge(tg_id: int, role: str) -> str:
+    """'#5292444428 · ADMIN' — v5 में यही identity Profile Settings में दिखती है।"""
+    return f"#{html.escape(str(tg_id))}" + (" · ADMIN" if role == "admin" else "")
+
+
+def nav_shell(tg_id: int, role: str, active_tab: str = "") -> str:
+    """v5 जैसा sidebar + topbar. Sign Out sidebar footer में (और पुराना
+    topbar वाला red Sign Out button भी 'जैसा है वैसा' बना रहता है)।"""
+    links = "".join(
+        f'<a href="{href}" class="sb-link {"active" if active_tab == tab else ""}">{label}</a>'
+        for tab, href, label in NAV_MENU
+        if role == "admin" or tab != "stats"      # Database Stats admin-only (v5)
+    )
+    badge = identity_badge(tg_id, role)
+    role_txt = "ADMIN" if role == "admin" else "USER"
+    return (
+        '<div class="sidebar-overlay" id="sbOverlay" onclick="closeSidebar()"></div>'
+        '<div class="sidebar" id="sidebar">'
+          '<div class="sb-header"><div class="sb-logo"><span class="nfi">F</span> FAST FINDER</div>'
+          '<button class="sb-close" onclick="closeSidebar()" aria-label="Close menu">&#10005;</button></div>'
+          f'<div class="sb-user"><span class="sb-uid">{badge}</span>'
+          f'<span class="sb-role">{role_txt}</span></div>'
+          f'<nav class="sb-nav"><div class="sb-section">Menu</div>{links}</nav>'
+          '<div class="sb-footer"><a href="/logout" class="sb-logout">Sign Out</a></div>'
+        '</div>'
+        '<div class="top">'
+          '<button class="ham-btn" id="hamBtn" onclick="openSidebar()" aria-label="Open menu">'
+            '<span class="ham-line"></span><span class="ham-line"></span><span class="ham-line"></span>'
+          '</button>'
+          '<a class="logo" href="/search"><span class="nfi">F</span> FAST FINDER</a>'
+          f'<span class="tbadge">{badge}</span>'
+          '<div class="topbar-right">'
+            '<button class="tbtn" onclick="toggleTheme()">Theme</button>'
+            '<a class="tbtn red" href="/logout">Sign Out</a>'
+          '</div>'
+        '</div>'
+    )
+
+
+def app_page(title: str, body: str, tg_id: int, role: str,
+             active_tab: str = "", body_class: str = ""):
+    """Logged-in pages (Search / Database Stats / Profile Settings) का common shell."""
+    return html_response(
+        "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        f"<title>{html.escape(title)}</title>"
+        "<link rel='preconnect' href='https://fonts.googleapis.com'>"
+        "<link href='https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;900&display=swap' rel='stylesheet'>"
+        f"<style>{SITE_CSS}{APP_CSS}</style>"
+        f"<script>{SITE_JS}</script></head>"
+        f"<body class='{body_class}'>{nav_shell(tg_id, role, active_tab)}{body}</body></html>"
+    )
+
+
 def html_response(body: str, status: int = 200):
     return web.Response(text=body, content_type="text/html", charset="utf-8", status=status)
 
@@ -226,7 +400,8 @@ def page(title: str, body: str, body_class: str = "", topbar: str = ""):
         f"<title>{html.escape(title)}</title>"
         "<link rel='preconnect' href='https://fonts.googleapis.com'>"
         "<link href='https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;900&display=swap' rel='stylesheet'>"
-        f"<style>{SITE_CSS}</style></head>"
+        f"<style>{SITE_CSS}{APP_CSS}</style>"
+        f"<script>{SITE_JS}</script></head>"
         f"<body class='{body_class}'>{topbar}{body}</body></html>"
     )
 
@@ -250,21 +425,7 @@ def form_page(title: str, inner: str, err: str = "", msg: str = "", heading: str
 # ─────────────────────────────────────────────────────────────
 # 🔍 SEARCH PAGE (login ke baad)
 # ─────────────────────────────────────────────────────────────
-SEARCH_HTML = """<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FAST FINDER — Search Files</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;900&display=swap" rel="stylesheet">
-<style>__CSS__</style></head>
-<body>
-<div class="top">
-  <a class="logo" href="/"><span class="nfi">F</span> FAST FINDER</a>
-  <span class="tbadge">#__TG_ID____ROLE__</span>
-  <button class="tbtn" onclick="toggleTheme()">Theme</button>
-  <a class="tbtn red" href="/logout">Sign Out</a>
-</div>
-
-<div class="search-zone">
+SEARCH_BODY = """<div class="search-zone">
   <div class="srow" id="srow">
     <input class="sinput" id="q" type="search" placeholder="Movie / series / file name खोजें..." autocomplete="off">
     <div class="spin"></div>
@@ -310,8 +471,6 @@ SEARCH_HTML = """<!DOCTYPE html>
 </div>
 
 <script>
-(function(){if(localStorage.getItem('ff_theme')==='light')document.documentElement.classList.add('light')})();
-function toggleTheme(){var l=document.documentElement.classList.toggle('light');localStorage.setItem('ff_theme',l?'light':'dark')}
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let curQ='',offset=0,loading=false,hasMore=false,currentWatch='';
@@ -383,7 +542,7 @@ async function load(reset){
     const gtag=groupMode==='group'?' · Group':groupMode==='ungroup'?' · UnGroup':'';
     $('#meta').innerHTML=curQ
       ? `<b>"${esc(curQ)}"</b> — ${esc(d.total||list.length)} results${gtag}`
-      : `🆕 Recently Added — ${esc(d.total||list.length)} files${gtag}`;
+      : `🆕 Recently Added${gtag}__STATS_LINK__`;
     if(!$('#grid').children.length){
       $('#grid').innerHTML=`<div class="state">🔍 कोई फाइल नहीं मिली।<br>दूसरा नाम / keyword ट्राय करें।</div>`;
     }
@@ -435,14 +594,21 @@ function copyLink(){
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closePlayer()});
 applyMode();
 load(true);
-</script>
-</body></html>"""
+</script>"""
 
 
 def search_page(tg_id: int, role: str):
-    html_out = SEARCH_HTML.replace("__CSS__", SITE_CSS)
-    html_out = html_out.replace("__TG_ID__", str(tg_id))
-    html_out = html_out.replace(
-        "__ROLE__", " · ADMIN" if role == "admin" else ""
+    """v5 जैसा sidebar वाला app shell + search body.
+
+    "🆕 Recently Added — N files" वाला count अब यहाँ नहीं दिखता; v5 की तरह
+    वही गिनती `/stats` (Database Stats) पेज पर है, उसका लिंक meta में रहता है।
+    """
+    stats_link = (
+        ' · <a href="/stats" style="color:var(--red)">Database Stats →</a>'
+        if role == "admin" else ""
     )
-    return html_response(html_out)
+    return app_page(
+        "FAST FINDER — Search Files",
+        SEARCH_BODY.replace("__STATS_LINK__", stats_link),
+        tg_id=tg_id, role=role, active_tab="dash",
+    )

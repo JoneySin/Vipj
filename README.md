@@ -12,7 +12,10 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | Feature | Detail |
 |---|---|
 | 🔐 Login / Register | Email + Password, registration Telegram bot PM में **OTP** से, forgot-password OTP reset, HttpOnly cookie session (RAM + MongoDB यानी restart पर भी login बना रहे) |
-| 🔍 Web Search | `/search` → `/api/search` → MongoDB text search + regex fallback, **टाइप करते ही auto-search** (Search बटन नहीं), **21 results प्रति पेज** (3 columns × 7 rows desktop), "और दिखाओ" pagination, खाली query पर **Recently Added** |
+| 🔍 Web Search | `/search` → `/api/search` → MongoDB text search + regex fallback, **टाइप करते ही auto-search** (Search बटन नहीं), **21 results प्रति पेज** (3 columns × 7 rows desktop), "और दिखाओ" pagination, खाली query पर **Recently Added** (फाइलों की गिनती अब **Database Stats** में दिखती है) |
+| 🧭 v5 Sidebar | हर logged-in पेज पर hamburger sidebar — **Home · Database Stats (admin-only) · Profile Settings**, header में `#ID · ADMIN`, footer में **Sign Out** (बिल्कुल `JoneySin/v5` जैसा) |
+| 📊 Database Stats | `/stats` — v5 जैसे animated stat cards; **"🆕 Recently Added Files"** की गिनती यहीं, search पेज की meta लाइन में नहीं |
+| ⚙️ Profile Settings | `/profile` — v5 जैसा Account Settings: `#ID · ADMIN` identity, Account Status (👑 Admin / 💎 Premium / 🆓 Free), Telegram ID, Email + Password बदलना (tabs, show/hide, strength meter) |
 | 📐 Responsive Grid | 🖥️ Desktop ≥1024px: **3 वीडियो / row** · 📟 Tablet: 2 · 📱 Mobile: **1 वीडियो / row** |
 | 🎛️ View / Filter | Search bar के नीचे 2 dropdowns — **Poster / Text** mode (Text में सिर्फ़ नाम + meta की कॉम्पैक्ट लिस्ट, कोई thumbnail request नहीं) और **All / Group / UnGroup** (एक ही टाइटल की 2+ फाइलें = Group, अकेली फाइल = UnGroup)। दोनों चुनाव browser में याद रहते हैं |
 | 📏 Size Chip | **File size thumbnail के अंदर** (नीचे-दाएँ badge) — फाइल नाम के नीचे की size/Stream लाइन हटा दी गई |
@@ -31,7 +34,11 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | GET | `/login`, `/register`, `/verify_registration`, `/forgot_password` | Auth pages |
 | POST | `/api/login`, `/api/register_step1`, `/api/register_step2`, `/api/forgot_password`, `/api/reset_password` | Auth APIs |
 | GET | `/logout` | Session खत्म (RAM + DB) |
-| GET | `/search` | Login-walled search UI |
+| GET | `/search` | Login-walled search UI (v5 sidebar के साथ) |
+| GET | `/stats` | **Database Stats** (admin-only) — v5 जैसे counters, "Recently Added Files" की गिनती यहीं |
+| GET | `/api/db_stats` | उन्हीं counters का JSON (admin-only) |
+| GET | `/profile` | **Profile Settings** — v5 जैसा Account Settings (`#ID · ADMIN`, status, email, password) |
+| POST | `/api/update_profile` | Email / password update (password बदलने पर सभी sessions बंद) |
 | GET | `/api/search?q=&offset=&limit=&group=` | JSON results (`file_id`, `name`, `size`, `quality`, `duration`, `res`, `thumb`); `group=all\|group\|ungroup` |
 | GET | `/api/thumb?file_id=&v=` | असली thumbnail image (login required) |
 | POST | `/api/stream` `{file_id}` | `{watch, download, stream, poster, expires_in}` |
