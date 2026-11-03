@@ -30,6 +30,7 @@ from info import (
 from utils import is_premium, temp  # ✅ REMOVED: get_wish
 from database.users_chats_db import db
 from database.ia_filterdb import db_count_documents
+from stream_security import sign_params, USER_LINK_TTL
 
 
 # ======================================================
@@ -236,8 +237,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     file_id=file_id
                 )
 
-                watch = f"{URL}watch/{msg.id}"
-                download = f"{URL}download/{msg.id}"
+                # 🔐 Signed stream links (web search वाले links जैसे ही)
+                signed = sign_params(msg.id, USER_LINK_TTL)
+                watch = f"{URL}watch/{msg.id}?{signed}"
+                download = f"{URL}download/{msg.id}?{signed}"
 
                 success = await safe_edit_markup(
                     query.message,

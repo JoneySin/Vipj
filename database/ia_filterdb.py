@@ -2,6 +2,7 @@ import logging
 import re
 import base64
 import time
+import asyncio
 from struct import pack
 from datetime import datetime
 from typing import List, Tuple, Optional, Dict, Any
@@ -73,6 +74,17 @@ def ensure_indexes(col) -> None:
         logger.error(f"❌ Index creation error: {e}")
 
 ensure_indexes(collection)
+
+# Web UI के लिए extra fields (thumbnail, duration, dimensions) — search projection
+# में इन्हें शामिल करने से हर result के लिए अलग DB query नहीं लगती।
+WEB_EXTRA_FIELDS = {
+    "thumb_file_id": 1,
+    "duration": 1,
+    "file_type": 1,
+    "mime_type": 1,
+    "width": 1,
+    "height": 1,
+}
 
 # =====================================================
 # 📊 DOCUMENT COUNT
@@ -160,8 +172,8 @@ async def get_search_results(
     
     q_lower = q.lower()
     
-    # Check cache
-    cache_key = f"{q_lower}:{offset}"
+    # Check cache (limit भी key में — web pagination अलग limit माँग सकती है)
+    cache_key = f"{q_lower}:{offset}:{max_results}"
     cached = cache_get(cache_key)
     if cached:
         return cached
@@ -182,6 +194,7 @@ async def get_search_results(
                 "file_size": 1,
                 "caption": 1,
                 "quality": 1,
+                **WEB_EXTRA_FIELDS,
                 "score": {"$meta": "textScore"},
             }
         ).sort([("score", {"$meta": "textScore"})]).skip(offset).limit(max_results)
@@ -212,7 +225,8 @@ async def get_search_results(
 
             cursor = collection.find(
                 rg_filter,
-                {"file_name": 1, "file_size": 1, "caption": 1, "quality": 1}
+                {"file_name": 1, "file_size": 1, "caption": 1, "quality": 1,
+                 **WEB_EXTRA_FIELDS}
             ).skip(offset).limit(max_results)
             
             files = list(cursor)
@@ -234,6 +248,47 @@ async def get_search_results(
     cache_set(cache_key, result)
     
     return result
+
+# =====================================================
+# 🆕 RECENT FILES (खाली query पर web का "Recently Added" grid)
+# =====================================================
+async def get_recent_files(offset: int = 0, max_results: int = 30):
+    """Returns: (files, next_offset, total) — get_search_results() जैसा contract."""
+    try:
+        docs = await asyncio.to_thread(
+            lambda: list(
+                collection.find(
+                    {},
+                    {"file_name": 1, "file_size": 1, "caption": 1,
+                     "quality": 1, **WEB_EXTRA_FIELDS},
+                )
+                .sort("updated_at", -1)
+                .skip(offset)
+                .limit(max_results)
+            )
+        )
+        total = await asyncio.to_thread(db_count_documents)
+        next_offset = str(offset + max_results) if offset + max_results < total else ""
+        return docs, next_offset, total
+    except Exception as e:
+        logger.error(f"Recent files error: {e}")
+        return [], "", 0
+
+
+async def update_file_meta(file_id: str, meta: dict) -> bool:
+    """Thumbnail engine द्वारा मिली real meta (thumb id/duration/dims) backfill."""
+    if not file_id or not meta:
+        return False
+    try:
+        await asyncio.to_thread(
+            collection.update_one, {"_id": file_id}, {"$set": meta}
+        )
+        cache_clear()          # search cache me purana doc na rahe
+        return True
+    except Exception as e:
+        logger.debug(f"update_file_meta skipped: {e}")
+        return False
+
 
 # =====================================================
 # 🗑 DELETE FILES BY QUERY
@@ -390,6 +445,21 @@ async def save_file(media) -> str:
         # Detect quality
         quality = detect_quality(file_name)
 
+        # 🖼️ REAL THUMBNAIL + MEDIA META (index time par free me milta hai)
+        # Telegram har video/document message ke saath thumbnail bhejta hai.
+        # Is file_id ko DB me rakh lene se web UI ko poster dikhane ke liye
+        # baar-baar BIN_CHANNEL me message bhejne ki zaroorat nahi padti.
+        thumbs = getattr(media, "thumbs", None) or []
+        thumb_file_id = thumbs[0].file_id if thumbs else None
+        media_meta = {
+            "thumb_file_id": thumb_file_id,
+            "duration": int(getattr(media, "duration", 0) or 0),
+            "file_type": "video" if type(media).__name__.lower() == "video" else "document",
+            "mime_type": getattr(media, "mime_type", None) or "",
+            "width": int(getattr(media, "width", 0) or 0),
+            "height": int(getattr(media, "height", 0) or 0),
+        }
+
         # Prepare document
         doc = {
             "_id": file_id,
@@ -397,6 +467,7 @@ async def save_file(media) -> str:
             "file_size": file_size,
             "caption": caption,
             "quality": quality,
+            **media_meta,
             "updated_at": datetime.utcnow()
         }
 
@@ -414,6 +485,7 @@ async def save_file(media) -> str:
                         "caption": caption,
                         "quality": quality,
                         "file_size": file_size,
+                        **media_meta,
                         "updated_at": datetime.utcnow()
                     }
                 }

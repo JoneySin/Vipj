@@ -25,6 +25,10 @@ class temp(object):
     KEYWORDS = {}       # learned keywords (RAM)
     BANNED_USERS = set()  # banned users set
 
+    # 🌐 Web login sessions / registration OTP (web/web_assets.py, web/auth_routes.py)
+    USER_SESSIONS = {}  # session_id -> {'tg_id': int, 'expiry': float}
+    REG_PENDING = {}    # tg_id -> {'email', 'password', 'otp', 'expiry', 'tries'}
+
     INDEX_STATS = {
         "running": False,
         "start": 0,

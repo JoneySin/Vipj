@@ -151,6 +151,23 @@ LINK_MODE = is_enabled("LINK_MODE", True)
 
 IS_STREAM = is_enabled('IS_STREAM', True)
 
+# ================= WEB SEARCH / LOGIN =================
+# Web par ek page me kitne results dikhane hain (pagination / load-more)
+MAX_WEB_RESULTS = max(1, min(int(environ.get('MAX_WEB_RESULTS', '30')), 100))
+
+# Web login cookie ki validity (seconds) — default 7 din
+WEB_SESSION_TTL = int(environ.get('WEB_SESSION_TTL', 7 * 24 * 3600))
+
+# Web stream link ki validity (seconds) — default 6 ghante
+WEB_STREAM_TTL = int(environ.get('WEB_STREAM_TTL', 6 * 3600))
+
+# RAM me kitne thumbnails cache hon (har thumb ~10-60 KB)
+THUMB_CACHE_ITEMS = int(environ.get('THUMB_CACHE_ITEMS', '256'))
+
+# Purane (unsigned) /watch/<id> links deploy se pehle bheje gaye ho sakte hain.
+# Default False = sirf signed links chalengi. True karke backward compatibility on karo.
+ALLOW_UNSIGNED_LINKS = is_enabled('ALLOW_UNSIGNED_LINKS', False)
+
 BIN_CHANNEL = environ.get("BIN_CHANNEL", "")
 if not BIN_CHANNEL:
     logger.error('BIN_CHANNEL is missing')

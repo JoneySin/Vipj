@@ -1,7 +1,11 @@
-from pymongo import MongoClient
-from datetime import datetime
+from pymongo import MongoClient, ReturnDocument
+from datetime import datetime, timezone
+import hashlib
+import hmac
+import secrets
 import time
 import asyncio
+import logging
 from functools import wraps
 
 from info import (
@@ -237,7 +241,196 @@ class Database:
         )
 
 
+# ======================================================================
+# 🌐 WEB AUTHENTICATION (login / register / OTP / session)
+#    v5 जैसा ही flow, पर fsv1 के synchronous PyMongo client के अनुकूल।
+#    सारे DB calls asyncio.to_thread() से चलते हैं ताकि bot का event loop
+#    कभी block न हो।
+# ======================================================================
+
+logger = logging.getLogger(__name__)
+
+OTP_TTL = 600            # OTP 10 मिनट वैध
+OTP_MAX_TRIES = 5        # एक OTP पर अधिकतम गलत प्रयास
+OTP_MAX_SENDS = 3        # 10 मिनट में एक TG ID पर अधिकतम OTP
+MIN_PASSWORD_LEN = 6
+
+
+class OTPRateLimited(Exception):
+    """बहुत जल्दी-जल्दी OTP माँगा गया।"""
+
+
+def hash_password(password: str, salt: str = "") -> str:
+    """PBKDF2-HMAC-SHA256 (per-user salt). Plain sha256 से सुरक्षित।"""
+    salt = salt or secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac(
+        "sha256", str(password).encode(), bytes.fromhex(salt), 120_000
+    ).hex()
+    return f"pbkdf2_sha256$120000${salt}${dk}"
+
+
+def check_password(password: str, encoded: str) -> bool:
+    try:
+        algo, iterations, salt, expected = str(encoded).split("$", 3)
+        if algo != "pbkdf2_sha256":
+            return False
+        dk = hashlib.pbkdf2_hmac(
+            "sha256", str(password).encode(), bytes.fromhex(salt), int(iterations)
+        ).hex()
+        return hmac.compare_digest(dk, expected)
+    except Exception:
+        return False
+
+
+class WebAuthDB:
+    """Web users (``web_users``) + persistent login sessions (``web_sessions``)."""
+
+    def __init__(self, database):
+        self.col = database["web_users"] if database is not None else None
+        self.sessions = database["web_sessions"] if database is not None else None
+        self._ensure_indexes()
+
+    def _ensure_indexes(self):
+        try:
+            if self.col is None:
+                return
+            self.col.create_index("tg_id", unique=True)
+            self.col.create_index("email", unique=True)
+            # TTL index: expired sessions MongoDB खुद हटा देगा
+            self.sessions.create_index("expire_at", expireAfterSeconds=0)
+        except Exception as e:
+            logger.debug(f"Web auth index setup skipped: {e}")
+
+    # ───────────────────── USERS ─────────────────────
+    async def create_user(self, tg_id: int, email: str, password: str):
+        email = str(email or "").strip().lower()
+        if await asyncio.to_thread(
+            self.col.find_one,
+            {"$or": [{"tg_id": tg_id}, {"email": email}]},
+            {"_id": 1},
+        ):
+            return False, "Telegram ID or Email already registered!"
+        try:
+            await asyncio.to_thread(
+                self.col.insert_one,
+                {
+                    "tg_id": tg_id,
+                    "email": email,
+                    "password": hash_password(password),
+                    "created_at": time.time(),
+                    "last_login": 0,
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Web user create failed: {e}")
+            return False, "Could not create account. Please try again."
+        return True, "Account Created Successfully!"
+
+    async def verify_login(self, email: str, password: str):
+        email = str(email or "").strip().lower()
+        user = await asyncio.to_thread(self.col.find_one, {"email": email})
+        if user and check_password(password, user.get("password", "")):
+            return user
+        return None
+
+    async def identity_exists(self, tg_id: int, email: str) -> bool:
+        """Registration से पहले Telegram ID / Email already used तो True."""
+        doc = await asyncio.to_thread(
+            self.col.find_one,
+            {"$or": [{"tg_id": tg_id}, {"email": str(email).strip().lower()}]},
+            {"_id": 1},
+        )
+        return bool(doc)
+
+    async def update_last_login(self, tg_id: int):
+        await asyncio.to_thread(
+            self.col.update_one, {"tg_id": tg_id}, {"$set": {"last_login": time.time()}}
+        )
+
+    async def update_profile(self, tg_id: int, new_email: str, new_password: str = ""):
+        upd = {"email": str(new_email).strip().lower()}
+        if new_password:
+            upd["password"] = hash_password(new_password)
+        await asyncio.to_thread(self.col.update_one, {"tg_id": tg_id}, {"$set": upd})
+
+    # ───────────────── PASSWORD RESET OTP ─────────────────
+    async def generate_otp(self, tg_id: int):
+        user = await asyncio.to_thread(
+            self.col.find_one, {"tg_id": tg_id}, {"otp_win": 1, "otp_sends": 1}
+        )
+        if not user:
+            return None
+        now = time.time()
+        win, sends = user.get("otp_win", 0), user.get("otp_sends", 0)
+        if now - win > OTP_TTL:
+            win, sends = now, 0
+        if sends >= OTP_MAX_SENDS:
+            raise OTPRateLimited()
+        otp = str(secrets.randbelow(900000) + 100000)
+        await asyncio.to_thread(
+            self.col.update_one,
+            {"tg_id": tg_id},
+            {"$set": {"otp": otp, "otp_exp": now + OTP_TTL, "otp_tries": 0,
+                      "otp_win": win, "otp_sends": sends + 1}},
+        )
+        return otp
+
+    async def verify_otp_and_reset(self, tg_id: int, otp: str, new_password: str):
+        otp = str(otp or "").strip()
+        if not otp or not new_password:
+            return False
+        user = await asyncio.to_thread(
+            lambda: self.col.find_one_and_update(
+                {"tg_id": tg_id, "otp": {"$exists": True}},
+                {"$inc": {"otp_tries": 1}},
+                projection={"otp": 1, "otp_exp": 1, "otp_tries": 1},
+                return_document=ReturnDocument.AFTER,
+            )
+        )
+        if not user:
+            return False
+        clear = {"$unset": {"otp": "", "otp_exp": "", "otp_tries": ""}}
+        if user.get("otp_exp", 0) <= time.time() or user.get("otp_tries", 0) > OTP_MAX_TRIES:
+            await asyncio.to_thread(self.col.update_one, {"tg_id": tg_id}, clear)
+            return False
+        if not hmac.compare_digest(str(user.get("otp", "")).encode(), otp.encode()):
+            if user.get("otp_tries", 0) >= OTP_MAX_TRIES:
+                await asyncio.to_thread(self.col.update_one, {"tg_id": tg_id}, clear)
+            return False
+        await asyncio.to_thread(
+            self.col.update_one,
+            {"tg_id": tg_id},
+            {"$set": {"password": hash_password(new_password)}, **clear},
+        )
+        return True
+
+    # ───────────────── LOGIN SESSIONS ─────────────────
+    async def create_session(self, sid: str, tg_id: int, expiry: float):
+        await asyncio.to_thread(
+            self.sessions.replace_one,
+            {"_id": sid},
+            {"_id": sid, "tg_id": tg_id, "expiry": expiry,
+             "expire_at": datetime.fromtimestamp(expiry, tz=timezone.utc)},
+            True,   # upsert
+        )
+
+    async def get_session(self, sid: str):
+        doc = await asyncio.to_thread(
+            self.sessions.find_one, {"_id": sid}, {"tg_id": 1, "expiry": 1}
+        )
+        if doc and doc.get("expiry", 0) > time.time():
+            return {"tg_id": doc["tg_id"], "expiry": doc["expiry"]}
+        return None
+
+    async def delete_session(self, sid: str):
+        await asyncio.to_thread(self.sessions.delete_one, {"_id": sid})
+
+    async def delete_user_sessions(self, tg_id: int):
+        await asyncio.to_thread(self.sessions.delete_many, {"tg_id": tg_id})
+
+
 # =========================
 # EXPORT
 # =========================
 db = Database()
+web_db = WebAuthDB(dbase)

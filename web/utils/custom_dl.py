@@ -53,7 +53,11 @@ class TGCustomYield:
     # 📄 FILE PROPERTIES
     # --------------------------------------------------
     @staticmethod
-    async def generate_file_properties(msg: Message) -> FileId:
+    async def generate_file_properties(msg) -> FileId:
+        # media_info cache से सीधा decoded FileId भी आ सकता है (हर Range
+        # request पर Telegram get_messages() दोबारा न करने के लिए)।
+        if isinstance(msg, FileId):
+            return msg
         media = getattr(msg, msg.media.value, None)
         return FileId.decode(media.file_id)
 
@@ -195,16 +199,27 @@ class TGCustomYield:
             if not chunk:
                 break
 
-            offset += chunk_size
-
+            # ⚠️ FIX: पहले आख़िरी chunk पूरा (last_part_cut तक नहीं काटा) भेजा
+            # जाता था — इससे Range response declared Content-Length से बड़ा हो
+            # जाता था और player seek पर अटक जाता था। अब आख़िरी part भी कटता है।
             if part_count == 1:
                 yield chunk[first_part_cut:last_part_cut]
                 break
 
             if current_part == 1:
                 yield chunk[first_part_cut:]
+            elif current_part == part_count:
+                yield chunk[:last_part_cut]
             else:
                 yield chunk
+
+            if len(chunk) < chunk_size:        # file यहीं खत्म (EOF)
+                break
+
+            offset += chunk_size
+            current_part += 1
+            if current_part > part_count:
+                break
 
             r = await media_session.send(
                 raw.functions.upload.GetFile(
@@ -213,8 +228,8 @@ class TGCustomYield:
                     limit=chunk_size
                 )
             )
-
-            current_part += 1
+            if not isinstance(r, raw.types.upload.File):
+                break
 
     # --------------------------------------------------
     # 📥 FULL DOWNLOAD (BYTES)
