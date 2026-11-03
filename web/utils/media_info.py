@@ -6,7 +6,6 @@ mime 5 मिनट तक cache me rehte hain, aur ek saath aayi kai Range requ
 ek hi Telegram call share karti hain.
 
 * TTL छोटा (5 min) है ताकि file_reference पुराना न हो।
-* File delete/replace होने पर `drop_media_info(mid)` call करें।
 """
 
 import asyncio
@@ -72,7 +71,3 @@ async def get_media_info(message_id):
         _INFLIGHT[message_id] = task
         task.add_done_callback(lambda _t, _m=message_id: _INFLIGHT.pop(_m, None))
     return await asyncio.shield(task)
-
-
-def drop_media_info(message_id):
-    _CACHE.pop(message_id, None)

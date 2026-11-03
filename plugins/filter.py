@@ -7,7 +7,7 @@ from collections import defaultdict
 from hydrogram import Client, filters, enums
 from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from info import ADMINS, UPI_ID, UPI_NAME
+from info import ADMINS
 from database.users_chats_db import db
 from database.ia_filterdb import get_search_results
 from utils import (

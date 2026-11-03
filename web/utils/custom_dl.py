@@ -1,5 +1,4 @@
 import math
-from typing import Union
 
 from hydrogram.types import Message
 from hydrogram import Client, utils, raw
@@ -230,33 +229,3 @@ class TGCustomYield:
             )
             if not isinstance(r, raw.types.upload.File):
                 break
-
-    # --------------------------------------------------
-    # 📥 FULL DOWNLOAD (BYTES)
-    # --------------------------------------------------
-    async def download_as_bytesio(self, media_msg: Message):
-        client = self.main_bot
-        data = await self.generate_file_properties(media_msg)
-        media_session = await self.generate_media_session(client, media_msg)
-        location = await self.get_location(data)
-
-        limit = 1024 * 1024
-        offset = 0
-        result = []
-
-        while True:
-            r = await media_session.send(
-                raw.functions.upload.GetFile(
-                    location=location,
-                    offset=offset,
-                    limit=limit
-                )
-            )
-
-            if not isinstance(r, raw.types.upload.File) or not r.bytes:
-                break
-
-            result.append(r.bytes)
-            offset += limit
-
-        return result

@@ -3,7 +3,7 @@ import time
 import asyncio
 from datetime import timedelta
 
-from hydrogram import Client, filters
+from hydrogram import Client
 from hydrogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
@@ -18,14 +18,8 @@ from hydrogram.errors import (
     BadRequest
 )
 
-from info import (
-    ADMINS,
-    PICS,
-    URL,
-    BIN_CHANNEL,
-    QUALITY,
-    script
-)
+from info import ADMINS, PICS, URL, BIN_CHANNEL
+from Script import script
 
 from utils import is_premium, temp  # ✅ REMOVED: get_wish
 from database.users_chats_db import db

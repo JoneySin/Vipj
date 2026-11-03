@@ -332,7 +332,7 @@ async def cleanup_files_memory():
             if len(temp.KEYWORDS) > 10000:
                 sorted_kw = sorted(temp.KEYWORDS.items(), key=lambda x: x[1], reverse=True)
                 temp.KEYWORDS = dict(sorted_kw[:5000])
-                print(f"[INFO] Cleaned keywords, kept top 5000")
+                print("[INFO] Cleaned keywords, kept top 5000")
                     
         except Exception as e:
             print(f"[ERROR] Cleanup task error: {e}")

@@ -44,8 +44,13 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 
 ## ⚙️ Environment Variables
 
-पुराने सभी vars (`API_ID`, `API_HASH`, `BOT_TOKEN`, `ADMINS`, `DATA_DATABASE_URL`,
-`DATABASE_NAME`, `COLLECTION_NAME`, `BIN_CHANNEL`, `URL`, …) वैसे ही रहेंगे। नए optional vars:
+जो vars कोड में सच में use होते हैं (`API_ID`, `API_HASH`, `BOT_TOKEN`, `ADMINS`,
+`DATA_DATABASE_URL`, `DATABASE_NAME`, `COLLECTION_NAME`, `BIN_CHANNEL`, `URL`, `MAX_BTN`,
+`PM_FILE_DELETE_TIME`, `IS_STREAM`, `USE_CAPTION_FILTER`, `PROTECT_CONTENT`, …) वैसे ही
+रहेंगे। `info.py` से **unused legacy vars** (`SUPPORT_GROUP`, `SUPPORT_LINK`, `TUTORIAL`,
+`QUALITY`, `LANGUAGES`, `CACHE_TIME`, `DELETE_TIME`, `TIME_ZONE`, `IS_VERIFY`, `AUTO_DELETE`,
+`LINK_MODE`, `VERIFY_EXPIRE`, hot/cold collection names, …) हटा दिए गए हैं — इन्हें अब set
+करने की कोई ज़रूरत नहीं, और `SUPPORT_GROUP` अब mandatory भी नहीं है। नए optional vars:
 
 | Var | Default | मतलब |
 |---|---|---|
@@ -101,6 +106,16 @@ web/stream_routes.py             → landing, signed watch/download, hardened Ra
 web/__init__.py                  → तीनों route tables register
 plugins/callbacks.py             → bot के Watch/Download links अब signed
 ```
+
+### 🧹 Dead-code cleanup
+
+`info.py` अब सिर्फ़ वही config रखता है जो कोड में सच में पढ़ा जाता है (unused env vars,
+`import os`, purane link/collection/template constants हटाए)। इसके साथ `Script.py` के unused
+message templates, कभी न बुलाए गए DB helpers/methods (`run_sync`, `update_file_quality`,
+`database_health_check`, `delete_file_by_id`, ban/add-user API, `update_profile`,
+`download_as_bytesio`, `drop_media_info`, `last_online`), unused imports/locals और बेकार `f`-strings/`global`
+भी हटा दिए गए। `pyflakes` अब पूरे repo पर clean है; web/auth/stream/thumbnail behaviour
+जस का तस है।
 
 ---
 

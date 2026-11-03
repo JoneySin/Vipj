@@ -59,8 +59,6 @@ async def send_log(bot, text):
 # =====================================================
 @Client.on_message(filters.private & filters.user(ADMINS) & filters.incoming)
 async def start_index(bot, message):
-    global CANCEL
-
     if LOCK.locked():
         return await message.reply("⏳ Indexing already running")
 
@@ -139,8 +137,6 @@ async def index_callback(bot, query):
 # CORE INDEX LOOP
 # =====================================================
 async def index_worker(bot, status, chat_id, last_msg_id, skip, channel_title):
-    global CANCEL
-
     start_time = time.time()
     saved = dup = err = nomedia = 0
     processed = 0

@@ -340,32 +340,6 @@ async def delete_all_files() -> int:
         return 0
 
 # =====================================================
-# 🗑 DELETE FILE BY ID
-# =====================================================
-async def delete_file_by_id(file_id: str) -> bool:
-    """
-    Delete single file by its ID
-    Returns: True if deleted, False otherwise
-    """
-    if not file_id:
-        return False
-    
-    try:
-        res = collection.delete_one({"_id": file_id})
-        
-        if res.deleted_count > 0:
-            # Clear cache after deletion
-            cache_clear()
-            logger.info(f"✅ File deleted: {file_id}")
-            return True
-        
-        return False
-    
-    except Exception as e:
-        logger.error(f"❌ Delete file by ID error: {e}")
-        return False
-
-# =====================================================
 # 🗑 DELETE BY QUALITY
 # =====================================================
 async def delete_by_quality(quality: str) -> int:
@@ -534,32 +508,6 @@ async def update_file_caption(file_id: str, new_caption: str) -> bool:
         logger.error(f"Update caption error: {e}")
         return False
 
-# =====================================================
-# 🔄 UPDATE QUALITY
-# =====================================================
-async def update_file_quality(file_id: str, new_name: str) -> bool:
-    """Update file quality based on new name"""
-    if not file_id or not new_name:
-        return False
-
-    try:
-        quality = detect_quality(new_name)
-
-        res = collection.update_one(
-            {"_id": file_id},
-            {
-                "$set": {
-                    "quality": quality,
-                    "updated_at": datetime.utcnow()
-                }
-            }
-        )
-        
-        return res.modified_count > 0
-    
-    except Exception as e:
-        logger.error(f"Update quality error: {e}")
-        return False
 
 # =====================================================
 # 🔐 FILE ID ENCODING UTILITIES
@@ -603,29 +551,3 @@ def unpack_new_file_id(new_file_id: str) -> str:
     except Exception as e:
         logger.error(f"Unpack error: {e}")
         return ""
-
-# =====================================================
-# 🧪 HEALTH CHECK
-# =====================================================
-async def database_health_check() -> Dict[str, Any]:
-    """Check database health and stats"""
-    try:
-        stats = {
-            "status": "healthy",
-            "total_files": db_count_documents(),
-            "cache_size": len(SEARCH_CACHE),
-            "connected": True
-        }
-        
-        # Test query
-        collection.find_one({})
-        
-        return stats
-    
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return {
-            "status": "unhealthy",
-            "error": str(e),
-            "connected": False
-        }
