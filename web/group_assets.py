@@ -73,7 +73,27 @@ grid-template-columns:1fr}
 @media(min-width:620px){.gcard.open .gvariants{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(min-width:1024px){.gcard.open .gvariants{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .gvariants .vcard:hover{transform:none}
-.vgrid.mode-text .gposter{display:none}
+/* 📝 Text mode: group card पर thumbnail नहीं, पर #number / N QUALITIES /
+   N EPISODES / duration / kind / quality-episode chips सब दिखेंगे। */
+.vgrid.mode-text .gcard{margin-bottom:8px}
+.vgrid.mode-text .gmaster{display:flex;flex-wrap:wrap;align-items:center;
+gap:8px;padding:9px 11px}
+.vgrid.mode-text .gposter{position:static;display:flex;flex-wrap:wrap;
+align-items:center;gap:6px;aspect-ratio:auto;flex:1 1 auto;min-width:0;
+padding:0;overflow:visible;background:none;animation:none}
+.vgrid.mode-text .gposter .vimg,
+.vgrid.mode-text .gposter .vph{display:none!important}
+.vgrid.mode-text .gposter .vchips{position:static;display:flex;flex-wrap:wrap;
+gap:5px;padding:0;pointer-events:none}
+.vgrid.mode-text .gbottom{position:static;left:auto;right:auto;bottom:auto;
+display:flex;flex-wrap:wrap;gap:5px;padding:0;background:none;pointer-events:none}
+.vgrid.mode-text .gbody{order:-1;flex:1 1 200px;min-width:0;padding:0;
+align-items:center}
+.vgrid.mode-text .gcard.gactive .gbottom{display:flex}
+.vgrid.mode-text .gadmin{position:static;left:auto;right:auto;bottom:auto;
+gap:5px;padding:0;background:none;flex:0 0 auto}
+.vgrid.mode-text .gadmin button{flex:0 0 auto;min-width:auto}
+.vgrid.mode-text .gcard.gactive .gposter::after{display:none}
 .gadmin{position:absolute;left:0;right:0;bottom:0;z-index:6;display:flex;gap:5px;
 flex-wrap:wrap;padding:8px;background:rgba(0,0,0,.86);opacity:0;visibility:hidden;
 transform:translateY(8px);transition:opacity .18s,transform .18s,visibility .18s;pointer-events:none}

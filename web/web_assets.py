@@ -172,14 +172,34 @@ font-size:13px;font-weight:700;line-height:1.35;cursor:pointer;transition:color 
 .vcard:hover .vtitle{color:var(--red)}
 .state{grid-column:1/-1;text-align:center;padding:70px 20px;color:var(--mut);
 font-weight:600;line-height:1.7}
-/* Text mode: सिर्फ़ नाम वाली कॉम्पैक्ट लिस्ट, कोई thumbnail नहीं */
+/* 📝 Text mode: सिर्फ़ THUMBNAIL (image/placeholder/play-overlay) छिपता है —
+   बाकी सब कुछ Poster mode जैसा ही दिखता है: नाम + type/quality/res/duration
+   chips + size + admin actions. Chips/size `.vposter` के अंदर हैं, इसलिए poster
+   box को `display:none` करने के बजाय उसे compact inline details strip बनाते हैं।
+   `data-src` (imgAttrs) की वजह से text mode में thumbnail request जाती ही नहीं। */
 .vgrid.mode-text{display:block}
-.vgrid.mode-text .vcard{display:flex;align-items:center;gap:6px;padding:8px 11px;
-margin-bottom:8px;border-radius:8px}
-.vgrid.mode-text .vposter{display:none}
-.vgrid.mode-text .vbody{display:flex;align-items:center;gap:10px;padding:0;flex:1;min-width:0}
-.vgrid.mode-text .vtitle{display:block;flex:1;min-width:0;white-space:nowrap;overflow:hidden;
-text-overflow:ellipsis;-webkit-line-clamp:1}
+.vgrid.mode-text .vcard{display:flex;flex-wrap:wrap;align-items:center;gap:7px;
+padding:9px 11px;margin-bottom:8px;border-radius:8px}
+.vgrid.mode-text .vbody{order:-1;display:flex;align-items:center;gap:10px;
+padding:0;flex:1 1 200px;min-width:0}
+.vgrid.mode-text .vtitle{display:block;flex:1;min-width:0;white-space:nowrap;
+overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:1}
+/* ⚠️ सिर्फ़ ये तीन छिपते हैं — thumbnail से जुड़ी चीज़ें */
+.vgrid.mode-text .vposter{position:static;display:flex;flex-wrap:wrap;
+align-items:center;gap:6px;aspect-ratio:auto;width:auto;flex:1 1 auto;
+min-width:0;overflow:visible;background:none;animation:none;cursor:pointer}
+.vgrid.mode-text .vposter .vimg,
+.vgrid.mode-text .vposter .vph,
+.vgrid.mode-text .vposter .vplay{display:none!important}
+.vgrid.mode-text .vchips{position:static;display:flex;flex-wrap:wrap;
+gap:5px;padding:0;pointer-events:none}
+.vgrid.mode-text .vsize{position:static;right:auto;bottom:auto;
+display:inline-block;pointer-events:none}
+/* ✏️ Edit / 🗑️ Delete overlay: poster-click पर वैसे ही खुलता है (admin-only JS) */
+.vgrid.mode-text .vadmin{position:static;left:auto;right:auto;bottom:auto;
+gap:5px;padding:0;background:none;flex:0 0 auto;flex-wrap:wrap}
+.vgrid.mode-text .vadmin button{flex:0 0 auto;padding:6px 9px}
+.vgrid.mode-text .vcard.admin-active .vposter::after{display:none}
 @media(prefers-reduced-motion:reduce){
 .vcard,.vcard.enter,.vcard.enter.in,.vposter{animation:none!important;
 transition:none!important;opacity:1!important;transform:none!important}
