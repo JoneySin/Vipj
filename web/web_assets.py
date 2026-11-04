@@ -44,6 +44,7 @@ import time
 from web.group_assets import (
     GROUP_CSS, GROUP_JS, GROUP_ADMIN_HTML, GROUP_ADMIN_JS,
 )
+from web.mode_assets import VIEW_MODE_OPTIONS, MODE_CSS, MODE_JS
 
 from aiohttp import web
 
@@ -172,34 +173,6 @@ font-size:13px;font-weight:700;line-height:1.35;cursor:pointer;transition:color 
 .vcard:hover .vtitle{color:var(--red)}
 .state{grid-column:1/-1;text-align:center;padding:70px 20px;color:var(--mut);
 font-weight:600;line-height:1.7}
-/* 📝 Text mode: सिर्फ़ THUMBNAIL (image/placeholder/play-overlay) छिपता है —
-   बाकी सब कुछ Poster mode जैसा ही दिखता है: नाम + type/quality/res/duration
-   chips + size + admin actions. Chips/size `.vposter` के अंदर हैं, इसलिए poster
-   box को `display:none` करने के बजाय उसे compact inline details strip बनाते हैं।
-   `data-src` (imgAttrs) की वजह से text mode में thumbnail request जाती ही नहीं। */
-.vgrid.mode-text{display:block}
-.vgrid.mode-text .vcard{display:flex;flex-wrap:wrap;align-items:center;gap:7px;
-padding:9px 11px;margin-bottom:8px;border-radius:8px}
-.vgrid.mode-text .vbody{order:-1;display:flex;align-items:center;gap:10px;
-padding:0;flex:1 1 200px;min-width:0}
-.vgrid.mode-text .vtitle{display:block;flex:1;min-width:0;white-space:nowrap;
-overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:1}
-/* ⚠️ सिर्फ़ ये तीन छिपते हैं — thumbnail से जुड़ी चीज़ें */
-.vgrid.mode-text .vposter{position:static;display:flex;flex-wrap:wrap;
-align-items:center;gap:6px;aspect-ratio:auto;width:auto;flex:1 1 auto;
-min-width:0;overflow:visible;background:none;animation:none;cursor:pointer}
-.vgrid.mode-text .vposter .vimg,
-.vgrid.mode-text .vposter .vph,
-.vgrid.mode-text .vposter .vplay{display:none!important}
-.vgrid.mode-text .vchips{position:static;display:flex;flex-wrap:wrap;
-gap:5px;padding:0;pointer-events:none}
-.vgrid.mode-text .vsize{position:static;right:auto;bottom:auto;
-display:inline-block;pointer-events:none}
-/* ✏️ Edit / 🗑️ Delete overlay: poster-click पर वैसे ही खुलता है (admin-only JS) */
-.vgrid.mode-text .vadmin{position:static;left:auto;right:auto;bottom:auto;
-gap:5px;padding:0;background:none;flex:0 0 auto;flex-wrap:wrap}
-.vgrid.mode-text .vadmin button{flex:0 0 auto;padding:6px 9px}
-.vgrid.mode-text .vcard.admin-active .vposter::after{display:none}
 @media(prefers-reduced-motion:reduce){
 .vcard,.vcard.enter,.vcard.enter.in,.vposter{animation:none!important;
 transition:none!important;opacity:1!important;transform:none!important}
@@ -226,17 +199,17 @@ VCARD_CHIP_SPEC = (
 )
 
 VCARD_TEMPLATE = (
-    '<div class="vcard{CARD_CLASS}" role="button" tabindex="0"{EXTRA_ATTRS} '
+    '<div class="vcard vm-card{CARD_CLASS}" role="button" tabindex="0"{EXTRA_ATTRS} '
     'data-fid="{FID}" data-name="{NAME}" aria-label="Play {NAME}">'
-    '<div class="vposter"{POSTER_ID}>'
-    '<img class="vimg" {IMG_ATTRS} alt="" loading="lazy" '
+    '<div class="vposter vm-poster"{POSTER_ID}>'
+    '<img class="vimg vm-img" {IMG_ATTRS} alt="" loading="lazy" '
     'onload="this.classList.add(\'on\')" onerror="{IMG_ERROR}">'
-    '<div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>'
-    '<div class="vchips">{CHIPS}</div>{SIZE}'
-    '<span class="vplay">▶</span>'
-    '<div class="vadmin"><button class="va-edit" data-fid="{RAW_FID}">✏️ Edit</button>'
+    '<div class="vph vm-ph vm-overlay"><b>▶</b><span>NO THUMBNAIL</span></div>'
+    '<div class="vchips vm-details">{CHIPS}</div>{SIZE}'
+    '<span class="vplay vm-overlay">▶</span>'
+    '<div class="vadmin vm-actions"><button class="va-edit" data-fid="{RAW_FID}">✏️ Edit</button>'
     '<button class="va-del" data-fid="{RAW_FID}">🗑️ Delete</button></div>'
-    '</div><div class="vbody"><div class="vtitle">{NAME}</div></div></div>'
+    '</div><div class="vbody vm-body"><div class="vtitle vm-title">{NAME}</div></div></div>'
 )
 
 _VIDEO_EXT = (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts",
@@ -303,7 +276,7 @@ def vcard_chips(data) -> str:
 
 def vcard_size(data) -> str:
     val = str((data or {}).get("size") or "").strip()
-    return f'<span class="vsize">{html.escape(val)}</span>' if val else ""
+    return f'<span class="vsize vm-size">{html.escape(val)}</span>' if val else ""
 
 
 def render_vcard(**kw) -> str:
@@ -330,7 +303,7 @@ _VCARD_JS_TPL = r"""/* 🎴 SHARED VIDEO CARD — template + chip spec web_asset
   }
   function vsize(f){
     var s=String((f||{}).size==null?'':f.size).trim();
-    return s?'<span class="vsize">'+esc(s)+'</span>':'';
+    return s?'<span class="vsize vm-size">'+esc(s)+'</span>':'';
   }
   function html(t){
     t=t||{};
@@ -888,22 +861,22 @@ FILTER_JS = r"""
 #   नया button जोड़ना हो / label बदलना हो → सिर्फ़ यहाँ बदलो।
 # ─────────────────────────────────────────────────────────────
 FILTER_OPTIONS = {
-    "view":  (("poster", "🖼️ Poster"), ("text", "📄 Text")),
+    "view":  VIEW_MODE_OPTIONS,
     "group": (("all", "All"), ("group", "Group"), ("ungroup", "UnGroup")),
 }
 
 # (id, options, caption, aria/title label, onchange)
 SEARCH_FILTERS = (
-    {"id": "modeSel",  "options": "view",  "cap": "View mode",     "label": "Mode",   "onchange": "setMode(this.value)"},
+    {"id": "modeSel",  "options": "view",  "cap": "View mode",     "label": "Mode",   "vm": True},
     {"id": "groupSel", "options": "group", "cap": "Result filter", "label": "Filter", "onchange": "setGroup(this.value)"},
 )
 CATALOG_FILTERS = (
     {"id": "catCategory", "options": None,   "cap": "Category",  "label": "Category"},  # options = dynamic per kind
-    {"id": "catMode",     "options": "view", "cap": "View mode", "label": "Mode"},
+    {"id": "catMode",     "options": "view", "cap": "View mode", "label": "Mode", "vm": True},
 )
 
 
-def filter_select(sel_id, *, options, cap, label, onchange="", full=False):
+def filter_select(sel_id, *, options, cap, label, onchange="", full=False, vm=False):
     """एक filter button का markup। `options` = FILTER_OPTIONS key | (value,label)
     pairs | पहले से बना `<option>` HTML (जैसे catalog की dynamic categories)।"""
     if options is None:
@@ -918,7 +891,8 @@ def filter_select(sel_id, *, options, cap, label, onchange="", full=False):
             % (html.escape(str(v), quote=True), html.escape(str(l)))
             for v, l in options)
     e = lambda x: html.escape(str(x), quote=True)
-    extra = ' data-fdd-full="1"' if full else ""
+    extra = (' data-fdd-full="1"' if full else "") + \
+            (' data-vm-select="1"' if vm else "")
     cb = ' onchange="%s"' % e(onchange) if onchange else ""
     return (f'<select class="filter-dd" id="{e(sel_id)}" data-fdd-cap="{e(cap)}"'
             f' aria-label="{e(label)}" title="{e(label)}"{extra}{cb}>{opts}</select>')
@@ -931,7 +905,8 @@ def filter_buttons(specs, dynamic=None):
     out = ["      " + filter_select(
         sp["id"], options=dynamic.get(sp["id"], sp.get("options")),
         cap=sp.get("cap", sp["id"]), label=sp.get("label", sp["id"]),
-        onchange=sp.get("onchange", ""), full=sp.get("full", False))
+        onchange=sp.get("onchange", ""), full=sp.get("full", False),
+        vm=sp.get("vm", False))
         for sp in specs]
     return '<div class="filters">\n' + "\n".join(out) + "\n    </div>"
 
@@ -1024,6 +999,8 @@ font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 SITE_CSS += VIDEO_CARD_CSS
 SITE_CSS += FILTER_CSS
 SITE_CSS += GROUP_CSS
+# ⚠️ MODE_CSS आख़िर में — Poster/Text का इकलौता नियम-सेट, बाकी सब ऊपर base only
+SITE_CSS += MODE_CSS
 
 
 
@@ -1141,6 +1118,7 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSidebar
 SITE_JS += FILTER_JS
 SITE_JS += VCARD_JS
 SITE_JS += GROUP_JS
+SITE_JS += MODE_JS
 
 # v5 के NAV_MENU जैसा — Database Stats admin-only है
 NAV_MENU = (
@@ -1322,7 +1300,7 @@ SEARCH_BODY = """<div class="search-zone">
 </div>
 
 <div class="main">
-  <div class="vgrid" id="grid"></div>
+  <div class="vgrid vm-grid" id="grid"></div>
   <button class="more" id="more" onclick="load(false)">और दिखाओ ⬇</button>
 </div>
 
@@ -1335,26 +1313,15 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let curQ='',offset=0,loading=false,hasMore=false,seenGroups={};
 let debounce=null;
-let viewMode=localStorage.getItem('ff_view_mode')||'poster';
+/* 🖼️📄 Poster/Text पूरा `web/mode_assets.py` (SITE_JS → window.ViewMode) से —
+   यहाँ कोई mode logic नहीं; सिर्फ़ एक init call। Group filter अलग feature है। */
 let groupMode=localStorage.getItem('ff_group_mode')||'all';
-if(viewMode!=='poster'&&viewMode!=='text')viewMode='poster';
 if(!['all','group','ungroup'].includes(groupMode))groupMode='all';
-
-function applyMode(){
-  const text=viewMode==='text';
-  $('#grid').classList.toggle('mode-text',text);
-  $('#modeSel').value=viewMode;
-  $('#groupSel').value=groupMode;
-  if(!text){
-    // Poster mode पर लौटने तब तक कोई thumbnail request न गई हो → अब लाओ
-    document.querySelectorAll('#grid img[data-src]').forEach(img=>{
-      if(!img.getAttribute('src'))img.src=img.dataset.src;
-    });
-  }
-}
-function setMode(v){viewMode=(v==='text')?'text':'poster';localStorage.setItem('ff_view_mode',viewMode);applyMode()}
+ViewMode.init({storage:ViewMode.storageFor()});
+$('#groupSel').value=groupMode;
 function setGroup(v){groupMode=['all','group','ungroup'].includes(v)?v:'all';
-  localStorage.setItem('ff_group_mode',groupMode);applyMode();doSearch()}
+  localStorage.setItem('ff_group_mode',groupMode);
+  $('#groupSel').value=groupMode;doSearch()}
 function doSearch(){curQ=$('#q').value.trim();load(true)}
 $('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(debounce);doSearch()}});
 $('#q').addEventListener('input',()=>{clearTimeout(debounce);debounce=setTimeout(()=>{
@@ -1363,10 +1330,8 @@ $('#q').addEventListener('input',()=>{clearTimeout(debounce);debounce=setTimeout
 /* 🎴 card का markup/chips/size सब web_assets.VCARD_TEMPLATE + VCARD_CHIP_SPEC से —
    Post/Actor Videos tabs भी बिल्कुल यही vcardHTML()/vcardChips()/vcardSize() चलाते हैं। */
 function imgAttrs(f){
-  const thumbUrl=f.thumb?encodeURI(f.thumb):'';
-  // Text mode में thumbnail request ही न जाए — src तभी लगाओ जब Poster mode हो
-  return (viewMode==='poster'?`src="${thumbUrl}"`:`data-src="${thumbUrl}"`)
-    + ` data-thumb="${thumbUrl}" data-retry="0"`;
+  // src ⇄ data-src का फैसला सिर्फ़ ViewMode (web/mode_assets.py) करता है
+  return ViewMode.imgAttrs(f.thumb?encodeURI(f.thumb):'');
 }
 function cardTokens(f){
   const fid=encodeURIComponent(f.file_id);
@@ -1447,7 +1412,7 @@ document.addEventListener('keydown',e=>{
   e.preventDefault();play(decodeURIComponent(el.dataset.fid),el.dataset.name);
 });
 
-applyMode();
+ViewMode.apply();
 load(true);
 </script>
 __PLAYER_JS__

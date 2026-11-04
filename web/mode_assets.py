@@ -1,0 +1,154 @@
+"""🖼️/📄 POSTER ↔ TEXT VIEW MODE — **इकलौता source** (यही फाइल)।
+
+यहाँ Poster/Text का पूरा behaviour एक बार लिखा है; `/search`, `/posts`,
+`/actors`, group cards, group variants — सब इसी को इस्तेमाल करते हैं।
+**दोनों modes का markup/code बिल्कुल एक ही है**, सिर्फ़ Text mode में
+ thumbnail image (`vm-img`) और image-only सजावट (`vm-ph`/`vm-overlay`)
+CSS से छिप जाती है। कोई अलग HTML branch / अलग render path नहीं।
+
+┌── CHANGE IN ONE PLACE → EVERYWHERE ──────────────────────────────────┐
+│ • नया mode label/chip/option बदलना हो   → `VIEW_MODE_OPTIONS`          │
+│ • Text mode का layout/रंग/spacing बदलना → `MODE_CSS`                   │
+│ • mode state / persistence / img src    → `MODE_JS` (`window.ViewMode`)│
+│ • कोई नया page/card mode-aware करना हो  → नीचे वाले `VM_*` classes      │
+│   markup में जोड़ो (`vm-grid`, `vm-card`, `vm-img`, …); किसी CSS/JS    │
+│   फाइल में कोई नया नियम लिखने की ज़रूरत नहीं।                          │
+└──────────────────────────────────────────────────────────────────────┘
+
+📐 CLASS CONTRACT (mode-agnostic — कोई भी surface opt-in कर सकती है)::
+
+    vm-grid      grid जिस पर Poster/Text लागू हो   (.vgrid, .cat-grid)
+    vm-card      एक card                          (.vcard, .gcard, .cat-card)
+    vm-master    अंदरूनी wrapper, अगर हो           (.gmaster)
+    vm-poster    image + details वाला box         (.vposter, .gposter, .cat-poster-wrap)
+    vm-img       thumbnail `<img>`                (.vimg, .cat-poster)
+    vm-ph        "NO THUMBNAIL" placeholder       (.vph, .cat-ph)
+    vm-overlay   सिर्फ़ image पर दिखने वाली सजावट (.vplay, .cat-grad)
+    vm-details   chips/badges का container        (.vchips, .gbottom)
+    vm-chip      एक अकेला badge/chip              (.cat-badge)
+    vm-size      size badge                      (.vsize)
+    vm-actions   admin Edit/Delete box           (.vadmin, .gadmin, .cat-actions)
+    vm-always    (vm-actions के साथ) Text mode में हमेशा दिखे — सिर्फ़
+                 admin को render होने वाली actions पर लगाओ
+    vm-body      नाम / meta वाला हिस्सा           (.vbody, .gbody, .cat-meta)
+    vm-title     नाम                             (.vtitle, .gtitle, .cat-meta-main)
+
+`MODE_JS` में `ViewMode.imgAttrs(url)` सिर्फ़ `src` ⇄ `data-src` चुनता है,
+इसलिए Text mode में thumbnail request जाती ही नहीं; Poster mode पर लौटते
+ही `data-src` → `src` लग जाता है। Select पर `data-vm-select="1"` लगाओ तो
+state, localStorage और styled dropdown label अपने-आप sync हो जाते हैं।
+"""
+
+# ── 🎛️ Dropdown options — labels/captions भी यहीं (filter specs इसी को पढ़ते हैं)
+VIEW_MODE_OPTIONS = (("poster", "🖼️ Poster"), ("text", "📄 Text"))
+
+
+# ── 🎨 CSS — `mode-text` का इकलौता नियम-सेट ─────────────────────────────
+# ⚠️ SITE_CSS में ये सबसे आख़िर में append होता है, इसलिए `.vgrid`,
+#    `.cat-grid`, `.vposter`, `.cat-poster-wrap` जैसे page-specific base
+#    rules से specificity/order दोनों में ऊपर रहता है। नए page के लिए
+#    सिर्फ़ `vm-*` classes जोड़ो, यहाँ कुछ बदलने की ज़रूरत नहीं।
+MODE_CSS = r"""
+/* ═══════════════ 🖼️📄 POSTER / TEXT — web/mode_assets.py ═══════════════
+   Text mode: सिर्फ़ thumbnail + image-only decoration छिपता है।
+   बाकी सब कुछ (नाम, chips, size, duration, group meta, admin actions)
+   Poster mode जैसा ही, बस inline/compact row में दिखता है। */
+.vm-grid.mode-text{display:block}
+.vm-grid.mode-text .vm-card{display:flex;flex-wrap:wrap;align-items:center;gap:7px;
+padding:9px 11px;margin-bottom:8px;border-radius:8px}
+.vm-grid.mode-text > .vm-card > .vm-master{display:flex;flex-wrap:wrap;
+align-items:center;gap:8px;padding:9px 11px}
+.vm-grid.mode-text .vm-body{order:-1;display:flex;flex-direction:row;
+align-items:center;justify-content:space-between;gap:10px;padding:0;
+flex:1 1 200px;min-width:0}
+.vm-grid.mode-text .vm-title{display:block;flex:1;min-width:0;white-space:nowrap;
+overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:1}
+/* ⚠️ Text mode में सिर्फ़ यही छिपता है — thumbnail से जुड़ी चीज़ें */
+.vm-grid.mode-text .vm-img,
+.vm-grid.mode-text .vm-ph,
+.vm-grid.mode-text .vm-overlay{display:none!important}
+/* poster box → compact inline details strip (chips/size इसी के अंदर हैं) */
+.vm-grid.mode-text .vm-poster{position:static;display:flex;flex-wrap:wrap;
+align-items:center;gap:6px;aspect-ratio:auto;width:auto;flex:1 1 auto;
+min-width:0;padding:0;overflow:visible;background:none;animation:none;cursor:pointer}
+.vm-grid.mode-text .vm-details{position:static;top:auto;left:auto;right:auto;
+bottom:auto;display:flex;flex-wrap:wrap;gap:5px;padding:0;background:none;
+pointer-events:none}
+.vm-grid.mode-text .vm-chip{position:static;top:auto;left:auto;display:inline-flex;
+align-items:center}
+.vm-grid.mode-text .vm-size{position:static;right:auto;bottom:auto;
+display:inline-block;pointer-events:none}
+.vm-grid.mode-text .vm-actions{position:static;top:auto;left:auto;right:auto;
+bottom:auto;gap:5px;padding:0;background:none;flex:0 0 auto;flex-wrap:wrap}
+.vm-grid.mode-text .vm-actions button{flex:0 0 auto;min-width:0;padding:6px 9px}
+/* catalog की admin actions सिर्फ़ ADMIN को render होती हैं ⇒ हमेशा दिखाओ;
+   `.vadmin`/`.gadmin` poster-click पर खुलने वाली ही रहती हैं। */
+.vm-grid.mode-text .vm-actions.vm-always{opacity:1;visibility:visible;
+transform:none;pointer-events:all}
+/* image पर लगने वाले dim pseudo-overlay बंद, details chips हमेशा रहें */
+.vm-grid.mode-text .vm-card.admin-active .vm-poster::after,
+.vm-grid.mode-text .vm-card.gactive .vm-poster::after{display:none}
+.vm-grid.mode-text .vm-card.gactive .vm-details{display:flex}
+@media(hover:hover){.vm-grid.mode-text .vm-card:hover{transform:translateX(3px)}}
+"""
+
+
+# ── ⚙️ JS — mode state का इकलौता engine ──────────────────────────────────
+MODE_JS = r"""/* 🖼️📄 POSTER / TEXT — single source web/mode_assets.py (SITE_JS में) */
+window.ViewMode=(function(){
+  var VALID=['poster','text'], cur='poster', cfg={}, bound=[];
+  function norm(v){return VALID.indexOf(v)>=0?v:'poster';}
+  /* storage key भी यहीं — search / posts / actors अलग-अलग याद रखते हैं */
+  function storageFor(kind){return kind?'ff_cat_mode_'+kind:'ff_view_mode';}
+  function key(){return cfg.storage||storageFor(cfg.kind);}
+  function get(){return cur;}
+  function isText(){return cur==='text';}
+  /* URL पहले से HTML-safe हो; सिर्फ़ src ⇄ data-src चुनते हैं।
+     Text mode में किसी thumbnail की network request नहीं जाती। */
+  function imgAttrs(url){
+    var u=String(url==null?'':url);
+    return (isText()?'data-src="'+u+'"':'src="'+u+'"')+
+           ' data-thumb="'+u+'" data-retry="0"';
+  }
+  function apply(){
+    Array.prototype.forEach.call(document.querySelectorAll('.vm-grid'),function(g){
+      g.classList.toggle('mode-text',isText());
+    });
+    /* styled dropdown का label/value sync — change dispatch नहीं करते,
+       नहीं तो नीचे वाला listener खुद को दोबारा चलाएगा। */
+    Array.prototype.forEach.call(
+      document.querySelectorAll('select[data-vm-select]'),function(s){
+        s.value=cur;
+        if(window.ddSet)window.ddSet(s,cur,false);
+      });
+    if(!isText()){
+      Array.prototype.forEach.call(
+        document.querySelectorAll('.vm-grid img.vm-img[data-src]'),function(img){
+          if(!img.getAttribute('src'))img.src=img.dataset.src;
+        });
+    }
+  }
+  function set(v){
+    cur=norm(v);
+    try{localStorage.setItem(key(),cur);}catch(e){}
+    apply();                       /* CSS-only toggle — कोई re-render नहीं */
+  }
+  function bind(){
+    Array.prototype.forEach.call(
+      document.querySelectorAll('select[data-vm-select]'),function(s){
+        if(bound.indexOf(s)>=0)return;bound.push(s);
+        s.addEventListener('change',function(){set(s.value);});
+      });
+  }
+  function init(o){
+    cfg=o||{};
+    var v=null;try{v=localStorage.getItem(key());}catch(e){}
+    cur=norm(v||'poster');
+    bind();apply();
+  }
+  return {init:init,set:set,get:get,isText:isText,apply:apply,
+          imgAttrs:imgAttrs,storageFor:storageFor,options:VALID.slice()};
+})();
+/* पुराने inline handlers / tests के लिए छोटा alias — logic सिर्फ़ ViewMode में */
+window.setMode=function(v){window.ViewMode.set(v);};
+"""

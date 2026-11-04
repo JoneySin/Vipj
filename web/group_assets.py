@@ -73,27 +73,6 @@ grid-template-columns:1fr}
 @media(min-width:620px){.gcard.open .gvariants{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(min-width:1024px){.gcard.open .gvariants{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .gvariants .vcard:hover{transform:none}
-/* 📝 Text mode: group card पर thumbnail नहीं, पर #number / N QUALITIES /
-   N EPISODES / duration / kind / quality-episode chips सब दिखेंगे। */
-.vgrid.mode-text .gcard{margin-bottom:8px}
-.vgrid.mode-text .gmaster{display:flex;flex-wrap:wrap;align-items:center;
-gap:8px;padding:9px 11px}
-.vgrid.mode-text .gposter{position:static;display:flex;flex-wrap:wrap;
-align-items:center;gap:6px;aspect-ratio:auto;flex:1 1 auto;min-width:0;
-padding:0;overflow:visible;background:none;animation:none}
-.vgrid.mode-text .gposter .vimg,
-.vgrid.mode-text .gposter .vph{display:none!important}
-.vgrid.mode-text .gposter .vchips{position:static;display:flex;flex-wrap:wrap;
-gap:5px;padding:0;pointer-events:none}
-.vgrid.mode-text .gbottom{position:static;left:auto;right:auto;bottom:auto;
-display:flex;flex-wrap:wrap;gap:5px;padding:0;background:none;pointer-events:none}
-.vgrid.mode-text .gbody{order:-1;flex:1 1 200px;min-width:0;padding:0;
-align-items:center}
-.vgrid.mode-text .gcard.gactive .gbottom{display:flex}
-.vgrid.mode-text .gadmin{position:static;left:auto;right:auto;bottom:auto;
-gap:5px;padding:0;background:none;flex:0 0 auto}
-.vgrid.mode-text .gadmin button{flex:0 0 auto;min-width:auto}
-.vgrid.mode-text .gcard.gactive .gposter::after{display:none}
 .gadmin{position:absolute;left:0;right:0;bottom:0;z-index:6;display:flex;gap:5px;
 flex-wrap:wrap;padding:8px;background:rgba(0,0,0,.86);opacity:0;visibility:hidden;
 transform:translateY(8px);transition:opacity .18s,transform .18s,visibility .18s;pointer-events:none}
@@ -180,17 +159,17 @@ transition:opacity .2s;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 
 # Group card का markup — JS `GROUP_CARD_TEMPLATE` से, ठीक VCARD_TEMPLATE की तरह।
 GROUP_CARD_TEMPLATE = (
-    '<div class="gcard{CARD_CLASS}" role="button" tabindex="0" '
+    '<div class="gcard vm-card{CARD_CLASS}" role="button" tabindex="0" '
     'data-gkey="{GKEY}" data-gid="{GID}" aria-label="{NAME} — {COUNT} files">'
-    '<div class="gmaster">'
-    '<div class="gposter" onclick="gPoster(this,event)">'
-    '<img class="vimg" {IMG_ATTRS} alt="" loading="lazy" '
+    '<div class="gmaster vm-master">'
+    '<div class="gposter vm-poster" onclick="gPoster(this,event)">'
+    '<img class="vimg vm-img" {IMG_ATTRS} alt="" loading="lazy" '
     'onload="this.classList.add(\'on\')" onerror="{IMG_ERROR}">'
-    '<div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>'
-    '<div class="vchips">{TOPCHIPS}</div>'
-    '<div class="gbottom">{QCHIPS}</div>{ADMIN}'
+    '<div class="vph vm-ph vm-overlay"><b>▶</b><span>NO THUMBNAIL</span></div>'
+    '<div class="vchips vm-details">{TOPCHIPS}</div>'
+    '<div class="gbottom vm-details">{QCHIPS}</div>{ADMIN}'
     '</div>'
-    '<div class="gbody"><div class="gtitle" onclick="event.stopPropagation();gToggle(this)">{NAME}</div>'
+    '<div class="gbody vm-body"><div class="gtitle vm-title" onclick="event.stopPropagation();gToggle(this)">{NAME}</div>'
     '<button class="gopenbtn" onclick="event.stopPropagation();gToggle(this)">▾ Files</button></div>'
     '</div>'
     '<div class="gvariants">{VARIANTS}</div></div>'
@@ -234,7 +213,7 @@ _GROUP_JS_TPL = r"""/* 🗂️ SHARED GROUP CARD — template web/group_assets.p
     var adm='';
     if(window.IS_GROUP_ADMIN){
       var k=js1(g.key), gd=js1(g.gid||'');
-      adm='<div class="gadmin">'+
+      adm='<div class="gadmin vm-actions">'+
         '<button onclick="event.stopPropagation();gEdit(\''+k+'\')">'+
           (g.manual?'✏️ Edit Group #'+esc(g.num):'💾 Save as Group')+'</button>'+
         '<button onclick="event.stopPropagation();gSelectGroup(\''+k+'\')">☑️ Select files</button>'+

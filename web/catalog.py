@@ -318,7 +318,6 @@ border-radius:50%;animation:catSpin .65s linear infinite}
 @media(min-width:620px){.cat-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}
 @media(min-width:900px){.cat-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}}
 @media(min-width:1024px){.cat-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}}
-.cat-grid.mode-text{display:flex;flex-direction:column;gap:8px}
 .cat-card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;
 cursor:pointer;position:relative;transition:transform .28s cubic-bezier(.25,.8,.25,1),border-color .22s,box-shadow .28s}
 .cat-card:hover{transform:translateY(-6px) scale(1.015);border-color:rgba(229,9,20,.65);
@@ -358,11 +357,6 @@ font:800 11px inherit;font-family:inherit;cursor:pointer;backdrop-filter:blur(10
 .cat-edit{background:rgba(30,30,40,.9);color:#fff}.cat-edit:hover{background:rgba(70,70,85,.95)}
 .cat-del{background:rgba(160,8,8,.85);color:#fff}.cat-del:hover{background:rgba(229,9,20,.95)}
 .cat-edit:active,.cat-del:active{transform:scale(.94)}
-.cat-grid.mode-text .cat-card{display:flex;align-items:center;gap:10px;padding:10px 14px}
-.cat-grid.mode-text .cat-poster-wrap{display:none}
-.cat-grid.mode-text .cat-meta{flex:1;padding:0;flex-direction:row;justify-content:space-between;gap:10px}
-.cat-grid.mode-text .cat-actions{position:static;opacity:1;transform:none;pointer-events:all;padding:0;flex:0 0 150px}
-.cat-grid.mode-text .cat-card:hover{transform:translateX(3px)}
 .cat-skel{aspect-ratio:2/3;border-radius:12px;border:1px solid var(--line);
 background:linear-gradient(90deg,var(--bg3) 0,#2b2b3a 50%,var(--bg3) 100%);
 background-size:200% 100%;animation:catShimmer 1.5s infinite linear}
@@ -597,9 +591,10 @@ const LIMIT = 20;
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let state = {q:'', cat:'all', mode:localStorage.getItem('ff_cat_mode_'+CFG.kind)||'poster',
+let state = {q:'', cat:'all',
              offset:0, page:1, hasNext:false, req:0, items:{}, editing:null, dirty:false,
              flash:null, gallery:[]};
+/* 🖼️📄 Poster/Text state + persistence: web/mode_assets.py → window.ViewMode */
 
 function imgSrc(v){
   if(!v) return '';
@@ -614,28 +609,32 @@ function cardHTML(it){
   const id = esc(it.id), src = imgSrc(it.image);
   const tags = (it.tags||[]).slice(0,2).map(t=>'#'+t).join(' ');
   /* ⚠️ user data कभी inline JS string में नहीं — सिर्फ़ data-id */
-  const admin = ADMIN ? `<div class="cat-actions">
+  const admin = ADMIN ? `<div class="cat-actions vm-actions vm-always">
       <button class="cat-edit" onclick="event.stopPropagation();openEditor(this.closest('.cat-card').dataset.id)">✏️ Edit</button>
       <button class="cat-del" onclick="event.stopPropagation();removeItem(this.closest('.cat-card').dataset.id)">🗑 Delete</button>
     </div>` : '';
-  if(state.mode === 'text'){
-    return `<div class="cat-card enter" data-id="${id}" onclick="openDetail(this.dataset.id)">
-      <div class="cat-meta"><span class="cat-meta-main">${esc(it.title)}</span>
-      <span class="cat-meta-sub">${esc(catLabel(it.category))} · ${esc(tags)}</span></div>${admin}</div>`;
-  }
-  return `<div class="cat-card enter" data-id="${id}" onclick="openDetail(this.dataset.id)">
-    <div class="cat-poster-wrap">
-      ${src ? `<img class="cat-poster" src="${esc(src)}" alt="" loading="lazy"
-          onload="this.classList.add('on')" onerror="this.remove()">` : '<div class="cat-ph">🖼️</div>'}
-      <div class="cat-badge">${esc(catLabel(it.category))}</div>
-      <div class="cat-grad"><div class="cat-name">${esc(it.title)}</div></div>${admin}
+  /* ✅ Poster और Text का markup बिल्कुल एक ही — सिर्फ़ Text mode में
+     `.vm-img`/`.vm-overlay` CSS से छिपते हैं (web/mode_assets.py)।
+     `ViewMode.imgAttrs()` Text mode में src की जगह data-src देता है,
+     इसलिए thumbnail request भी नहीं जाती। कोई अलग render branch नहीं। */
+  const img = src
+    ? `<img class="cat-poster vm-img" ${ViewMode.imgAttrs(esc(src))} alt="" loading="lazy"
+          onload="this.classList.add('on')" onerror="this.remove()">`
+    : '<div class="cat-ph vm-ph vm-overlay">🖼️</div>';
+  return `<div class="cat-card enter vm-card" data-id="${id}" onclick="openDetail(this.dataset.id)">
+    <div class="cat-poster-wrap vm-poster">
+      ${img}
+      <div class="cat-badge vm-chip">${esc(catLabel(it.category))}</div>
+      <div class="cat-grad vm-overlay"><div class="cat-name">${esc(it.title)}</div></div>${admin}
     </div>
-    <div class="cat-meta"><span class="cat-meta-main">${esc(it.title)}</span>
-      <span class="cat-meta-sub">${esc(tags || 'No tags')}</span></div>
+    <div class="cat-meta vm-body"><span class="cat-meta-main vm-title">${esc(it.title)}</span>
+      <span class="cat-meta-sub">${esc(catLabel(it.category))} · ${esc(tags || 'No tags')}</span></div>
   </div>`;
 }
 function skeletons(){
-  return Array.from({length:8},()=>'<div class="cat-skel"></div>').join('');
+  /* vm-overlay ⇒ Text mode में ये image-shaped placeholders भी नहीं दिखते
+     (MODE_CSS का एक नियम, यहाँ कोई अलग mode CSS नहीं) */
+  return Array.from({length:8},()=>'<div class="cat-skel vm-overlay"></div>').join('');
 }
 function emptyHTML(){ return `<div class="cat-empty">${esc(CFG.empty)}<br><span style="font-size:12px">दूसरा keyword या category चुनें।</span></div>`; }
 
@@ -684,8 +683,8 @@ async function load(reset){
     if(my !== state.req) return;
     state.items = {};
     (d.items||[]).forEach(it => state.items[it.id] = it);
-    grid.className = 'cat-grid' + (state.mode === 'text' ? ' mode-text' : '');
     grid.innerHTML = (d.items||[]).length ? (d.items||[]).map(cardHTML).join('') : emptyHTML();
+    ViewMode.apply();   /* नए cards पर mode-text + data-src→src, एक ही जगह से */
     state.hasNext = !!d.has_next;
     $('#catCount').textContent = (d.total||0) + ' entries';
     bump(); updatePg(); reveal(grid);
@@ -1031,15 +1030,9 @@ $('#catQ').addEventListener('keydown', e => {
   if(e.key === 'Enter'){ clearTimeout(window.__catTimer); state.q = e.target.value.trim(); load(true); }
 });
 $('#catCategory').addEventListener('change', e => { state.cat = e.target.value; load(true); });
-$('#catMode').addEventListener('change', e => {
-  state.mode = e.target.value; localStorage.setItem('ff_cat_mode_'+CFG.kind, state.mode);
-  $('#catGrid').className = 'cat-grid' + (state.mode==='text'?' mode-text':'');
-  load(false);
-});
 $('#catPrev').onclick = () => { if(state.offset>0){ state.offset=Math.max(0,state.offset-LIMIT); state.page--; load(false); window.scrollTo(0,0); } };
 $('#catNext').onclick = () => { if(state.hasNext){ state.offset+=LIMIT; state.page++; load(false); window.scrollTo(0,0); } };
-$('#catMode').value = state.mode;
-$('#catGrid').className = 'cat-grid' + (state.mode==='text'?' mode-text':'');
+ViewMode.init({storage:ViewMode.storageFor(CFG.kind)});
 load(true).then(()=>{
   const p = new URLSearchParams(location.search);
   if(p.get('new') && ADMIN) openEditor('');
@@ -1285,7 +1278,7 @@ def _listing_body(kind: str, role: str) -> str:
     </div>
     {filters_html}
   </div>
-  <div class="cat-grid" id="catGrid"></div>
+  <div class="cat-grid vm-grid" id="catGrid"></div>
   <div class="cat-pg" id="catPg">
     <button id="catPrev">◀ Prev</button><span id="catPage">Page 1</span><button id="catNext">Next ▶</button>
   </div>
