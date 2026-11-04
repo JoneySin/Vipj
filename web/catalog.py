@@ -79,7 +79,6 @@ CATALOGS = {
         "kind": "posts",
         "label": "Posts",
         "icon": "📝",
-        "page": "Content Posts",
         "singular": "Post",
         "base": "/posts",
         "detail": "/post/",
@@ -116,7 +115,6 @@ CATALOGS = {
         "kind": "actors",
         "label": "Directory",
         "icon": "🎭",
-        "page": "Directory Profiles",
         "singular": "Profile",
         "base": "/actors",
         "detail": "/actor/",
@@ -290,10 +288,9 @@ def normalize(kind: str, raw: dict) -> dict:
 # ─────────────────────────────────────────────────────────────
 CATALOG_CSS = """
 .cat-wrap{max-width:1200px;margin:0 auto}
-.cat-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
-.cat-title{font-size:24px;font-weight:900;flex:1;min-width:170px;letter-spacing:-.5px}
+/* 📄 कोई page-heading नहीं — सब कुछ नीचे वाले एक `.cat-box` में */
 .cat-count{font-size:11px;font-weight:800;color:var(--mut);background:var(--bg3);
-border:1px solid var(--line);border-radius:20px;padding:5px 11px;white-space:nowrap}
+border:1px solid var(--line);border-radius:20px;padding:5px 11px;white-space:nowrap;flex:0 0 auto}
 .cat-count.bump{animation:catPop .5s cubic-bezier(.34,1.56,.64,1)}
 .cat-btn{background:var(--red);color:#fff;border:0;border-radius:9px;padding:10px 18px;
 font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;transition:transform .16s,background .16s,box-shadow .16s}
@@ -301,8 +298,12 @@ font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;transition:tra
 .cat-btn:active{transform:scale(.96)}
 .cat-btn.ghost{background:var(--bg3);border:1px solid var(--line);color:var(--txt)}
 .cat-btn.ghost:hover{background:var(--bg2);border-color:var(--red);box-shadow:none}
-.cat-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--card);
-border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:20px}
+/* 🧩 GitHub reference (v5 `.search-box`) जैसा **एक card-box**: search bar +
+   filter buttons + ✨ New Post/Profile + count — desktop और mobile दोनों पर।
+   📱 mobile पर chrome हटाने वाला पुराना override अब नहीं है (वही box रहता है)। */
+.cat-toolbar.cat-box{display:flex;gap:10px;flex-wrap:wrap;align-items:center;
+background:var(--card);border:1px solid var(--line);border-radius:12px;
+padding:16px;margin-bottom:25px;box-shadow:0 4px 15px rgba(0,0,0,.10)}
 /* ✨ New Post / New Profile: 🖥️ desktop (>760px) पर search के साथ एक ही लाइन।
    nowrap + `.cat-search{min-width:0}` ⇒ search ज़रूरत के हिसाब से सिकुड़ता है,
    filters + create button अपनी जगह रहते हैं, कोई horizontal overflow नहीं।
@@ -1274,18 +1275,18 @@ def _listing_body(kind: str, role: str) -> str:
     #    सिर्फ़ categories dynamic हैं, बाकी markup कहीं दोहराया नहीं गया।
     filters_html = filter_buttons(CATALOG_FILTERS,
                                   {"catCategory": _category_options(kind)})
+    # 🧩 GitHub reference (v5 `.search-box`) जैसा: **एक ही card-box** में search,
+    #    filter buttons और ✨ New Post/Profile (plus छोटा count)। कोई अलग
+    #    "Content Posts" / "Directory Profiles" वाला page-heading नहीं।
     return f"""<div class="main"><div class="cat-wrap">
-  <div class="cat-head">
-    <div class="cat-title">{html.escape(cfg['icon'])} {html.escape(cfg['page'])}</div>
-    <span class="cat-count" id="catCount">…</span>
-  </div>
-  <div class="cat-toolbar">
+  <div class="cat-toolbar cat-box" role="search">
     <div class="cat-search" id="catSearch">
       <input type="search" id="catQ" placeholder="{html.escape(cfg['placeholder'])}" autocomplete="off">
       <div class="cat-spin"></div>
     </div>
     {filters_html}
     {create_btn}
+    <span class="cat-count" id="catCount">…</span>
   </div>
   <div class="cat-grid vm-grid" id="catGrid"></div>
   <div class="cat-pg" id="catPg">

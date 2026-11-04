@@ -44,22 +44,39 @@ class TestGroupNameLabel(unittest.TestCase):
 
 class TestCreateButtonPlacement(unittest.TestCase):
 
-    def test_03_button_is_in_toolbar_not_in_head(self):
+    def test_03_button_is_in_the_single_box(self):
         body = re.search(r"def _listing_body\([\s\S]*?\n\"\"\"", CATALOG)
         self.assertIsNotNone(body)
         html = body.group(0)
         self.assertIn('class="cat-btn cat-create"', html)
         self.assertIn("openEditor(", html)
         self.assertIn("✨ New ", html)
-        head = html.split('<div class="cat-head">')[1].split(
-            '<div class="cat-toolbar">')[0]
-        self.assertNotIn("create_btn", head, "button अब भी cat-head में है")
-        self.assertIn("catCount", head)
-        toolbar = html.split('<div class="cat-toolbar">')[1].split("\n  </div>")[0]
-        self.assertIn("{filters_html}", toolbar)
-        self.assertIn("{create_btn}", toolbar)
-        # DOM order: search → filters → create (mobile पर filters के नीचे)
+        self.assertNotIn('<div class="cat-head">', html,
+                         "page-heading वापस आ गया")
+        self.assertIn('<div class="cat-toolbar cat-box"', html)
+        toolbar = html.split('<div class="cat-toolbar cat-box"')[1].split(
+            "\n  </div>")[0]
+        for token in ("cat-search", "{filters_html}", "{create_btn}", 'id="catCount"'):
+            self.assertIn(token, toolbar, f"box में {token} नहीं है")
+        # DOM order: search → filters → create → count
         self.assertLess(toolbar.index("{filters_html}"), toolbar.index("{create_btn}"))
+        self.assertLess(toolbar.index("{create_btn}"), toolbar.index('id="catCount"'))
+
+    def test_06_no_page_heading_one_search_box(self):
+        """v5 `.search-box` जैसा: कोई title नहीं, सब कुछ एक card-box में।"""
+        self.assertNotIn(".cat-head{", CATALOG)
+        self.assertNotIn(".cat-title{", CATALOG)
+        self.assertNotIn('"page": "Content Posts"', CATALOG)
+        self.assertNotIn('"page": "Directory Profiles"', CATALOG)
+        self.assertIn(".cat-toolbar.cat-box{", CATALOG)
+        self.assertIn("background:var(--card)", CATALOG)
+        self.assertIn("box-shadow:0 4px 15px rgba(0,0,0,.10)", CATALOG)
+        self.assertIn("padding:16px;margin-bottom:25px", CATALOG)
+        # mobile वाला पुराना "chrome हटाओ" override अब नहीं होना चाहिए
+        self.assertNotIn("background:transparent;border:0;border-radius:0;padding:0",
+                         WEB_ASSETS, "mobile पर box फिर से गायब हो गया")
+        self.assertIn(".cat-toolbar.cat-toolbar .cat-count{", WEB_ASSETS,
+                      "count उसी box के अंदर रहना चाहिए")
 
     def test_04_desktop_same_line_as_search(self):
         self.assertIn(".cat-toolbar .cat-create{flex:0 0 auto;white-space:nowrap}", CATALOG)

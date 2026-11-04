@@ -692,11 +692,14 @@ overflow:hidden!important}
 .qwrap,.cat-toolbar .cat-search{flex:1 1 100%}
 .filters{flex:1 1 100%}
 .filters .fdd{flex:1 1 0;min-width:0}
-/* ⚠️ CATALOG_CSS का <style> head के बाद आता है → specificity (0,2,0) ज़रूरी */
-.cat-toolbar.cat-toolbar{background:transparent;border:0;border-radius:0;padding:0;gap:10px}
+/* ✅ v5 `.search-box` जैसा: mobile पर भी **एक ही box** (card + border + padding)
+   बरकरार — सिर्फ़ अंदर के controls तीन लाइनों में बँटते हैं, chrome नहीं हटता। */
 /* ✨ New Post / New Profile: filter buttons वाली row के ठीक नीचे पूरी लाइन।
    (0,3,0) ⇒ body में बाद में आने वाला CATALOG_CSS `.cat-toolbar .cat-create` हरा न पाए। */
 .cat-toolbar.cat-toolbar .cat-create{flex:1 1 100%;width:100%}
+/* count उसी box के अंदर सबसे नीचे, बिल्कुल हल्का (कोई अलग heading नहीं) */
+.cat-toolbar.cat-toolbar .cat-count{flex:1 1 100%;text-align:right;
+background:none;border:0;padding:2px 0 0}
 }
 @media(prefers-reduced-motion:reduce){.fdd-menu{animation:none}.fdd-btn,.fdd-arrow{transition:none}}
 """
