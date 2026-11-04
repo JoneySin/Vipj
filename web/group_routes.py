@@ -261,6 +261,9 @@ async def group_cards(cards, normalize=None, auto_join=True):
             chips, episodes = episode_chips(variants, emap)
             variants.sort(key=lambda v: episode_label(v.get("el"), 0)[1])
             qualities = 0
+            # 📺 हर episode का अपना अलग duration होता है → group पर एक
+            #    duration दिखाना गलत है। Individual `.vcard` पर दिखेगा।
+            duration = ""
         else:
             variants.sort(key=lambda v: v["qh"])
             chips, seen = [], {}
@@ -276,6 +279,12 @@ async def group_cards(cards, normalize=None, auto_join=True):
                     chips.append(seen[lab])
             episodes = 0
             qualities = len(variants)
+            # 🎞️ एक ही फाइल की अलग-अलग qualities ⇒ duration सबका एक जैसा।
+            #    अगर कभी अलग पड़ जाएँ तो सबसे आम (mode) duration चुनें,
+            #    किसी एक random file का नहीं।
+            durs = [str(v.get("duration") or "").strip() for v in variants]
+            durs = [x for x in durs if x]
+            duration = max(set(durs), key=durs.count) if durs else ""
         gid = str(g["_id"]) if g else ""
         rep = variants[-1]
         if g:
@@ -294,9 +303,11 @@ async def group_cards(cards, normalize=None, auto_join=True):
             "name": title,
             "count": len(variants),
             "type": rep.get("type", "VIDEO"),
-            # ⚠️ group card पर किसी एक फाइल का size/duration नहीं — अलग-अलग
-            #    files/episodes का अलग size और अलग duration होता है। वे chips
-            #    expand करने पर हर variant के अपने shared `.vcard` पर दिखते हैं।
+            # ⚠️ group card पर किसी एक फाइल का SIZE कभी नहीं — members के
+            #    अलग-अलग size होते हैं (expand पर हर `.vcard` पर अपना size)।
+            #    DURATION सिर्फ़ qualities-group पर: एक ही फाइल है तो साझा
+            #    duration सही है; series/episode group पर खाली रहता है।
+            "duration": duration,
             "kind": gkind,
             "qualities": qualities,
             "episodes": episodes,

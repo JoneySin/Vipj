@@ -40,6 +40,7 @@ font-size:10px;font-weight:800;padding:2px 8px;line-height:1.5}
 .gqchip i{font-style:normal;color:#e0f2fe;margin-left:2px}
 .gqchip.more{background:#3f3f46;color:#e4e4e7;border-color:#71717a}
 /* 🎞️ एक फाइल की qualities  ⇄  📺 सीरीज के episodes */
+.vtag.gdur{background:rgba(20,83,45,.85);color:#bbf7d0;border-color:rgba(187,247,208,.4)}
 .gkind{background:rgba(0,0,0,.78);backdrop-filter:blur(6px);border-radius:5px;
 padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255,.14)}
 .gkind.quality{color:#fde68a;border-color:rgba(253,230,138,.45)}
@@ -198,11 +199,15 @@ _GROUP_JS_TPL = r"""/* 🗂️ SHARED GROUP CARD — template web/group_assets.p
         (c.count>1?' <i>x'+c.count+'</i>':'')+'</span>';
     }).join('');
     if(list.length>MAX)chips+='<span class="gqchip more">+'+esc(list.length-MAX)+'</span>';
-    /* ⚠️ group card पर किसी एक फाइल का size/duration नहीं दिखाते — group में
-       अलग-अलग size (और episodes में अलग duration) होते हैं। ये chips सिर्फ़
-       GROUP-LEVEL हैं: #number, कितनी qualities / कितने episodes, type. */
+    /* 🎞️ एक ही फाइल की qualities → साझा DURATION दिखाना सही है।
+       📺 series/episode-mark वाले group → हर episode का अलग duration, इसलिए
+       group पर duration बिल्कुल नहीं (चाहे payload में कोई पुराना value हो)।
+       SIZE किसी भी group पर नहीं — members के अलग-अलग size होते हैं;
+       expand पर हर variant के अपने shared `.vcard` पर size/duration मिलता है। */
+    var showDur=!isEp&&g.duration;
     var top='<span class="vtag blue">'+(g.manual?'#'+esc(g.num)+' GROUP':'GROUP')+'</span>'+
             '<span class="vtag gold">'+esc(n)+(isEp?' EPISODES':' QUALITIES')+'</span>'+
+            (showDur?'<span class="vtag gdur">⏱ '+esc(g.duration)+'</span>':'')+
             '<span class="gkind '+(isEp?'series':'quality')+'">'+
               (isEp?'📺 SERIES':'🎞️ SINGLE TITLE')+'</span>'+
             (g.type?'<span class="vtag">'+esc(g.type)+'</span>':'');
