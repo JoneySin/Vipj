@@ -20,7 +20,8 @@ styled button + custom options menu में upgrade कर देता है
 बाद में आने वाले selects भी)। Native select hidden रहकर `value`/`change` बनाए
 रखता है, इसलिए पुराना JS बिल्कुल नहीं बदलना पड़ता। **Dropdown का पूरा UI इसी एक
 जगह है** — बदलाव एक file में करो, `/search`, `/posts`, `/actors`, editor modals
-सब में दिखेगा।
+सब में दिखेगा। Mobile पर दोनों toolbar एक ही `.filters` row इस्तेमाल करते हैं:
+search bar ऊपर, दो बराबर filter buttons उसके ठीक नीचे।
 
 🎴 `VIDEO_CARD_CSS` एक **shared video card** है — `/search` की grid और
 Post/Actor Videos tabs बिल्कुल वही `.vcard`/`.vgrid` markup वाली cards,
@@ -547,9 +548,16 @@ opacity:0!important;pointer-events:none!important;clip:rect(0,0,0,0)!important;
 overflow:hidden!important}
 /* container layout भी यहीं — एक जगह बदलाव सब pages पर दिखे */
 .filters .fdd{min-width:132px}
-.cat-toolbar .fdd{min-width:152px}
+/* 📱 mobile: /search और /posts–/actors दोनों में बिल्कुल एक ही पैटर्न —
+   search bar अपनी लाइन पर, उसी `.filters` row में दोनों filter buttons
+   नीचे एक ही लाइन पर बराबर चौड़ाई के। Catalog का card chrome भी हटाओ
+   ताकि वह main page की search-zone जैसा ही लगे। */
 @media(max-width:760px){
-.filters .fdd,.cat-toolbar .fdd{flex:1 1 0;min-width:0}
+.filters .fdd{flex:1 1 0;min-width:0}
+/* ⚠️ CATALOG_CSS का <style> head के बाद आता है — इसलिए specificity (0,2,0)
+   चाहिए, वरना catalog की base `.cat-toolbar/.cat-search` rules जीत जाती हैं। */
+.cat-toolbar.cat-toolbar{background:transparent;border:0;border-radius:0;padding:0;gap:10px}
+.cat-toolbar .cat-search{flex:1 1 100%}
 }
 @media(prefers-reduced-motion:reduce){.fdd-menu{animation:none}.fdd-btn,.fdd-arrow{transition:none}}
 """

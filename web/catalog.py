@@ -1284,10 +1284,12 @@ def _listing_body(kind: str, role: str) -> str:
       <input type="search" id="catQ" placeholder="{html.escape(cfg['placeholder'])}" autocomplete="off">
       <div class="cat-spin"></div>
     </div>
-    <select class="filter-dd" id="catCategory" data-fdd-cap="Category" aria-label="Category" title="Category">{_category_options(kind)}</select>
-    <select class="filter-dd" id="catMode" data-fdd-cap="View mode" aria-label="Mode" title="Mode">
-      <option value="poster">🖼️ Poster</option><option value="text">📄 Text</option>
-    </select>
+    <div class="filters">
+      <select class="filter-dd" id="catCategory" data-fdd-cap="Category" aria-label="Category" title="Category">{_category_options(kind)}</select>
+      <select class="filter-dd" id="catMode" data-fdd-cap="View mode" aria-label="Mode" title="Mode">
+        <option value="poster">🖼️ Poster</option><option value="text">📄 Text</option>
+      </select>
+    </div>
   </div>
   <div class="cat-grid" id="catGrid"></div>
   <div class="cat-pg" id="catPg">
