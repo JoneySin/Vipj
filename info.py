@@ -138,6 +138,14 @@ THUMB_PROBE_ATTEMPTS = max(1, min(int(environ.get('THUMB_PROBE_ATTEMPTS', '5')),
 # FLOOD_WAIT में Telegram के बताए seconds + यह extra buffer
 THUMB_FLOOD_EXTRA = max(0, int(environ.get('THUMB_FLOOD_EXTRA', '10')))
 
+# ── 🛡️ REAL-THUMBNAIL VALIDATION (/warmup_thumbs में fake "NO IMAGE" रोकना) ──
+# Telegram कभी-कभी generated placeholder / 1×1 pixel / सादा frame भेज देता है।
+# ये thresholds pass न करने वाली image कभी `TG_ID:` में save नहीं होती — NO_THUMB.
+THUMB_MIN_BYTES = int(environ.get('THUMB_MIN_BYTES', '512'))
+THUMB_MIN_DIM = int(environ.get('THUMB_MIN_DIM', '48'))          # px (w और h दोनों)
+# RGB channel stddev — सादा/खाली placeholder ≈ 0, असली video frame ≫ 6
+THUMB_MIN_STDDEV = float(environ.get('THUMB_MIN_STDDEV', '6.0'))
+
 # Purane (unsigned) /watch/<id> links deploy se pehle bheje gaye ho sakte hain.
 # Default False = sirf signed links chalengi. True karke backward compatibility on karo.
 ALLOW_UNSIGNED_LINKS = is_enabled('ALLOW_UNSIGNED_LINKS', False)

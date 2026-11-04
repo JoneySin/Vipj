@@ -303,6 +303,7 @@ async def update_file_meta(file_id: str, meta: dict) -> bool:
 WEB_EDITABLE_FIELDS = frozenset({
     "file_name", "caption", "quality", "duration", "width", "height",
     "thumb_url", "thumb_file_id", "thumb_source", "is_thumb_permanent",
+    "thumb_verified", "thumb_width", "thumb_height",
 })
 
 
@@ -491,6 +492,11 @@ async def save_file(media) -> str:
         media_meta = {
             "thumb_url": f"TG_ID:{thumb_file_id}" if thumb_file_id else "",
             "thumb_file_id": thumb_file_id,   # legacy alias (सिर्फ ID, कोई bytes नहीं)
+            # ⚠️ Index-time ID अभी UNVERIFIED है — bytes कभी download/validate नहीं
+            # हुए। `/warmup_thumbs` (या पहली /api/thumb probe) इसे verify करके
+            # `thumb_verified: True` लिखेगा। तब तक fake "NO IMAGE" poster को
+            # final मानकर web पर serve नहीं किया जाता।
+            "thumb_verified": False,
             "duration": int(getattr(media, "duration", 0) or 0),
             "file_type": "video" if type(media).__name__.lower() == "video" else "document",
             "mime_type": getattr(media, "mime_type", None) or "",

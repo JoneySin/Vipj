@@ -248,6 +248,8 @@ async def api_file_thumb(req):
         "thumb_file_id": str(thumb_fid),
         "thumb_source": "web",
         "is_thumb_permanent": True,
+        # Admin ने असली image upload की है ⇒ warmup इसे overwrite/verify न करे
+        "thumb_verified": True,
     })
     if not updated:
         return _json({"ok": False, "error": "Save नहीं हुआ"}, 500)
@@ -271,6 +273,7 @@ async def api_file_thumb_reset(req):
     updated = await ia.update_file_fields(fid, {
         "thumb_url": "", "thumb_file_id": "", "thumb_source": "",
         "is_thumb_permanent": False,
+        "thumb_verified": False,     # serial probe से दोबारा असली thumbnail निकलेगी
     })
     if not updated:
         return _json({"ok": False, "error": "Reset नहीं हुआ"}, 500)

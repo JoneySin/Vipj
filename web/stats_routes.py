@@ -161,7 +161,7 @@ async def stats_page(req):
     <div class="st-card anim-card"><div class="st-bar" style="background:var(--red)"></div>
       <div class="st-label">⏳ Thumb Warmup Queue</div>
       <div class="st-val" style="color:var(--red)" data-count="{s['thumb_queue']['queued']}" data-delay="400">{s['thumb_queue']['queued']:,}</div>
-      <div class="st-sub">पहली बार posters <b>एक-एक करके</b> निकल रहे हैं · {s['thumb_queue']['ok']:,} locked · {s['thumb_queue']['no_thumb']:,} NO_THUMB</div></div>
+      <div class="st-sub">posters <b>एक-एक करके</b> · {s['thumb_queue'].get('ok', 0):,} verified · {s['thumb_queue'].get('meta', 0):,} meta saved · {s['thumb_queue'].get('rejected', 0):,} fake rejected · {s['thumb_queue'].get('no_thumb', 0):,} NO_THUMB</div></div>
 
     <div class="st-card anim-card"><div class="st-bar" style="background:#e50914"></div>
       <div class="st-label">📝 Content Posts</div>
