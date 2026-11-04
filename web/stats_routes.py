@@ -84,6 +84,9 @@ async def _stats_numbers():
     # 📚 Posts + Directory counts (v5 के "Content Posts / Universal Directory" cards)
     catalog = await _safe(catalog_store.counts(), {"posts": 0, "actors": 0})
     groups = await _safe(group_store.count(), 0)
+    # 🎞️ qualities ⇄ 📺 episodes — किस तरह के कितने groups, कुल कितने episodes
+    gkinds = await _safe(group_store.kind_counts(),
+                         {"quality_groups": 0, "episode_groups": 0, "episodes_total": 0})
     return {
         "total_files": total_files,
         "recent_files": recent_files,
@@ -95,6 +98,9 @@ async def _stats_numbers():
         "posts": catalog.get("posts", 0),
         "actors": catalog.get("actors", 0),
         "groups": groups,
+        "quality_groups": gkinds.get("quality_groups", 0),
+        "episode_groups": gkinds.get("episode_groups", 0),
+        "episodes_total": gkinds.get("episodes_total", 0),
     }
 
 
@@ -179,7 +185,7 @@ async def stats_page(req):
     <div class="st-card anim-card"><div class="st-bar" style="background:#7dd3fc"></div>
       <div class="st-label">🗂️ Permanent Groups</div>
       <div class="st-val" style="color:#7dd3fc" data-count="{s['groups']}" data-delay="520">{s['groups']:,}</div>
-      <div class="st-sub">Saved quality groups with their own group id / #number</div></div>
+      <div class="st-sub">🎞️ {s['quality_groups']:,} quality groups · 📺 {s['episode_groups']:,} series groups ({s['episodes_total']:,} episodes) — हर group का अपना id / #number</div></div>
   </div>
 </div>{_STATS_JS}'''
 

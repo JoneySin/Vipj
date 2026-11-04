@@ -29,8 +29,11 @@ from aiohttp import web
 import info as _info
 from info import BIN_CHANNEL, THUMB_BROWSER_CACHE
 from utils import temp
-from database import group_db
-from database.group_db import store, title_key, group_title, quality_label
+from database.group_db import (
+    store, title_key, group_title, quality_label, episode_chips,
+    episode_label, detect_episodes, guess_kind, normal_kind,
+    clean_episode_map, group_kind_meta, KIND_QUALITIES, KIND_EPISODES,
+)
 from web.web_assets import get_auth
 from web.thumb_engine import get_image_bytes, image_content_type, thumb_version
 from web.image_validate import is_image_magic
@@ -102,6 +105,8 @@ def _group_public(g):
         "thumb_fid": str(g.get("thumb_fid") or ""),
         "thumb_url": str(g.get("thumb_url") or ""),
         "auto_created": bool(g.get("auto_created")),
+        # 🧮 type/episode गिनती का एक ही source `database/group_db.py`
+        **group_kind_meta(g),
         "updated_at": int(g.get("updated_at") or 0),
     }
 
@@ -244,15 +249,33 @@ async def group_cards(cards, normalize=None, auto_join=True):
             v["qh"] = h
             v["gid"] = str(g["_id"]) if g else ""
             v["gnum"] = g.get("num", "") if g else ""
-        variants.sort(key=lambda v: v["qh"])
-        chips, seen = [], {}
-        for v in variants:
-            lab = v["ql"] or "?"
-            if lab in seen:
-                seen[lab]["count"] += 1
-            else:
-                seen[lab] = {"label": lab, "count": 1}
-                chips.append(seen[lab])
+        # 🎞️ एक ही फाइल की qualities ⇄ 📺 सीरीज के अलग episodes
+        # Saved group पर admin की चुनी `kind`; auto bucket पर नामों से अंदाज़ा।
+        if g:
+            gkind = normal_kind(g.get("kind"))
+            emap = clean_episode_map(g.get("episode_map"))
+        else:
+            gkind = guess_kind([v.get("name") for v in variants])
+            emap = {}
+        if gkind == KIND_EPISODES:
+            chips, episodes = episode_chips(variants, emap)
+            variants.sort(key=lambda v: episode_label(v.get("el"), 0)[1])
+            qualities = 0
+        else:
+            variants.sort(key=lambda v: v["qh"])
+            chips, seen = [], {}
+            for i, v in enumerate(variants):
+                fid = str(v.get("file_id") or "")
+                v["el"] = emap.get(fid) or episode_label(v.get("name"), i)[0]
+            for v in variants:
+                lab = v["ql"] or "?"
+                if lab in seen:
+                    seen[lab]["count"] += 1
+                else:
+                    seen[lab] = {"label": lab, "count": 1}
+                    chips.append(seen[lab])
+            episodes = 0
+            qualities = len(variants)
         gid = str(g["_id"]) if g else ""
         rep = variants[-1]
         if g:
@@ -271,8 +294,13 @@ async def group_cards(cards, normalize=None, auto_join=True):
             "name": title,
             "count": len(variants),
             "type": rep.get("type", "VIDEO"),
-            "duration": rep.get("duration", ""),
-            "size": rep.get("size", ""),
+            # ⚠️ group card पर किसी एक फाइल का size/duration नहीं — अलग-अलग
+            #    files/episodes का अलग size और अलग duration होता है। वे chips
+            #    expand करने पर हर variant के अपने shared `.vcard` पर दिखते हैं।
+            "kind": gkind,
+            "qualities": qualities,
+            "episodes": episodes,
+            "episode_map": emap,
             "thumb": _group_thumb_url(g or {}, variants),
             "custom_thumb": bool(g and str(g.get("thumb_url") or "").startswith("TG_ID:")),
             "chips": chips,
@@ -323,6 +351,9 @@ async def api_group_save(req):
     gid = _fid(data.get("group_id") or "")
     name = str(data.get("name") or "").strip()[:200]
     auto_keys = sorted({title_key(n) for _, n in items if title_key(n)})
+    raw_kind = data.get("kind")
+    kind = normal_kind(raw_kind) if raw_kind else guess_kind([n for _, n in items])
+    raw_emap = data.get("episode_map")
     # ⚠️ Side-effect (बाकी groups से निकालना) से पहले target मौजूद है या नहीं देखो
     if gid and not await store.get(gid):
         return _json({"ok": False, "error": "Group नहीं मिला"}, 404)
@@ -337,10 +368,24 @@ async def api_group_save(req):
         # ✏️ Edit modal से मौजूदा group में files जोड़ते वक्त नया नाम भी आता है।
         #    पहले इसे ignore कर दिया जाता था → rename कभी DB में नहीं पहुँचता था।
         #    खाली नाम = कोई rename नहीं (किसी दूसरे group में सिर्फ़ files जोड़ना)।
+        upd = {}
         if name and name != str(g.get("name") or ""):
-            g = await store.update(gid, {"name": name})
+            upd["name"] = name
+        # Type न भेजा हो तो group की मौजूदा पसंद बरकरार रखें।
+        if raw_kind is None:
+            kind = normal_kind(g.get("kind"))
+        # Edit modal से group type भी बदल सकता है (qualities ⇄ episodes)
+        if raw_kind is not None or "episode_map" in data:
+            upd["kind"] = kind
+            if "episode_map" in data:
+                upd["episode_map"] = clean_episode_map(raw_emap)
+        if upd:
+            g = await store.update(gid, upd)
     else:
-        g = await store.create(name=name, items=items, auto_keys=auto_keys)
+        g = await store.create(name=name, items=items, auto_keys=auto_keys,
+                               kind=kind,
+                               episode_map=clean_episode_map(raw_emap)
+                               or detect_episodes(items))
     await store.mark_files(fids, str(g["_id"]))
     await store.cleanup_empty()
     return _json({"ok": True, "group": _group_public(g),
@@ -378,6 +423,13 @@ async def api_group_update(req):
         fields["auto_keys"] = sorted({title_key(k) for k in data["auto_keys"] if title_key(k)})
     if data.get("clear_custom"):
         fields["thumb_url"] = ""
+    if "kind" in data:
+        k = str(data.get("kind") or "").strip().lower()
+        if k not in (KIND_QUALITIES, KIND_EPISODES):
+            return _json({"ok": False, "error": "Group type गलत है"}, 400)
+        fields["kind"] = k
+    if "episode_map" in data:
+        fields["episode_map"] = clean_episode_map(data.get("episode_map"))
     updated = await store.update(gid, fields)
     return _json({"ok": True, "group": _group_public(updated)})
 
@@ -505,7 +557,9 @@ async def _scan_all_groups():
                 continue
             g = await store.create(name=group_title(cand[0][1]) or cand[0][1],
                                    items=cand, auto_keys=[k], auto_created=True,
-                                   scan_created=True)
+                                   scan_created=True,
+                                   kind=guess_kind([n for _, n in cand]),
+                                   episode_map=detect_episodes(cand))
             await store.update(str(g["_id"]), {"scanned_at": now})
             fix_set[str(g["_id"])].extend(i for i, _ in cand)
             st["created"] += 1

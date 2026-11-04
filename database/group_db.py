@@ -115,6 +115,131 @@ def quality_label(res, name="", quality=None):
     return (f"{h}p", h) if h else ("?", 0)
 
 
+# ── 📺 EPISODE DETECTION + GROUP KIND ────────────────────────────────
+# कुछ groups एक ही फाइल की अलग-अलग qualities हैं, कुछ एक सीरीज के अलग-अलग
+# episodes. दोनों को अलग पहचान देनी है ताकि group card "3 QUALITIES" या
+# "12 EPISODES" सही दिखाए (और एक फाइल का size/duration न दिखाए)।
+KIND_QUALITIES = "qualities"
+KIND_EPISODES = "episodes"
+KINDS = (KIND_QUALITIES, KIND_EPISODES)
+
+_S_E_RE = re.compile(r"\bS(\d{1,2})\s*[._\- ]?E(\d{1,3})\b", re.I)
+_X_RE = re.compile(r"(?<!\d)(\d{1,2})[xX](\d{2,3})(?!\d)")
+_E_RE = re.compile(r"\bE(?:PISODE)?\s*[._\- ]?(\d{1,3})\b", re.I)
+_EP_RE = re.compile(r"\b(?:Ep|Episode|Part|Pt|Chapter|Ch)\s*[._\- ]?(\d{1,3})\b", re.I)
+_NUM_OF_RE = re.compile(r"\b(\d{1,3})\s*(?:of|/)\s*\d{1,3}\b", re.I)
+
+
+def episode_label(name, fallback=0):
+    """File name → `('S01E03'|'E03'|'EP 3', episode_number)`.
+
+    Admin चाहे तो `episode_map` से कोई भी label override कर सकता है।
+    कोई marker न मिले तो क्रम से `E01/E02/…` (fallback index) देता है,
+    ताकि हर episode की अपनी chip बने और गिनती सही रहे।
+    """
+    text = str(name or "")
+    m = _S_E_RE.search(text)
+    if m:
+        return f"S{int(m.group(1)):02d}E{int(m.group(2)):02d}", int(m.group(2))
+    m = _X_RE.search(text)
+    if m:
+        return f"S{int(m.group(1)):02d}E{int(m.group(2)):02d}", int(m.group(2))
+    m = _E_RE.search(text) or _EP_RE.search(text) or _NUM_OF_RE.search(text)
+    if m:
+        n = int(m.group(1))
+        return f"E{n:02d}", n
+    n = int(fallback or 0) + 1
+    return f"E{n:02d}", n
+
+
+def detect_episodes(items):
+    """`[(fid, name), …]` → `{fid: label}` — सिर्फ़ वही जहाँ नाम में episode मिला।"""
+    out = {}
+    for i, (fid, name) in enumerate(items or []):
+        text = str(name or "")
+        if (_S_E_RE.search(text) or _X_RE.search(text) or _E_RE.search(text)
+                or _EP_RE.search(text) or _NUM_OF_RE.search(text)):
+            out[str(fid)] = episode_label(name, i)[0]
+    return out
+
+
+def guess_kind(names):
+    """नामों से अंदाज़ा: 2+ अलग episode numbers → सीरीज, वरना qualities।"""
+    nums = set()
+    for i, n in enumerate(names or []):
+        text = str(n or "")
+        if (_S_E_RE.search(text) or _X_RE.search(text) or _E_RE.search(text)
+                or _EP_RE.search(text) or _NUM_OF_RE.search(text)):
+            nums.add(episode_label(text, i)[1])
+    return KIND_EPISODES if len(nums) >= 2 else KIND_QUALITIES
+
+
+def normal_kind(value, default=KIND_QUALITIES):
+    v = str(value or "").strip().lower()
+    return v if v in KINDS else default
+
+
+def clean_episode_map(value):
+    """User-दिया `{fid: 'E05'}` — सिर्फ़ safe ids/लंबाई, कोई markup नहीं।"""
+    if not isinstance(value, dict):
+        return {}
+    out = {}
+    for fid, lab in list(value.items())[:200]:
+        fid = str(fid).strip()
+        if not re.fullmatch(r"[A-Za-z0-9_\-=]{1,512}", fid):
+            continue
+        lab = str(lab or "").strip()[:24]
+        lab = re.sub(r"[<>&\"']", "", lab)
+        if lab:
+            out[fid] = lab
+    return out
+
+
+def group_kind_meta(doc):
+    """Group doc → `{kind, qualities, episodes, episode_map}` — एक ही हिसाब।
+
+    `qualities` = group में कितनी files/qualities, `episodes` = कितने अलग episode labels।
+    """
+    d = doc or {}
+    members = [str(m) for m in (d.get("members") or [])]
+    emap = clean_episode_map(d.get("episode_map"))
+    files = {str(f.get("id")): str(f.get("name") or "")
+             for f in (d.get("files") or [])}
+    labels = {emap.get(fid) or episode_label(files.get(fid, ""), i)[0]
+              for i, fid in enumerate(members)}
+    kind = normal_kind(d.get("kind"))
+    return {"kind": kind,
+            "qualities": len(members) if kind == KIND_QUALITIES else 0,
+            "episodes": len(labels) if kind == KIND_EPISODES else 0,
+            "episode_map": emap}
+
+
+def episode_chips(variants, episode_map=None):
+    """Episode-kind group के chips: `E01, E02, …` + हर label की गिनती।
+
+    Returns `(chips, episodes_count)` — `episodes_count` = कितने अलग episodes हैं।
+    """
+    emap = clean_episode_map(episode_map)
+    rows = []
+    for i, v in enumerate(variants or []):
+        fid = str(v.get("file_id") or "")
+        lab = emap.get(fid) or episode_label(v.get("name"), i)[0]
+        n = episode_label(lab, i)[1]
+        rows.append((n, lab, v))
+    rows.sort(key=lambda r: r[0])
+    chips, seen = [], {}
+    distinct = set()
+    for _, lab, v in rows:
+        distinct.add(lab)
+        v["el"] = lab
+        if lab in seen:
+            seen[lab]["count"] += 1
+        else:
+            seen[lab] = {"label": lab, "count": 1}
+            chips.append(seen[lab])
+    return chips, len(distinct)
+
+
 def file_collection():
     """fsv1 की एकमात्र file collection — lazy import (Mongo न हो तो None)।"""
     try:
@@ -222,11 +347,15 @@ class GroupStore:
                         if needle == str(d.get("_id") or "") or needle == str(d.get("num") or "")
                         or ql in str(d.get("name") or "").lower()]
             docs.sort(key=lambda d: int(d.get("updated_at") or 0), reverse=True)
-            return [{"id": str(d["_id"]), "num": d.get("num", ""),
-                     "name": d.get("name", ""), "count": len(d.get("members") or []),
-                     "thumb_fid": d.get("thumb_fid", ""),
-                     "thumb_url": d.get("thumb_url", "")}
-                    for d in docs[:max(1, min(int(limit or 25), 200))]]
+            def _meta(d):
+                m = group_kind_meta(d)
+                m.update({"id": str(d["_id"]), "num": d.get("num", ""),
+                          "name": d.get("name", ""),
+                          "count": len(d.get("members") or []),
+                          "thumb_fid": d.get("thumb_fid", ""),
+                          "thumb_url": d.get("thumb_url", "")})
+                return m
+            return [_meta(d) for d in docs[:max(1, min(int(limit or 25), 200))]]
         return await asyncio.to_thread(_run)
 
     async def by_members(self, ids):
@@ -257,7 +386,7 @@ class GroupStore:
         return await asyncio.to_thread(self._next_num)
 
     async def create(self, *, name, items, auto_keys=(), auto_created=False,
-                     scan_created=False):
+                     scan_created=False, kind=KIND_QUALITIES, episode_map=None):
         """नया PERMANENT group — अपना number, members, files, auto_keys।"""
         now = int(time.time())
         num = await self.next_num()
@@ -269,6 +398,7 @@ class GroupStore:
             "files": [{"id": str(i), "name": str(n or "")[:300]} for i, n in items],
             "auto_keys": sorted({str(k) for k in auto_keys if k}),
             "excluded": [], "thumb_fid": "", "thumb_url": "",
+            "kind": normal_kind(kind), "episode_map": clean_episode_map(episode_map),
             "auto_created": bool(auto_created), "scan_created": bool(scan_created),
             "created_at": now, "updated_at": now, "scanned_at": 0,
         }
@@ -278,7 +408,7 @@ class GroupStore:
     async def update(self, gid, fields):
         """Naam / master thumbnail / timestamps — सिर्फ़ whitelisted keys।"""
         allowed = {"name", "thumb_fid", "thumb_url", "auto_keys", "excluded",
-                   "updated_at", "scanned_at", "scan_created"}
+                   "kind", "episode_map", "updated_at", "scanned_at", "scan_created"}
 
         def _run():
             g = self._get(gid)
@@ -457,6 +587,20 @@ class GroupStore:
     async def count(self):
         def _run():
             return len(self._all())
+        return await asyncio.to_thread(_run)
+
+    async def kind_counts(self):
+        # /stats: कितने quality groups, कितने series groups, कुल कितने episodes
+        def _run():
+            out = {"quality_groups": 0, "episode_groups": 0, "episodes_total": 0}
+            for d in self._all():
+                m = group_kind_meta(d)
+                if m["kind"] == KIND_EPISODES:
+                    out["episode_groups"] += 1
+                    out["episodes_total"] += m["episodes"]
+                else:
+                    out["quality_groups"] += 1
+            return out
         return await asyncio.to_thread(_run)
 
 
