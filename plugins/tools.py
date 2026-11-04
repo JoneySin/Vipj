@@ -154,7 +154,7 @@ async def do_upload(file_path, site, msg):
     try:
         link = await uploader(file_path)
         return link
-    except Exception as e:
+    except Exception:
         return None
 
 # /upload Command

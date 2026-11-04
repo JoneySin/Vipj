@@ -1,7 +1,5 @@
 import re
 from os import environ
-import os
-from Script import script
 import logging
 
 logger = logging.getLogger(__name__)
@@ -43,7 +41,6 @@ if not BOT_TOKEN:
     logger.error('BOT_TOKEN is missing')
     exit()
 
-BOT_ID = BOT_TOKEN.split(":")[0]
 PORT = int(environ.get('PORT', '80'))
 
 # ================= IMAGES =================
@@ -53,15 +50,13 @@ PICS = environ.get(
     'https://i.postimg.cc/8C15CQ5y/1.png'
 ).split()
 
-# ================= ADMINS =================
+# ================= ADMINS / CHANNELS =================
 
 ADMINS = environ.get('ADMINS', '')
 if not ADMINS:
     logger.error('ADMINS is missing')
     exit()
 ADMINS = [int(x) for x in ADMINS.split()]
-
-# ================= CHANNELS =================
 
 INDEX_CHANNELS = [
     int(x) if x.startswith("-") else x
@@ -82,11 +77,19 @@ if not INDEX_LOG_CHANNEL:
 else:
     INDEX_LOG_CHANNEL = int(INDEX_LOG_CHANNEL)
 
-SUPPORT_GROUP = environ.get('SUPPORT_GROUP', '')
-if not SUPPORT_GROUP:
-    logger.error('SUPPORT_GROUP is missing')
+BIN_CHANNEL = environ.get("BIN_CHANNEL", "")
+if not BIN_CHANNEL:
+    logger.error('BIN_CHANNEL is missing')
     exit()
-SUPPORT_GROUP = int(SUPPORT_GROUP)
+BIN_CHANNEL = int(BIN_CHANNEL)
+
+# 📚 Cover images and avatars for Posts / Actors are uploaded to this Telegram channel.
+# If BIN_CHANNEL is also in INDEX_CHANNELS (so covers do not appear in file search),
+# set a separate private channel id here; otherwise BIN_CHANNEL is used by default.
+CATALOG_STORAGE_CHANNEL = environ.get("CATALOG_STORAGE_CHANNEL", "")
+CATALOG_STORAGE_CHANNEL = (
+    int(CATALOG_STORAGE_CHANNEL) if CATALOG_STORAGE_CHANNEL else BIN_CHANNEL
+)
 
 # ================= DATABASE =================
 
@@ -96,66 +99,58 @@ if not DATA_DATABASE_URL:
     exit()
 
 DATABASE_NAME = environ.get('DATABASE_NAME', "bot_db")
-
-# 🔥 MAIN COLLECTION (Backward Compatible)
 COLLECTION_NAME = environ.get('COLLECTION_NAME', 'files')
-
-# 🔥 FUTURE READY (Hot / Cold)
-FILES_COLLECTION = environ.get('FILES_COLLECTION', 'files_hot')
-FILES_BACKUP_COLLECTION = environ.get('FILES_BACKUP_COLLECTION', 'files_cold')
-
-USERS_COLLECTION = environ.get('USERS_COLLECTION', 'users')
-CHATS_COLLECTION = environ.get('CHATS_COLLECTION', 'chats')
-BANS_COLLECTION = environ.get('BANS_COLLECTION', 'bans')
-
-# ================= LINKS =================
-
-SUPPORT_LINK = environ.get('SUPPORT_LINK', 'https://t.me/HA_Bots_Support')
-UPDATES_LINK = environ.get('UPDATES_LINK', 'https://t.me/HA_Bots')
-FILMS_LINK = environ.get('FILMS_LINK', 'https://t.me/HA_Films_World')
-TUTORIAL = environ.get("TUTORIAL", "https://t.me/HA_Bots")
-
-# ================= SETTINGS =================
-
-TIME_ZONE = environ.get('TIME_ZONE', 'Asia/Kolkata')
-DELETE_TIME = int(environ.get('DELETE_TIME', 3600))
-CACHE_TIME = int(environ.get('CACHE_TIME', 300))
 MAX_BTN = int(environ.get('MAX_BTN', 8))
 
-LANGUAGES = environ.get(
-    'LANGUAGES',
-    'hindi english tamil telugu'
-).lower().split()
-
-QUALITY = environ.get(
-    'QUALITY',
-    '360p 480p 720p 1080p'
-).lower().split()
-
-FILE_CAPTION = environ.get("FILE_CAPTION", script.FILE_CAPTION)
-VERIFY_EXPIRE = int(environ.get('VERIFY_EXPIRE', 86400))
-WELCOME_TEXT = environ.get("WELCOME_TEXT", script.WELCOME_TEXT)
+# ================= FILE / STREAM SETTINGS =================
 
 PM_FILE_DELETE_TIME = int(environ.get('PM_FILE_DELETE_TIME', 3600))
 
-# ================= BOOLEAN FLAGS =================
-
 USE_CAPTION_FILTER = is_enabled('USE_CAPTION_FILTER', True)
-IS_VERIFY = is_enabled('IS_VERIFY', True)
-AUTO_DELETE = is_enabled('AUTO_DELETE', False)
-WELCOME = is_enabled('WELCOME', True)
 PROTECT_CONTENT = is_enabled('PROTECT_CONTENT', False)
-LINK_MODE = is_enabled("LINK_MODE", True)
-
-# ================= STREAM =================
-
 IS_STREAM = is_enabled('IS_STREAM', True)
 
-BIN_CHANNEL = environ.get("BIN_CHANNEL", "")
-if not BIN_CHANNEL:
-    logger.error('BIN_CHANNEL is missing')
-    exit()
-BIN_CHANNEL = int(BIN_CHANNEL)
+# ================= WEB SEARCH / LOGIN =================
+# How many results to show per web page (pagination / load-more)
+# 21 = 3 columns × 7 rows on desktop; 21 rows on mobile
+MAX_WEB_RESULTS = max(1, min(int(environ.get('MAX_WEB_RESULTS', '21')), 100))
+
+# Web login cookie lifetime in seconds — defaults to 7 days
+WEB_SESSION_TTL = int(environ.get('WEB_SESSION_TTL', 7 * 24 * 3600))
+
+# Web stream link lifetime in seconds — defaults to 6 hours
+WEB_STREAM_TTL = int(environ.get('WEB_STREAM_TTL', 6 * 3600))
+
+# 📸 Only the Telegram thumbnail file_id ("TG_ID:..." string) is stored in the DB.
+# No image bytes in the DB or in a server RAM cache — they live in the browser's HTTP cache.
+# There is no server-side RAM cache (Koyeb's free tier has 512 MB); the browser keeps
+# posters in its own HTTP cache using ETag + max-age (see below).
+THUMB_BROWSER_CACHE = int(environ.get('THUMB_BROWSER_CACHE', 7 * 24 * 3600))
+# How many Telegram thumbnail downloads may run at once (only files with a known TG_ID)
+THUMB_FETCH_CONCURRENCY = max(1, min(int(environ.get('THUMB_FETCH_CONCURRENCY', '6')), 20))
+
+# ── 🖼️ FIRST-TIME THUMBNAIL EXTRACTION (like JoneySin/v5's warmup engine) ──
+# Opening 21 new files at once can trigger Telegram FLOOD_WAIT, so probes
+# run one at a time with a random gap between files.
+THUMB_PROBE_GAP_MIN = float(environ.get('THUMB_PROBE_GAP_MIN', '1.2'))
+THUMB_PROBE_GAP_MAX = max(THUMB_PROBE_GAP_MIN, float(environ.get('THUMB_PROBE_GAP_MAX', '3.0')))
+THUMB_PROBE_ATTEMPTS = max(1, min(int(environ.get('THUMB_PROBE_ATTEMPTS', '5')), 10))
+# On FLOOD_WAIT, wait for Telegram's requested seconds plus this extra buffer
+THUMB_FLOOD_EXTRA = max(0, int(environ.get('THUMB_FLOOD_EXTRA', '10')))
+
+# ── 🛡️ REAL-THUMBNAIL VALIDATION (reject fake "NO IMAGE" cards in /warmup_thumbs) ──
+# Telegram sometimes returns a generated placeholder, a 1×1 pixel or a blank frame.
+# Images that fail these thresholds are never saved as `TG_ID:` — they become NO_THUMB.
+THUMB_MIN_BYTES = int(environ.get('THUMB_MIN_BYTES', '512'))
+THUMB_MIN_DIM = int(environ.get('THUMB_MIN_DIM', '48'))          # px (both width and height)
+# RGB channel stddev — a blank placeholder ≈ 0, a real video frame ≫ 6
+THUMB_MIN_STDDEV = float(environ.get('THUMB_MIN_STDDEV', '6.0'))
+
+# Older unsigned /watch/<id> links may have been shared before deployment.
+# Default False = only signed links work. Set True for backward compatibility.
+ALLOW_UNSIGNED_LINKS = is_enabled('ALLOW_UNSIGNED_LINKS', False)
+
+# ================= PUBLIC URL =================
 
 URL = environ.get("URL", "")
 if not URL:

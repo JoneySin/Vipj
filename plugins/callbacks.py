@@ -3,7 +3,7 @@ import time
 import asyncio
 from datetime import timedelta
 
-from hydrogram import Client, filters
+from hydrogram import Client
 from hydrogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
@@ -18,18 +18,13 @@ from hydrogram.errors import (
     BadRequest
 )
 
-from info import (
-    ADMINS,
-    PICS,
-    URL,
-    BIN_CHANNEL,
-    QUALITY,
-    script
-)
+from info import ADMINS, PICS, URL, BIN_CHANNEL
+from Script import script
 
 from utils import is_premium, temp  # ✅ REMOVED: get_wish
 from database.users_chats_db import db
 from database.ia_filterdb import db_count_documents
+from stream_security import sign_params, USER_LINK_TTL
 
 
 # ======================================================
@@ -236,8 +231,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     file_id=file_id
                 )
 
-                watch = f"{URL}watch/{msg.id}"
-                download = f"{URL}download/{msg.id}"
+                # 🔐 Signed stream links (the same links the web search page creates)
+                signed = sign_params(msg.id, USER_LINK_TTL)
+                watch = f"{URL}watch/{msg.id}?{signed}"
+                download = f"{URL}download/{msg.id}?{signed}"
 
                 success = await safe_edit_markup(
                     query.message,

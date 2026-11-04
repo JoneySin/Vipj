@@ -9,7 +9,7 @@ from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Callback
 from info import IS_STREAM, PM_FILE_DELETE_TIME, PROTECT_CONTENT, ADMINS
 from database.ia_filterdb import get_file_details
 from database.users_chats_db import db
-from utils import get_settings, get_size, temp, is_premium
+from utils import temp
 
 
 # ======================================================
@@ -57,8 +57,6 @@ async def file_button_handler(client: Client, query: CallbackQuery):
     uid = query.from_user.id
     group_id = query.message.chat.id
     
-    # Get group settings
-    settings = await get_settings(group_id)
     
     # ========================================
     # PREMIUM CHECK (Bot Admin or Premium User)
@@ -291,8 +289,6 @@ async def deliver_file(client, uid, grp_id, file_id):
             await client.send_message(uid, text, reply_markup=btn)
             return
 
-        # Get group settings (for additional checks)
-        settings = await get_settings(grp_id) if grp_id else {}
 
         # Build caption
         file_name = (file.get("file_name") or "").strip()

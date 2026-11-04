@@ -1,186 +1,191 @@
+"""🌐 Root / landing page + ▶ signed watch & download (HTTP Range) streaming."""
+
+import asyncio
+import logging
 import math
-import secrets
 import mimetypes
+import secrets
+from urllib.parse import quote, urlencode
 
 from aiohttp import web
-from info import BIN_CHANNEL
+
+from info import ALLOW_UNSIGNED_LINKS
 from utils import temp
 from web.utils.custom_dl import TGCustomYield, chunk_size, offset_fix
+from web.utils.media_info import get_media_info
 from web.utils.render_template import media_watch
+from web.web_assets import get_auth, page
+from web.welcome_assets import GUEST_BODY_CLASS, landing_body
+from stream_security import verify
 
+logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
 
 # ======================================================
-# 🌐 ROOT + SEARCH PAGE (UPTIME SAFE)
+# 🏠 ROOT — send logged-in users straight to /search, everyone else to the landing page
 # ======================================================
 @routes.get("/", allow_head=True)
 async def root_route_handler(request):
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Search Files</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                background: #0f172a;
-                color: #e5e7eb;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                height: 100vh;
-                margin: 0;
-            }}
-            .box {{
-                background: #020617;
-                padding: 25px;
-                border-radius: 10px;
-                width: 100%;
-                max-width: 400px;
-                box-shadow: 0 0 15px rgba(0,0,0,0.6);
-            }}
-            h2 {{
-                text-align: center;
-                margin-bottom: 20px;
-            }}
-            input {{
-                width: 100%;
-                padding: 12px;
-                border-radius: 6px;
-                border: none;
-                outline: none;
-                margin-bottom: 12px;
-                font-size: 16px;
-            }}
-            button {{
-                width: 100%;
-                padding: 12px;
-                border-radius: 6px;
-                border: none;
-                background: #2563eb;
-                color: white;
-                font-size: 16px;
-                cursor: pointer;
-            }}
-            button:hover {{
-                background: #1d4ed8;
-            }}
-            .footer {{
-                margin-top: 15px;
-                text-align: center;
-                font-size: 12px;
-                opacity: 0.7;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="box">
-            <h2>🔎 Search Files</h2>
-            <input id="q" type="text" placeholder="Enter movie / series name">
-            <button onclick="go()">Search in Telegram</button>
-            <div class="footer">Service is running ✔️</div>
-        </div>
+    role, _ = await get_auth(request)
+    if role:
+        return web.HTTPFound("/search")
 
-        <script>
-            function go() {{
-                const q = document.getElementById("q").value.trim();
-                if (!q) return;
-                window.location.href =
-                    "https://t.me/{temp.U_NAME}?start=search_" +
-                    encodeURIComponent(q);
-            }}
-        </script>
-    </body>
-    </html>
-    """
-    return web.Response(text=html, content_type="text/html")
+    bot_username = temp.U_NAME or "AutoFilterBot"
+    return page(
+        "FAST FINDER — Web File Search",
+        landing_body(bot_username),
+        GUEST_BODY_CLASS,
+    )
 
 
 # ======================================================
-# ▶️ WATCH PAGE
+# 🔐 SIGNED LINK CHECK
+# ======================================================
+def _allowed(request, message_id: int) -> bool:
+    e, s = request.query.get("e"), request.query.get("s")
+    if verify(message_id, e, s):
+        return True
+    # Opt-in switch for old unsigned links (issued before this deployment)
+    return ALLOW_UNSIGNED_LINKS and not e and not s
+
+
+def _signed_query(request) -> str:
+    e, s = request.query.get("e"), request.query.get("s")
+    return urlencode({"e": e, "s": s}) if e and s else ""
+
+
+# ======================================================
+# ▶️ WATCH PAGE (signed player)
 # ======================================================
 @routes.get("/watch/{message_id}")
 async def watch_handler(request):
     try:
         message_id = int(request.match_info["message_id"])
+    except ValueError:
+        return web.Response(status=400, text="Invalid Message ID")
+    if not _allowed(request, message_id):
+        return web.Response(status=403, text="Link expired or invalid")
+
+    try:
         return web.Response(
-            text=await media_watch(message_id),
-            content_type="text/html"
+            text=await media_watch(
+                message_id,
+                query=_signed_query(request),
+                poster=request.query.get("poster", ""),
+            ),
+            content_type="text/html",
+            charset="utf-8",
         )
+    except Exception as e:
+        logger.error(f"Watch page error: {e}")
+        return web.Response(status=500, text="Watch page unavailable")
+
+
+# ======================================================
+# 📐 RANGE PARSER (hardened)
+# ======================================================
+def parse_range(header, file_size):
+    """(first, last, length, is_partial) or None (=416 unsatisfiable)."""
+    partial = bool(header)
+    try:
+        if header:
+            spec = header.replace("bytes=", "").split(",")[0].strip()
+            a, b = spec.split("-", 1)
+            if a == "":                                  # suffix range bytes=-N
+                first, last = max(file_size - int(b), 0), file_size - 1
+            else:
+                first = int(a)
+                last = int(b) if b else file_size - 1
+        else:
+            first, last = 0, file_size - 1
     except Exception:
-        return web.Response(
-            text="<h1>Something went wrong</h1>",
-            content_type="text/html"
-        )
+        first, last, partial = 0, file_size - 1, False
+
+    last = min(last, file_size - 1)
+    if first < 0 or last < first or file_size <= 0:
+        return None
+    return first, last, last - first + 1, partial
 
 
 # ======================================================
-# ⬇️ DOWNLOAD ROUTE
+# 📥 DOWNLOAD / STREAM CORE
 # ======================================================
-@routes.get("/download/{message_id}")
+@routes.get("/download/{message_id}", allow_head=True)
 async def download_handler(request):
     try:
         message_id = int(request.match_info["message_id"])
-        return await media_download(request, message_id)
-    except Exception:
-        return web.Response(
-            text="<h1>Something went wrong</h1>",
-            content_type="text/html"
-        )
+    except ValueError:
+        return web.Response(status=400, text="Invalid Message ID")
+    if not _allowed(request, message_id):
+        return web.Response(status=403, text="Link expired or invalid")
+    return await media_download(request, message_id)
 
 
-# ======================================================
-# 📦 MEDIA STREAM
-# ======================================================
 async def media_download(request, message_id: int):
-    range_header = request.headers.get("Range", None)
+    # ── 1) SETUP (before the body starts, so errors can still return 4xx/5xx) ──
+    try:
+        info = await get_media_info(message_id)
+        if not info:
+            return web.Response(status=404, text="Media Not Found")
 
-    media_msg = await temp.BOT.get_messages(BIN_CHANNEL, message_id)
-    media = getattr(media_msg, media_msg.media.value, None)
-    file_size = media.file_size
+        file_size = int(info.file_size or 0)
+        parsed = parse_range(request.headers.get("Range"), file_size)
+        if parsed is None:
+            return web.Response(
+                status=416, text="416: Range Not Satisfiable",
+                headers={"Content-Range": f"bytes */{file_size}"},
+            )
+        fb, ub, req_len, partial = parsed
 
-    if range_header:
-        from_bytes, until_bytes = range_header.replace("bytes=", "").split("-")
-        from_bytes = int(from_bytes)
-        until_bytes = int(until_bytes) if until_bytes else file_size - 1
-    else:
-        from_bytes = request.http_range.start or 0
-        until_bytes = request.http_range.stop or file_size - 1
+        ncs = await chunk_size(req_len)
+        offset = await offset_fix(fb, ncs)
+        first_cut = fb - offset
+        last_cut = (ub % ncs) + 1
+        parts = math.ceil((req_len + first_cut) / ncs)
 
-    req_length = until_bytes - from_bytes
+        is_video = info.is_video or str(info.mime_type or "").startswith("video/")
+        file_name = info.file_name or (
+            f"video_{secrets.token_hex(3)}.mp4" if is_video else f"file_{secrets.token_hex(3)}.bin"
+        )
+        mime = info.mime_type or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+        enc_name = quote(str(file_name))
 
-    new_chunk_size = await chunk_size(req_length)
-    offset = await offset_fix(from_bytes, new_chunk_size)
-    first_part_cut = from_bytes - offset
-    last_part_cut = (until_bytes % new_chunk_size) + 1
-    part_count = math.ceil(req_length / new_chunk_size)
-
-    body = TGCustomYield().yield_file(
-        media_msg,
-        offset,
-        first_part_cut,
-        last_part_cut,
-        part_count,
-        new_chunk_size
-    )
-
-    file_name = media.file_name or f"{secrets.token_hex(2)}.bin"
-    mime_type = media.mime_type or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
-
-    resp = web.Response(
-        status=206 if range_header else 200,
-        body=body,
-        headers={
-            "Content-Type": mime_type,
-            "Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}",
-            "Content-Disposition": f'attachment; filename="{file_name}"',
+        headers = {
+            "Content-Type": mime,
+            "Content-Disposition": f"attachment; filename=\"{enc_name}\"; filename*=UTF-8''{enc_name}",
             "Accept-Ranges": "bytes",
+            "Content-Length": str(req_len),
         }
+        if partial:
+            headers["Content-Range"] = f"bytes {fb}-{ub}/{file_size}"
+        status = 206 if partial else 200
+    except Exception as e:
+        logger.error(f"Stream setup error: {e}")
+        return web.Response(status=500, text="Stream setup failed")
+
+    resp = web.StreamResponse(status=status, headers=headers)
+    if request.method == "HEAD":
+        await resp.prepare(request)
+        await resp.write_eof()
+        return resp
+
+    await resp.prepare(request)
+    agen = TGCustomYield().yield_file(
+        info.file_id_obj, offset, first_cut, last_cut, parts, ncs
     )
-
-    if resp.status == 200:
-        resp.headers["Content-Length"] = str(file_size)
-
+    try:
+        async for chunk in agen:
+            await resp.write(chunk)
+        await resp.write_eof()
+    except (ConnectionError, asyncio.CancelledError):
+        pass                       # the viewer closed the tab or seeked — normal
+    except Exception as e:
+        logger.error(f"Stream error (mid-body): {e!r}")
+        raise
+    finally:
+        try:
+            await agen.aclose()
+        except Exception:
+            pass
     return resp

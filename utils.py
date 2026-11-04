@@ -25,6 +25,10 @@ class temp(object):
     KEYWORDS = {}       # learned keywords (RAM)
     BANNED_USERS = set()  # banned users set
 
+    # 🌐 Web login sessions / registration OTP (web/web_assets.py, web/auth_routes.py)
+    USER_SESSIONS = {}  # session_id -> {'tg_id': int, 'expiry': float}
+    REG_PENDING = {}    # tg_id -> {'email', 'password', 'otp', 'expiry', 'tries'}
+
     INDEX_STATS = {
         "running": False,
         "start": 0,
@@ -328,7 +332,7 @@ async def cleanup_files_memory():
             if len(temp.KEYWORDS) > 10000:
                 sorted_kw = sorted(temp.KEYWORDS.items(), key=lambda x: x[1], reverse=True)
                 temp.KEYWORDS = dict(sorted_kw[:5000])
-                print(f"[INFO] Cleaned keywords, kept top 5000")
+                print("[INFO] Cleaned keywords, kept top 5000")
                     
         except Exception as e:
             print(f"[ERROR] Cleanup task error: {e}")

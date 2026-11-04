@@ -371,18 +371,14 @@ async def duration_selected(client, query: CallbackQuery):
     unit_display = unit_map.get(unit, unit)
     plan_text = f"{num} {unit_display}"
     
-    # Calculate duration
+    # Calculate the duration in days (price and plan both come from here)
     if unit == "hour":
-        duration = timedelta(hours=num)
         days = max(1, (num // 24) or 1)
     elif unit == "day":
-        duration = timedelta(days=num)
         days = num
     elif unit == "month":
-        duration = timedelta(days=30 * num)
         days = 30 * num
     elif unit == "year":
-        duration = timedelta(days=365 * num)
         days = 365 * num
     else:
         return await query.answer("❌ Invalid unit", show_alert=True)
@@ -606,7 +602,7 @@ async def reject_payment(client, query: CallbackQuery):
     try:
         uid = int(query.data.split("#")[1])
     except:
-        return await query.answer(f"❌ Invalid data", show_alert=True)
+        return await query.answer("❌ Invalid data", show_alert=True)
     
     try:
         await client.send_message(

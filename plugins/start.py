@@ -1,7 +1,8 @@
 import random
 from hydrogram import Client, filters
 from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from info import PICS, script
+from info import PICS
+from Script import script
 
 
 # ======================================================
@@ -36,7 +37,7 @@ async def start_cmd(client, message):
             ),
             reply_markup=start_buttons()
         )
-    except Exception as e:
+    except Exception:
         # Fallback if photo fails
         await message.reply_text(
             text=script.START_TXT.format(

@@ -11,7 +11,7 @@ from hydrogram.errors import MessageNotModified, MessageIdInvalid, BadRequest, L
 
 from info import ADMINS, LOG_CHANNEL
 from database.users_chats_db import db
-from database.ia_filterdb import db_count_documents, delete_files, delete_all_files, delete_file_by_id, delete_by_quality
+from database.ia_filterdb import db_count_documents, delete_files, delete_all_files, delete_by_quality
 from utils import get_size, get_readable_time, temp
 
 
@@ -19,8 +19,6 @@ from utils import get_size, get_readable_time, temp
 # 🧠 CONFIG & SAFE INIT
 # ======================================================
 
-DASH_REFRESH = 45
-DASH_CACHE = {}
 DASH_LOCKS = defaultdict(asyncio.Lock)
 
 # Safe init

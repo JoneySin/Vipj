@@ -3,7 +3,6 @@ import sys
 import platform
 
 from hydrogram import Client, filters, enums
-from hydrogram.errors import UserNotParticipant
 from utils import temp
 from info import IS_PREMIUM
 
@@ -125,25 +124,3 @@ async def bot_info(client, message):
     )
 
     await message.reply_text(text, parse_mode=enums.ParseMode.HTML)
-
-
-# ======================================================
-# 🕒 LAST ONLINE HELPER
-# ======================================================
-
-def last_online(user):
-    if user.is_bot:
-        return "🤖 Bot"
-    if user.status == enums.UserStatus.ONLINE:
-        return "🟢 Online"
-    if user.status == enums.UserStatus.RECENTLY:
-        return "Recently"
-    if user.status == enums.UserStatus.LAST_WEEK:
-        return "Within last week"
-    if user.status == enums.UserStatus.LAST_MONTH:
-        return "Within last month"
-    if user.status == enums.UserStatus.LONG_AGO:
-        return "Long time ago"
-    if user.status == enums.UserStatus.OFFLINE:
-        return user.last_online_date.strftime("%d %b %Y, %I:%M %p")
-    return "Unknown"

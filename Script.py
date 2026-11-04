@@ -11,56 +11,6 @@ class script(object):
         "📌 Premium unlocks extra power 💎\n\n"
     )
 
-    # ================= STATUS =================
-    STATUS_TXT = (
-        "<b>📊 BOT STATUS</b>\n\n"
-        "👥 Users      : <code>{}</code>\n"
-        "💎 Premium    : <code>{}</code>\n"
-        "👨‍👩‍👧 Groups    : <code>{}</code>\n\n"
-        "📁 Indexed Files : <code>{}</code>\n"
-        "🗄 Database Size : <code>{}</code>\n\n"
-        "⏱ Uptime     : <code>{}</code>\n"
-        "⚡ Performance : <b>Stable</b>\n"
-    )
-
-    # ================= NEW USER / GROUP LOG =================
-    NEW_USER_TXT = (
-        "👤 <b>New User Started Bot</b>\n\n"
-        "🆔 ID   : <code>{}</code>\n"
-        "👤 Name : {}"
-    )
-
-    NEW_GROUP_TXT = (
-        "👥 <b>Bot Added to New Group</b>\n\n"
-        "🏷 Title : {}\n"
-        "🆔 ID    : <code>{}</code>\n"
-        "👤 Users : <code>{}</code>"
-    )
-
-    # ================= FILE NOT FOUND =================
-    NOT_FILE_TXT = (
-        "❌ <b>No Results Found</b>\n\n"
-        "🔍 Search : <code>{}</code>\n\n"
-        "💡 Tips:\n"
-        "• Check spelling\n"
-        "• Try short keywords\n"
-        "• Use year / quality\n"
-    )
-
-    # ================= FILE CAPTION =================
-    FILE_CAPTION = (
-        "<b>{file_name}</b>\n\n"
-        "📦 Size : {file_size}\n\n"
-        "⚠️ Please close this message after use"
-    )
-
-    # ================= WELCOME =================
-    WELCOME_TEXT = (
-        "👋 Welcome {mention}!\n\n"
-        "🎬 Enjoy unlimited movies & series\n"
-        "🔍 Just type the name to search"
-    )
-
     # ================= HELP =================
     HELP_TXT = (
         "<b>ℹ️ Help Menu</b>\n\n"

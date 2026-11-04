@@ -1,5 +1,4 @@
 import math
-from typing import Union
 
 from hydrogram.types import Message
 from hydrogram import Client, utils, raw
@@ -53,7 +52,11 @@ class TGCustomYield:
     # 📄 FILE PROPERTIES
     # --------------------------------------------------
     @staticmethod
-    async def generate_file_properties(msg: Message) -> FileId:
+    async def generate_file_properties(msg) -> FileId:
+        # media_info cache may already hold a decoded FileId (so we do not call
+        # Telegram get_messages() again on every Range request).
+        if isinstance(msg, FileId):
+            return msg
         media = getattr(msg, msg.media.value, None)
         return FileId.decode(media.file_id)
 
@@ -195,16 +198,27 @@ class TGCustomYield:
             if not chunk:
                 break
 
-            offset += chunk_size
-
+            # ⚠️ FIX: the final chunk used to be sent in full (not trimmed to
+            # last_part_cut), making the Range response larger than the declared
+            # Content-Length and stalling player seeks. The last part is now trimmed too.
             if part_count == 1:
                 yield chunk[first_part_cut:last_part_cut]
                 break
 
             if current_part == 1:
                 yield chunk[first_part_cut:]
+            elif current_part == part_count:
+                yield chunk[:last_part_cut]
             else:
                 yield chunk
+
+            if len(chunk) < chunk_size:        # EOF: the file ends here
+                break
+
+            offset += chunk_size
+            current_part += 1
+            if current_part > part_count:
+                break
 
             r = await media_session.send(
                 raw.functions.upload.GetFile(
@@ -213,35 +227,5 @@ class TGCustomYield:
                     limit=chunk_size
                 )
             )
-
-            current_part += 1
-
-    # --------------------------------------------------
-    # 📥 FULL DOWNLOAD (BYTES)
-    # --------------------------------------------------
-    async def download_as_bytesio(self, media_msg: Message):
-        client = self.main_bot
-        data = await self.generate_file_properties(media_msg)
-        media_session = await self.generate_media_session(client, media_msg)
-        location = await self.get_location(data)
-
-        limit = 1024 * 1024
-        offset = 0
-        result = []
-
-        while True:
-            r = await media_session.send(
-                raw.functions.upload.GetFile(
-                    location=location,
-                    offset=offset,
-                    limit=limit
-                )
-            )
-
-            if not isinstance(r, raw.types.upload.File) or not r.bytes:
+            if not isinstance(r, raw.types.upload.File):
                 break
-
-            result.append(r.bytes)
-            offset += limit
-
-        return result
