@@ -74,6 +74,11 @@ from web.web_assets import (app_page, PLAYER_MODAL_HTML, PLAYER_JS,
 # ─────────────────────────────────────────────────────────────
 # ⚙️ DATA-DRIVEN CONFIG — नया catalog जोड़ना हो तो सिर्फ़ यहाँ entry
 # ─────────────────────────────────────────────────────────────
+# 🎛️ Category filter के "All" option का **एकमात्र label**: /posts–/actors का
+#    filter button और inline editor का category select दोनों यहीँ से लेते हैं
+#    (label बदलना हो तो सिर्फ़ ये constant बदलो, पुराना लम्बा label वापस न लाओ)।
+CATEGORY_ALL_LABEL = "📂 All"
+
 CATALOGS = {
     "posts": {
         "kind": "posts",
@@ -730,7 +735,8 @@ document.addEventListener('pointerdown', e => {
 
 /* ── inline editor ── */
 function editorHTML(){
-  const opts = ['<option value="all">📂 All</option>']
+  /* 🎛️ "All" label Python-side single source (CATEGORY_ALL_LABEL) से inject */
+  const opts = ['<option value="all">' + __ALL_CAT__ + '</option>']
     .concat(CFG.categories.map(c=>`<option value="${esc(c.value)}">${esc(c.label)}</option>`)).join('');
   return `<div class="cat-modal" id="catModal" onclick="if(event.target===this)closeEditor()">
   <div class="cat-mcard">
@@ -1253,7 +1259,9 @@ switchTab(_initTab||'overview',true);
 
 def _category_options(kind: str, include_all: bool = True) -> str:
     cfg = CATALOGS[kind]
-    out = ['<option value="all">📂 All Categories</option>'] if include_all else []
+    # 🎛️ Default filter button पर सिर्फ़ "All" (📂 icon अलग `.fdd-ico` में जाता है)
+    out = ([f'<option value="all">{html.escape(CATEGORY_ALL_LABEL)}</option>']
+           if include_all else [])
     out += [
         f'<option value="{html.escape(c["value"])}">{html.escape(c["label"])}</option>'
         for c in cfg["categories"]
@@ -1306,6 +1314,7 @@ def build_listing_page(kind: str, role: str, tg_id: int):
     js = (
         CATALOG_JS
         .replace("__CFG__", json.dumps(cfg, ensure_ascii=False))
+        .replace("__ALL_CAT__", json.dumps(CATEGORY_ALL_LABEL, ensure_ascii=False))
         .replace("__ADMIN__", "true" if role == "admin" else "false")
         # editor modal को JS से inject करें ताकि markup एक ही जगह रहे
         .replace("/* ── wiring ── */", "/* ── wiring ── */\n$('#catModalHost').innerHTML = editorHTML();")

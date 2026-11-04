@@ -12,6 +12,9 @@ Stdlib-only:
    हटाकर `.cat-toolbar` में, filters के बाद रखा गया है — 🖥️ desktop पर search
    वाली लाइन में (`flex-wrap:nowrap`), 📱 mobile पर filters वाली row के नीचे
    पूरी चौड़ाई का (`flex:1 1 100%`)।
+3. Category filter button का default label सिर्फ़ **All** है ("All Categories"
+   नहीं) — listing filter और inline editor दोनों `CATEGORY_ALL_LABEL` नाम के
+   **एक ही** source से आते हैं, इसलिए एक जगह बदलो तो सब जगह बदले।
 """
 import re
 import unittest
@@ -97,6 +100,39 @@ class TestCreateButtonPlacement(unittest.TestCase):
             "create button mobile पर filters के नीचे पूरी लाइन नहीं लेता")
         # (0,3,0) specificity — CATALOG_CSS body में बाद में आकर इसे हरा न पाए
         self.assertIn(".cat-toolbar.cat-toolbar", block)
+
+
+class TestCategoryAllLabel(unittest.TestCase):
+    """/posts + /actors के Category filter button पर "All" ही रहना चाहिए।"""
+
+    def test_07_single_source_and_no_all_categories(self):
+        self.assertIn('CATEGORY_ALL_LABEL = "📂 All"', CATALOG)
+        self.assertNotIn("All Categories", CATALOG,
+                         "Category button पर 'All Categories' वापस आ गया")
+        # `<option value="all">` का label hard-coded नहीं, constant से आता है
+        opts = re.search(r"def _category_options\([\s\S]*?\n\s*out \+=", CATALOG)
+        self.assertIsNotNone(opts, "_category_options नहीं मिला")
+        self.assertIn("CATEGORY_ALL_LABEL", opts.group(0))
+        self.assertIn('<option value="all">', opts.group(0))
+        self.assertIn('"catCategory": _category_options(kind)', CATALOG)
+
+    def test_08_inline_editor_uses_the_same_injected_label(self):
+        # JS में label दोबारा लिखा नहीं जाता — build_listing_page inject करता है
+        self.assertIn("'<option value=\"all\">' + __ALL_CAT__ + '</option>'", CATALOG)
+        self.assertIn('.replace("__ALL_CAT__", json.dumps(CATEGORY_ALL_LABEL,',
+                      CATALOG)
+        self.assertNotIn("'<option value=\"all\">📂 All</option>'", CATALOG,
+                         "editor में label फिर से hard-code हो गया")
+        # /search वाला Group/UnGroup filter भी "All" ही रखता है
+        self.assertIn('"group": (("all", "All")', WEB_ASSETS)
+
+    def test_09_category_options_are_unchanged_after_the_all_option(self):
+        body = re.search(r"def _category_options\([\s\S]*?return \"\"\.join\(out\)",
+                         CATALOG)
+        self.assertIsNotNone(body)
+        self.assertIn('f\'<option value="{html.escape(c["value"])}">', body.group(0))
+        self.assertIn('include_all', body.group(0))
+        self.assertIn('value="all"', body.group(0))
 
 
 if __name__ == "__main__":
