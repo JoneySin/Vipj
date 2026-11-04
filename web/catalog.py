@@ -307,9 +307,6 @@ font-family:inherit;outline:none;transition:border-color .18s,box-shadow .18s}
 width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--red);
 border-radius:50%;animation:catSpin .65s linear infinite}
 .cat-search.loading .cat-spin{display:block}
-.cat-select{background:var(--bg3);border:1px solid var(--line);border-radius:9px;color:var(--txt);
-padding:11px 12px;font:700 12px inherit;font-family:inherit;cursor:pointer;outline:none}
-.cat-select:focus{border-color:var(--red)}
 /* ── grid + cards ── */
 /* 📝/🎭 listing: 📱 mobile 2/row · 🖥️ desktop 5/row (video grids अलग .vgrid = 1/2/3) */
 .cat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -389,10 +386,10 @@ box-shadow:0 24px 70px rgba(0,0,0,.65)}
 .cat-field{margin-bottom:14px}
 .cat-label{display:block;font-size:10px;font-weight:900;letter-spacing:.8px;text-transform:uppercase;
 color:var(--mut);margin-bottom:6px}
-.cat-input,.cat-textarea,.cat-fselect{width:100%;box-sizing:border-box;background:var(--bg3);
+.cat-input,.cat-textarea{width:100%;box-sizing:border-box;background:var(--bg3);
 border:1.5px solid var(--line);border-radius:8px;padding:10px 12px;color:var(--txt);
 font:600 13px inherit;font-family:inherit;outline:none;transition:border-color .16s,box-shadow .16s}
-.cat-input:focus,.cat-textarea:focus,.cat-fselect:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(229,9,20,.13)}
+.cat-input:focus,.cat-textarea:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(229,9,20,.13)}
 .cat-textarea{min-height:88px;resize:vertical;line-height:1.55}
 .cat-preview{width:100%;aspect-ratio:16/9;background:var(--bg3);border:1px dashed var(--line);
 border-radius:9px;overflow:hidden;display:flex;align-items:center;justify-content:center;margin-bottom:10px}
@@ -732,7 +729,7 @@ function editorHTML(){
       <div class="cat-field"><label class="cat-label">${esc(CFG.nameLabel)} *</label>
         <input class="cat-input" id="fTitle" maxlength="120" required></div>
       <div class="cat-field"><label class="cat-label">Category</label>
-        <select class="cat-fselect" id="fCat">${opts}</select></div>
+        <select class="filter-dd" data-fdd-full="1" data-fdd-cap="Category" id="fCat">${opts}</select></div>
     </div>
     <div class="cat-field"><label class="cat-label">${esc(CFG.bodyLabel)}</label>
       <textarea class="cat-textarea" id="fBody" maxlength="3000"></textarea></div>
@@ -877,7 +874,7 @@ async function openEditor(id, focus){
   }
   $('#catMTitle').textContent = id ? '✏️ Edit '+CFG.singular : '✨ New '+CFG.singular;
   $('#fTitle').value = it ? (it.title||'') : '';
-  $('#fCat').value = it ? (it.category||CFG.categories[0].value) : CFG.categories[0].value;
+  ddSet('fCat', it ? (it.category||CFG.categories[0].value) : CFG.categories[0].value);
   $('#fBody').value = it ? (it.body||'') : '';
   $('#fTags').value = it ? (it.tags||[]).join(', ') : '';
   $('#fImage').value = it ? (it.image||'') : '';
@@ -1036,7 +1033,7 @@ $('#catMode').addEventListener('change', e => {
 });
 $('#catPrev').onclick = () => { if(state.offset>0){ state.offset=Math.max(0,state.offset-LIMIT); state.page--; load(false); window.scrollTo(0,0); } };
 $('#catNext').onclick = () => { if(state.hasNext){ state.offset+=LIMIT; state.page++; load(false); window.scrollTo(0,0); } };
-$('#catMode').value = state.mode;
+ddSet('catMode', state.mode);
 $('#catGrid').className = 'cat-grid' + (state.mode==='text'?' mode-text':'');
 load(true).then(()=>{
   const p = new URLSearchParams(location.search);
@@ -1287,8 +1284,8 @@ def _listing_body(kind: str, role: str) -> str:
       <input type="search" id="catQ" placeholder="{html.escape(cfg['placeholder'])}" autocomplete="off">
       <div class="cat-spin"></div>
     </div>
-    <select class="cat-select" id="catCategory">{_category_options(kind)}</select>
-    <select class="cat-select" id="catMode">
+    <select class="filter-dd" id="catCategory" data-fdd-cap="Category" aria-label="Category" title="Category">{_category_options(kind)}</select>
+    <select class="filter-dd" id="catMode" data-fdd-cap="View mode" aria-label="Mode" title="Mode">
       <option value="poster">🖼️ Poster</option><option value="text">📄 Text</option>
     </select>
   </div>

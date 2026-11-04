@@ -14,6 +14,14 @@ page के अपने `$` / `esc` / `const` से कोई नाम-टक
 `Edit Title Metadata` (name / caption / poster / delete) का fsv1
 रूप: JSON API, बिना CDN का 16:9 canvas crop, बिना reload card update।
 
+🎛️ `FILTER_CSS` + `FILTER_JS` एक **shared filter dropdown component** है —
+सिर्फ़ `<select class="filter-dd">` लिखो, `SITE_JS` का `FilterDD` engine उसे
+styled button + custom options menu में upgrade कर देता है (MutationObserver से
+बाद में आने वाले selects भी)। Native select hidden रहकर `value`/`change` बनाए
+रखता है, इसलिए पुराना JS बिल्कुल नहीं बदलना पड़ता। **Dropdown का पूरा UI इसी एक
+जगह है** — बदलाव एक file में करो, `/search`, `/posts`, `/actors`, editor modals
+सब में दिखेगा।
+
 🎴 `VIDEO_CARD_CSS` एक **shared video card** है — `/search` की grid और
 Post/Actor Videos tabs बिल्कुल वही `.vcard`/`.vgrid` markup वाली cards,
 वही 1/2/3 responsive grid और नाम के नीचे वही compact padding दिखाती हैं।
@@ -228,7 +236,7 @@ box-shadow:0 12px 34px rgba(0,0,0,.55);transition:transform .3s,opacity .3s;max-
         <label class="wide">📝 File name<input id="feName" type="text" maxlength="300"></label>
         <label class="wide">🏷️ Caption / Search tags<textarea id="feCaption" maxlength="1000"
           placeholder="e.g. Ajay Devgan, 1080p, Comedy…"></textarea></label>
-        <label>🎞️ Quality<select id="feQuality">
+        <label>🎞️ Quality<select class="filter-dd" id="feQuality" data-fdd-full="1" data-fdd-cap="Quality">
           <option value="">Unknown</option><option value="144p">144p</option>
           <option value="240p">240p</option><option value="360p">360p</option>
           <option value="480p">480p</option><option value="720p">720p</option>
@@ -334,10 +342,15 @@ FILE_EDIT_JS = r"""<script>
         const f=d.file;
         q('#feName').value=f.name; q('#feCaption').value=f.caption;
         q('#feDuration').value=f.duration; q('#feRes').value=f.res;
-        const sel=q('#feQuality');
-        if(f.quality && !Array.prototype.some.call(sel.options,o=>o.value===f.quality))
-          sel.add(new Option(f.quality,f.quality));
-        sel.value=f.quality||'';
+        if(window.FilterDD && window.FilterDD.ensure){
+          if(f.quality) window.FilterDD.ensure('feQuality',f.quality,f.quality);
+          ddSet('feQuality',f.quality||'');
+        }else{
+          const sel=q('#feQuality');
+          if(f.quality && !Array.prototype.some.call(sel.options,o=>o.value===f.quality))
+            sel.add(new Option(f.quality,f.quality));
+          sel.value=f.quality||'';
+        }
         q('#feStatus').textContent='✏️ ID: '+esc(f.file_id)+' · '+esc(f.size)+' · '+esc(f.quality||'—');
         setPoster(f);
       }).catch(e=>{ q('#feStatus').textContent='Load error: '+String(e.message||e); });
@@ -487,6 +500,202 @@ FILE_EDIT_JS = r"""<script>
 </script>"""
 
 
+FILTER_CSS = r"""
+/* ═══════════════════════════════════════════════════════════════════
+   🎛️ SHARED FILTER DROPDOWN — हर filter control का UI सिर्फ़ यहीं
+   कोई भी <select class="filter-dd"> अपने आप इसी component में बदल जाता है
+   (SITE_JS का FilterDD engine)। बदलाव = सिर्फ़ यह CSS + नीचे वाला JS।
+   ═══════════════════════════════════════════════════════════════════ */
+.fdd{position:relative;display:inline-flex;min-width:132px;flex:0 0 auto;vertical-align:middle}
+.fdd.full{display:flex;width:100%;min-width:0}
+.fdd-btn{display:flex;align-items:center;gap:8px;width:100%;min-height:42px;
+box-sizing:border-box;padding:10px 12px;background:var(--bg3);border:1.5px solid var(--line);
+border-radius:10px;color:var(--txt);font:800 12px 'DM Sans',sans-serif;
+font-family:'DM Sans',sans-serif;cursor:pointer;text-align:left;
+transition:border-color .18s,background .18s,box-shadow .18s,transform .1s}
+.fdd-btn:hover{border-color:var(--red);background:var(--bg2)}
+.fdd.open .fdd-btn{border-color:var(--red);background:var(--bg2);
+box-shadow:0 0 0 3px rgba(229,9,20,.13)}
+.fdd-btn:active{transform:scale(.98)}
+.fdd-ico{font-size:15px;line-height:1;flex:0 0 auto}
+.fdd-label{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.fdd-arrow{flex:0 0 auto;font-size:10px;color:var(--mut);transition:transform .2s}
+.fdd.open .fdd-arrow{transform:rotate(180deg)}
+.fdd-menu{position:absolute;top:calc(100% + 8px);left:0;z-index:150;
+min-width:100%;max-width:min(320px,90vw);max-height:300px;overflow-y:auto;
+box-sizing:border-box;padding:6px;background:var(--bg2);border:1.5px solid var(--line);
+border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.62);display:none;
+animation:fddIn .16s ease-out}
+.fdd.open .fdd-menu{display:block}
+.fdd.up .fdd-menu{top:auto;bottom:calc(100% + 8px)}
+@keyframes fddIn{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}
+.fdd-cap{padding:6px 10px 9px;font-size:10px;font-weight:900;letter-spacing:1px;
+text-transform:uppercase;color:var(--mut);border-bottom:1px solid var(--line);margin-bottom:4px}
+.fdd-item{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;
+padding:10px 11px;border:0;border-radius:8px;background:transparent;color:var(--txt);
+font:700 12px 'DM Sans',sans-serif;font-family:'DM Sans',sans-serif;
+cursor:pointer;text-align:left;transition:background .12s,color .12s}
+.fdd-item:hover,.fdd-item:focus-visible{background:var(--bg3);outline:none}
+.fdd-item[aria-selected=true]{background:rgba(229,9,20,.14);color:var(--red)}
+.fdd-opt-ico{font-size:15px;width:18px;flex:0 0 18px;text-align:center}
+.fdd-opt-text{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.fdd-tick{flex:0 0 auto;color:var(--red);font-weight:900;opacity:0}
+.fdd-item[aria-selected=true] .fdd-tick{opacity:1}
+.fdd > select.fdd-native{position:absolute!important;left:0!important;top:0!important;
+width:1px!important;height:1px!important;padding:0!important;border:0!important;
+opacity:0!important;pointer-events:none!important;clip:rect(0,0,0,0)!important;
+overflow:hidden!important}
+/* container layout भी यहीं — एक जगह बदलाव सब pages पर दिखे */
+.filters .fdd{min-width:132px}
+.cat-toolbar .fdd{min-width:152px}
+@media(max-width:760px){
+.filters .fdd,.cat-toolbar .fdd{flex:1 1 0;min-width:0}
+}
+@media(prefers-reduced-motion:reduce){.fdd-menu{animation:none}.fdd-btn,.fdd-arrow{transition:none}}
+"""
+
+FILTER_JS = r"""
+/* 🎛️ SHARED FILTER DROPDOWN ENGINE — सभी <select class="filter-dd"> यहीं से upgrade.
+   Native <select> DOM में hidden रहता है (value + change events = पुराना code वैसा ही),
+   दिखता है styled button + custom options menu. नया select कभी भी जोड़ो —
+   MutationObserver उसे अपने आप upgrade कर देगा, किसी दूसरी file में बदलाव नहीं। */
+(function(){
+  var ALL=[];
+  function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;
+    if(txt!=null)e.textContent=txt;return e;}
+  function split(t){
+    var v=String(t==null?'':t).trim(), m=v.match(/^(\S+)\s+(.+)$/);
+    if(m&&/[^\x00-\x7F]/.test(m[1])) return {ico:m[1],text:m[2].trim()};
+    return {ico:'',text:v};
+  }
+  function capOf(sel){return sel.getAttribute('data-fdd-cap')||
+    sel.getAttribute('aria-label')||sel.title||'Options';}
+  function render(d){
+    var o=d.sel.options[d.sel.selectedIndex], p=o?split(o.text):{ico:'',text:'—'};
+    d.btn.querySelector('.fdd-ico').textContent=p.ico;
+    d.btn.querySelector('.fdd-label').textContent=p.text||'—';
+    Array.prototype.forEach.call(d.menu.querySelectorAll('.fdd-item'),function(it){
+      it.setAttribute('aria-selected',
+        it.getAttribute('data-value')===String(d.sel.value)?'true':'false');
+    });
+  }
+  function buildMenu(d){
+    d.menu.innerHTML='';
+    d.menu.appendChild(el('div','fdd-cap',capOf(d.sel)));
+    Array.prototype.forEach.call(d.sel.options,function(o){
+      var p=split(o.text), it=el('button','fdd-item');
+      it.type='button';it.setAttribute('role','option');
+      it.setAttribute('data-value',o.value);it.setAttribute('aria-selected','false');
+      it.appendChild(el('span','fdd-opt-ico',p.ico));
+      it.appendChild(el('span','fdd-opt-text',p.text||o.value));
+      it.appendChild(el('span','fdd-tick','✓'));
+      it.addEventListener('click',function(ev){ev.stopPropagation();choose(d,o.value);});
+      it.addEventListener('keydown',function(ev){
+        if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();choose(d,o.value);return;}
+        var all=Array.prototype.slice.call(d.menu.querySelectorAll('.fdd-item')),
+            i=all.indexOf(ev.currentTarget);
+        if(ev.key==='ArrowDown'){ev.preventDefault();(all[i+1]||all[0]).focus();}
+        else if(ev.key==='ArrowUp'){ev.preventDefault();(all[i-1]||all[all.length-1]).focus();}
+        else if(ev.key==='Escape'){ev.preventDefault();close(d);d.btn.focus();}
+      });
+      d.menu.appendChild(it);
+    });
+    render(d);
+  }
+  function close(d){d.wrap.classList.remove('open','up');
+    d.btn.setAttribute('aria-expanded','false');}
+  function closeAll(){ALL.forEach(close);}
+  function open(d){
+    closeAll();render(d);
+    d.wrap.classList.add('open');d.btn.setAttribute('aria-expanded','true');
+    var r=d.wrap.getBoundingClientRect(), h=d.menu.offsetHeight||220;
+    if(r.bottom+h+10>window.innerHeight&&r.top>h) d.wrap.classList.add('up');
+  }
+  function choose(d,v){
+    d.sel.value=v;
+    d.sel.dispatchEvent(new Event('change',{bubbles:true}));
+    render(d);close(d);d.btn.focus();
+  }
+  function build(sel){
+    if(sel.getAttribute('data-fdd')) return null;
+    sel.setAttribute('data-fdd','1');
+    var wrap=el('div','fdd'),btn=el('button','fdd-btn'),menu=el('div','fdd-menu');
+    if(sel.getAttribute('data-fdd-full'))wrap.classList.add('full');
+    btn.type='button';btn.setAttribute('aria-haspopup','listbox');
+    btn.setAttribute('aria-expanded','false');
+    btn.appendChild(el('span','fdd-ico',''));
+    btn.appendChild(el('span','fdd-label','—'));
+    btn.appendChild(el('span','fdd-arrow','▾'));
+    menu.setAttribute('role','listbox');
+    sel.parentNode.insertBefore(wrap,sel);
+    wrap.appendChild(btn);wrap.appendChild(menu);wrap.appendChild(sel);
+    sel.classList.add('fdd-native');
+    var d={sel:sel,wrap:wrap,btn:btn,menu:menu};
+    ALL.push(d);
+    btn.addEventListener('click',function(ev){ev.stopPropagation();
+      if(wrap.classList.contains('open'))close(d);else open(d);});
+    btn.addEventListener('keydown',function(ev){
+      if(ev.key==='ArrowDown'||ev.key==='Enter'||ev.key===' '){
+        ev.preventDefault();if(!wrap.classList.contains('open'))open(d);
+        var f=d.menu.querySelector('.fdd-item[aria-selected=true]')||
+              d.menu.querySelector('.fdd-item');if(f)f.focus();
+      }else if(ev.key==='Escape'){close(d);}
+    });
+    buildMenu(d);
+    return d;
+  }
+  function find(id){
+    var s=typeof id==='string'?document.getElementById(id):id;
+    if(!s)return null;
+    for(var i=0;i<ALL.length;i++)if(ALL[i].sel===s)return ALL[i];
+    return build(s);
+  }
+  function init(root){
+    var scope=root&&root.querySelectorAll?root:document;
+    Array.prototype.forEach.call(
+      scope.querySelectorAll('select.filter-dd:not([data-fdd])'),build);
+  }
+  function set(id,value,fire){
+    var d=find(id);if(!d)return;
+    d.sel.value=value;buildMenu(d);
+    if(fire)d.sel.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  function ensure(id,value,label){
+    var d=find(id);if(!d)return;
+    var has=Array.prototype.some.call(d.sel.options,function(o){return o.value===value;});
+    if(value&&!has)d.sel.add(new Option(label||value,value));
+    buildMenu(d);set(id,value||'');
+  }
+  function refresh(id){var d=find(id);if(d)buildMenu(d);}
+  window.FilterDD={init:init,set:set,ensure:ensure,refresh:refresh,
+                   closeAll:closeAll,find:find};
+  window.ddSet=set;
+  document.addEventListener('click',function(ev){
+    if(!ev.target||!ev.target.closest||!ev.target.closest('.fdd'))closeAll();
+  },true);
+  document.addEventListener('keydown',function(ev){
+    if(ev.key==='Escape')closeAll();
+  });
+  document.addEventListener('change',function(ev){
+    if(ev.target&&ev.target.matches&&ev.target.matches('select.filter-dd')){
+      var d=find(ev.target);if(d)render(d);
+    }
+  },true);
+  var pending=false;
+  function schedule(){if(pending)return;pending=true;
+    setTimeout(function(){pending=false;init(document);},0);}
+  function start(){
+    init(document);
+    if(window.MutationObserver&&document.body)
+      new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true});
+  }
+  if(document.readyState==='loading')
+    document.addEventListener('DOMContentLoaded',start);
+  else start();
+})();
+"""
+
+
 SITE_CSS = """
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0b0b0f;--bg2:#14141c;--bg3:#1e1e2a;--card:#16161f;--line:#2a2a38;
@@ -520,13 +729,6 @@ border-radius:50%;animation:spin .6s linear infinite}
 @keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
 /* ── filter dropdowns: desktop पर search bar के साथ, mobile पर ठीक नीचे एक लाइन ── */
 .filters{display:flex;gap:10px;align-items:center;flex:0 0 auto}
-.fwrap{position:relative;display:inline-flex;align-items:center;gap:7px;min-width:0}
-.fsel{-webkit-appearance:none;appearance:none;background:var(--bg3);border:1px solid var(--line);
-color:var(--txt);border-radius:8px;padding:9px 30px 9px 12px;font-family:inherit;
-font-size:12px;font-weight:800;cursor:pointer;min-width:120px;outline:none}
-.fsel:hover,.fsel:focus{border-color:var(--red)}
-.fwrap::after{content:'▾';position:absolute;right:11px;top:50%;transform:translateY(-50%);
-pointer-events:none;color:var(--mut);font-size:11px;font-weight:900}
 .main{padding:18px 4% 60px;max-width:1700px;margin:0 auto}
 .more{display:none;margin:28px auto 0;padding:11px 30px;border-radius:8px;
 background:var(--bg3);border:1px solid var(--line);color:var(--txt);font-weight:800;
@@ -579,8 +781,6 @@ font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 @media(max-width:760px){
 .qwrap{flex:1 1 100%}
 .filters{flex:1 1 100%}
-.fwrap{flex:1 1 0}
-.fsel{flex:1;width:100%;min-width:0}
 }
 @media(max-width:520px){.spin{display:none!important}
 .auth-card{padding:24px}.vgrid{gap:8px}}
@@ -588,6 +788,7 @@ font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 """
 
 SITE_CSS += VIDEO_CARD_CSS
+SITE_CSS += FILTER_CSS
 
 
 
@@ -702,6 +903,7 @@ function openSidebar(){var s=document.getElementById('sidebar'),o=document.getEl
 function closeSidebar(){var s=document.getElementById('sidebar'),o=document.getElementById('sbOverlay');if(s)s.classList.remove('open');if(o)o.classList.remove('open')}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSidebar()});
 """
+SITE_JS += FILTER_JS
 
 # v5 के NAV_MENU जैसा — Database Stats admin-only है
 NAV_MENU = (
@@ -879,19 +1081,15 @@ SEARCH_BODY = """<div class="search-zone">
       <div class="spin"></div>
     </div>
     <div class="filters">
-      <div class="fwrap">
-        <select class="fsel" id="modeSel" aria-label="Mode" title="Mode" onchange="setMode(this.value)">
-          <option value="poster">🖼️ Poster</option>
-          <option value="text">📄 Text</option>
-        </select>
-      </div>
-      <div class="fwrap">
-        <select class="fsel" id="groupSel" aria-label="Filter" title="Filter" onchange="setGroup(this.value)">
-          <option value="all">All</option>
-          <option value="group">Group</option>
-          <option value="ungroup">UnGroup</option>
-        </select>
-      </div>
+      <select class="filter-dd" id="modeSel" data-fdd-cap="View mode" aria-label="Mode" title="Mode" onchange="setMode(this.value)">
+        <option value="poster">🖼️ Poster</option>
+        <option value="text">📄 Text</option>
+      </select>
+      <select class="filter-dd" id="groupSel" data-fdd-cap="Result filter" aria-label="Filter" title="Filter" onchange="setGroup(this.value)">
+        <option value="all">All</option>
+        <option value="group">Group</option>
+        <option value="ungroup">UnGroup</option>
+      </select>
     </div>
   </div>
 </div>
@@ -917,8 +1115,8 @@ if(!['all','group','ungroup'].includes(groupMode))groupMode='all';
 function applyMode(){
   const text=viewMode==='text';
   $('#grid').classList.toggle('mode-text',text);
-  $('#modeSel').value=viewMode;
-  $('#groupSel').value=groupMode;
+  ddSet('modeSel',viewMode);
+  ddSet('groupSel',groupMode);
   if(!text){
     // Poster mode पर लौटने तब तक कोई thumbnail request न गई हो → अब लाओ
     document.querySelectorAll('#grid img[data-src]').forEach(img=>{
