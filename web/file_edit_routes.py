@@ -33,6 +33,7 @@ import info as _info
 from info import BIN_CHANNEL
 from utils import temp, get_size
 from database import ia_filterdb as ia
+from database.group_db import store as group_store, title_key
 from web.web_assets import get_auth, vcard_is_video
 from web.thumb_engine import thumb_version, invalidate_thumb, enqueue_probe
 
@@ -161,6 +162,30 @@ async def api_file_meta(req):
     return _json({"ok": True, "file": _public_file(doc)})
 
 
+# ── 🗂️ Permanent groups के साथ sync (file delete / rename) ───────────
+
+async def _group_cleanup(fid):
+    """Deleted file सब groups से हटाओ; खाली group मिटाओ (v5 `_group_cleanup`)।"""
+    try:
+        await group_store.pull_files([fid])
+        await group_store.cleanup_empty()
+    except Exception as e:
+        logger.warning(f"group cleanup after delete skipped: {e}")
+
+
+async def _sync_group_name(fid, name):
+    """Edit में नया नाम → group की member list + auto_keys ताज़ा।"""
+    try:
+        key = title_key(name)
+        for g in await group_store.by_members([fid]):
+            gid = str(g.get("_id") or "")
+            await group_store.rename_member(gid, fid, name)
+            if key:
+                await group_store.add_members(gid, [], auto_keys=[key])
+    except Exception as e:
+        logger.warning(f"group name sync skipped: {e}")
+
+
 # ───────────────────────── EDIT ─────────────────────────
 @file_edit_routes.post("/api/file/edit")
 async def api_file_edit(req):
@@ -202,6 +227,7 @@ async def api_file_edit(req):
     doc = await ia.update_file_fields(fid, fields)
     if not doc:
         return _json({"ok": False, "error": "Save नहीं हुआ"}, 500)
+    await _sync_group_name(fid, name)
     return _json({"ok": True, "file": _public_file(doc)})
 
 
@@ -299,4 +325,5 @@ async def api_file_delete(req):
     if not await ia.delete_file_by_id(fid):
         return _json({"ok": False, "error": "File not found"}, 404)
     invalidate_thumb(fid)
+    await _group_cleanup(fid)
     return _json({"ok": True, "deleted": fid})

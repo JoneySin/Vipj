@@ -19,6 +19,7 @@ from utils import temp
 from database.ia_filterdb import db_count_documents, get_recent_files, collection
 from database.users_chats_db import db as user_db, web_db
 from database.catalog_db import store as catalog_store
+from database.group_db import store as group_store
 from web.web_assets import get_auth, app_page
 from web.thumb_engine import thumb_queue_state
 
@@ -82,6 +83,7 @@ async def _stats_numbers():
     queue = thumb_queue_state()
     # 📚 Posts + Directory counts (v5 के "Content Posts / Universal Directory" cards)
     catalog = await _safe(catalog_store.counts(), {"posts": 0, "actors": 0})
+    groups = await _safe(group_store.count(), 0)
     return {
         "total_files": total_files,
         "recent_files": recent_files,
@@ -92,6 +94,7 @@ async def _stats_numbers():
         "thumb_queue": queue,
         "posts": catalog.get("posts", 0),
         "actors": catalog.get("actors", 0),
+        "groups": groups,
     }
 
 
@@ -172,6 +175,11 @@ async def stats_page(req):
       <div class="st-label">🎭 Directory Profiles</div>
       <div class="st-val" style="color:#00d2c4" data-count="{s['actors']}" data-delay="480">{s['actors']:,}</div>
       <div class="st-sub">Actors · Apps · Websites</div></div>
+
+    <div class="st-card anim-card"><div class="st-bar" style="background:#7dd3fc"></div>
+      <div class="st-label">🗂️ Permanent Groups</div>
+      <div class="st-val" style="color:#7dd3fc" data-count="{s['groups']}" data-delay="520">{s['groups']:,}</div>
+      <div class="st-sub">Saved quality groups with their own group id / #number</div></div>
   </div>
 </div>{_STATS_JS}'''
 

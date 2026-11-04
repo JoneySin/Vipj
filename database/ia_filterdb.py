@@ -70,6 +70,15 @@ def ensure_indexes(col) -> None:
             col.create_index([("updated_at", ASCENDING)], name="updated_at_idx")
             logger.info("✅ Updated_at index created")
 
+        # 🗂️ Permanent groups: sparse group_id — सिर्फ़ grouped files पर index
+        if "group_id_idx" not in indexes:
+            try:
+                from pymongo import ASCENDING as _ASC
+                col.create_index([("group_id", _ASC)], name="group_id_idx", sparse=True)
+                logger.info("✅ group_id sparse index created")
+            except Exception as ie:
+                logger.warning(f"⚠️ group_id index skipped: {ie}")
+
     except Exception as e:
         logger.error(f"❌ Index creation error: {e}")
 
@@ -86,6 +95,7 @@ WEB_EXTRA_FIELDS = {
     "mime_type": 1,
     "width": 1,
     "height": 1,
+    "group_id": 1,      # 🗂️ permanent group का id (sparse; सब files पर नहीं)
 }
 
 # =====================================================
@@ -462,6 +472,33 @@ def clean_text(text: str) -> str:
 # =====================================================
 # 💾 SAVE / UPDATE FILE
 # =====================================================
+async def _auto_join_group(file_id: str, file_name: str) -> None:
+    """🗂️ नई quality (same title) → saved PERMANENT group में अपने-आप जुड़े।
+
+    v5 search pipeline में `_persist_joins()` करता था; fsv1 में index-time पर
+    ही कर देते हैं ताकि group Telegram search में भी तुरंत सही रहे। `excluded`
+    (admin ने निकाली हुई file) वापस नहीं आती. Fail-soft: group DB न हो तो
+    indexing रुकनी नहीं चाहिए।
+    """
+    try:
+        from database.group_db import title_key, store
+        key = title_key(file_name)
+        if not key:
+            return
+        for g in await store.by_keys([key]):
+            fid = str(file_id)
+            if fid in {str(x) for x in (g.get("excluded") or [])}:
+                continue
+            if fid in {str(x) for x in (g.get("members") or [])}:
+                return
+            gid = str(g["_id"])
+            await store.add_members(gid, [(fid, file_name)], auto_keys=[key])
+            await store.mark_files([fid], gid)
+            return
+    except Exception as e:
+        logger.warning(f"group auto-join skipped: {e}")
+
+
 async def save_file(media) -> str:
     """
     Save or update file in database
@@ -518,6 +555,7 @@ async def save_file(media) -> str:
         # Try insert (new file)
         try:
             collection.insert_one(doc)
+            await _auto_join_group(file_id, file_name)
             return "suc"
 
         except DuplicateKeyError:
@@ -540,6 +578,7 @@ async def save_file(media) -> str:
                     }
                 }
             )
+            await _auto_join_group(file_id, file_name)
             return "dup"
 
     except Exception as e:

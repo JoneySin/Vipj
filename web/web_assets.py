@@ -41,6 +41,10 @@ import html
 import json
 import time
 
+from web.group_assets import (
+    GROUP_CSS, GROUP_JS, GROUP_ADMIN_HTML, GROUP_ADMIN_JS,
+)
+
 from aiohttp import web
 
 from info import ADMINS
@@ -999,6 +1003,7 @@ font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 
 SITE_CSS += VIDEO_CARD_CSS
 SITE_CSS += FILTER_CSS
+SITE_CSS += GROUP_CSS
 
 
 
@@ -1115,6 +1120,7 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSidebar
 """
 SITE_JS += FILTER_JS
 SITE_JS += VCARD_JS
+SITE_JS += GROUP_JS
 
 # v5 के NAV_MENU जैसा — Database Stats admin-only है
 NAV_MENU = (
@@ -1302,11 +1308,12 @@ SEARCH_BODY = """<div class="search-zone">
 
 __PLAYER_MODAL__
 __FILE_EDIT_HTML__
+__GROUP_ADMIN_HTML__
 
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let curQ='',offset=0,loading=false,hasMore=false;
+let curQ='',offset=0,loading=false,hasMore=false,seenGroups={};
 let debounce=null;
 let viewMode=localStorage.getItem('ff_view_mode')||'poster';
 let groupMode=localStorage.getItem('ff_group_mode')||'all';
@@ -1335,18 +1342,29 @@ $('#q').addEventListener('input',()=>{clearTimeout(debounce);debounce=setTimeout
 
 /* 🎴 card का markup/chips/size सब web_assets.VCARD_TEMPLATE + VCARD_CHIP_SPEC से —
    Post/Actor Videos tabs भी बिल्कुल यही vcardHTML()/vcardChips()/vcardSize() चलाते हैं। */
-function card(f){
+function imgAttrs(f){
   const thumbUrl=f.thumb?encodeURI(f.thumb):'';
-  const fid=encodeURIComponent(f.file_id);
   // Text mode में thumbnail request ही न जाए — src तभी लगाओ जब Poster mode हो
-  const imgAttr=(viewMode==='poster'?`src="${thumbUrl}"`:`data-src="${thumbUrl}"`)
+  return (viewMode==='poster'?`src="${thumbUrl}"`:`data-src="${thumbUrl}"`)
     + ` data-thumb="${thumbUrl}" data-retry="0"`;
-  return vcardHTML({
-    FID:fid, RAW_FID:esc(f.file_id), NAME:esc(f.name), POSTER_ID:` id="pb-${fid}"`,
-    IMG_ATTRS:imgAttr, IMG_ERROR:'thumbFail(this)',
-    CHIPS:vcardChips(f), SIZE:vcardSize(f)
-  });
 }
+function cardTokens(f){
+  const fid=encodeURIComponent(f.file_id);
+  return {
+    FID:fid, RAW_FID:esc(f.file_id), NAME:esc(f.name), POSTER_ID:` id="pb-${fid}"`,
+    IMG_ATTRS:imgAttrs(f), IMG_ERROR:'thumbFail(this)',
+    CHIPS:vcardChips(f), SIZE:vcardSize(f)
+  };
+}
+/* 🎴 एक ही entry point: group card (`web/group_assets.py`) या shared vcard.
+   Group के अंदर की हर variant भी इसी cardHTML() → vcardHTML() से बनती है,
+   इसलिए /search, Post, Actor तीनों पर card बिल्कुल एक जैसा रहता है। */
+function cardHTML(f){
+  if(f.group)return groupHTML(f,imgAttrs(f),'thumbFail(this)');
+  return vcardHTML(cardTokens(f));
+}
+window.cardHTML=cardHTML;
+function card(f){return cardHTML(f)}
 // v5 के reloadThumb(fileId) जैसा: पहली बार poster serial warmup queue में
 // एक-एक करके निकलता है, इसलिए 404 पर `retry=true&t=...` से धीरे-धीरे दोबारा
 // माँगो — जैसे-जैसे ID DB में lock होती है, posters अपने आप दिखते जाते हैं।
@@ -1364,18 +1382,25 @@ function thumbFail(img){
     return;
   }
   img.classList.add('hidden');
-  const p=img.closest('.vposter');if(p)p.classList.add('no-thumb');
+  const p=img.closest('.vposter,.gposter');if(p)p.classList.add('no-thumb');
 }
 
 async function load(reset){
   if(loading)return;
-  if(reset){offset=0;hasMore=false;$('#grid').innerHTML='';}
+  if(reset){offset=0;hasMore=false;seenGroups={};$('#grid').innerHTML='';}
   loading=true;$('#srow').classList.add('loading');
   try{
     const r=await fetch(`/api/search?q=${encodeURIComponent(curQ)}&offset=${offset}&group=${groupMode}`,{credentials:'same-origin'});
     if(r.status===401){location.href='/login?err='+encodeURIComponent('Session expired. Please sign in again.');return}
     const d=await r.json();
-    const list=d.results||[];
+    // 🗂️ Saved group के सारे members हर page पर आते हैं — एक ही group card
+    //    दोबारा न दिखे, इसलिए key याद रखो (raw-file offset बरकरार)।
+    const list=(d.results||[]).filter(f=>{
+      if(!f.group)return true;
+      const k=String(f.key||f.gid||'');
+      if(seenGroups[k])return false;
+      seenGroups[k]=1;return true;
+    });
     $('#grid').insertAdjacentHTML('beforeend',list.map(card).join(''));
     hasMore=!!d.next_offset;
     offset=hasMore?Number(d.next_offset):0;
@@ -1406,7 +1431,8 @@ applyMode();
 load(true);
 </script>
 __PLAYER_JS__
-__FILE_EDIT_JS__"""
+__FILE_EDIT_JS__
+__GROUP_ADMIN_JS__"""
 
 
 def search_page(tg_id: int, role: str):
@@ -1424,7 +1450,13 @@ def search_page(tg_id: int, role: str):
             .replace("__PLAYER_MODAL__", PLAYER_MODAL_HTML)
             .replace("__PLAYER_JS__", PLAYER_JS)
             .replace("__FILE_EDIT_HTML__", FILE_EDIT_HTML if admin else "")
-            .replace("__FILE_EDIT_JS__", FILE_EDIT_JS if admin else ""))
+            .replace("__FILE_EDIT_JS__", FILE_EDIT_JS if admin else "")
+            .replace("__GROUP_ADMIN_HTML__", GROUP_ADMIN_HTML if admin else "")
+            .replace("__GROUP_ADMIN_JS__", GROUP_ADMIN_JS if admin else ""))
+    # GROUP_JS (head) को admin flag body के पहले script में मिलता है —
+    # ताकि load(true) से बनने वाले group cards में admin overlay आ जाए।
+    if admin:
+        body = '<script>window.IS_GROUP_ADMIN=true;</script>' + body
     return app_page(
         "FAST FINDER — Search Files", body,
         tg_id=tg_id, role=role, active_tab="dash",
