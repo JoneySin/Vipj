@@ -40,8 +40,7 @@ server से raw HTML strings भेजती थी।
   collection / custom poster / delete) का fsv1 रूप: admin-only inline modal,
   `web.web_assets` का `FILE_EDIT_HTML`+`FILE_EDIT_JS` `/search` और दोनों detail
   pages पर, हर `.vcard` पर ✏️ बटन → `web/file_edit_routes.py` का JSON API.
-  fsv1 के quality/duration/resolution chips और `section` (v5 की 3 collections
-  का single-DB equivalent) भी editable; thumbnail बिना CDN के 16:9 canvas crop
+  fsv1 के quality/duration/resolution chips भी editable; thumbnail बिना CDN के 16:9 canvas crop
   से Telegram पर, card **बिना reload** update.
 * **▶ Shared Click-to-Play** — Videos tab की हर card (attached `#catVideos` और
   Actor के tag-results `#catMediaResults`) अब **main `/search` वाला ही छोटा

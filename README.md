@@ -28,7 +28,7 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | 📏 Size Chip | **File size thumbnail के अंदर** (नीचे-दाएँ badge) — फाइल नाम के नीचे की size/Stream लाइन हटा दी गई |
 | 📸 Real Thumbnails | **DB में सिर्फ़ Telegram का thumbnail file_id** — v5 की तरह `thumb_url: "TG_ID:<file_id>"` string. **Image bytes न DB में, न server RAM में** (Koyeb free पर RAM भर जाता है)। `/api/thumb` पहले से locked ID वाली फाइलों को Telegram से लाकर तुरंत response देता है और `ETag` + `Cache-Control` से **ब्राउज़र की अपनी memory/disk cache** में रखवाता है (`If-None-Match` → 304, दोबारा कोई server/Telegram call नहीं); पहली बार वाली फाइलें नीचे वाले serial warmup से आती हैं |
 | 🖼️ First-time Thumbnail Warmup (v5 logic) | पहली बार 21 नई फाइलें एक साथ खुलने पर **FLOOD_WAIT** न लगे इसलिए `send_cached_media` **एक-एक करके** चलता है (global lock + 1.2–3.0s random anti-flood gap), **FLOOD_WAIT/420** पर `wait + extra` सोकर 5 attempts तक retry, ID DB में `TG_ID:` lock, बिना poster वाली फाइल `NO_THUMB` mark। `/api/thumb` पहली बार serial queue में डालकर 404 + `Retry-After` देता है और browser `retry=true&t=…` से posters अपने आप एक-एक करके दिखा देता है (v5 के `reloadThumb` जैसा)। Bulk के लिए admin command **`/warmup_thumbs`** |
-| ✏️ File Editor (v5 `Edit Title Metadata`) | **हर `.vcard` पर admin-only ✏️ बटन** (`/search` + Post/Actor Videos tabs) → एक ही shared inline modal: **📝 File name, 🏷️ Caption / Search tags, 🎞️ Quality, ⏱️ Duration, 📐 Resolution, 📂 Section, 📸 Custom poster (16:9 crop), 🔄 Original thumbnail, 🗑️ Delete**. `JoneySin/v5` के `/api/edit_name` + `/api/upload_thumb` + `/api/delete` से समझकर fsv1 के लिए दोबारा बनाया — **verbatim copy नहीं**: v5 की 3 अलग `COLLECTIONS` (primary/cloud/archive) की जगह एक whitelisted `section` field + `/api/search?section=`, Cropper.js CDN की जगह **dependency-free canvas crop** (drag + zoom), `window.location.reload()` की जगह **JSON से card in-place update**, quality/duration/resolution chips भी editable. Custom poster `CATALOG_STORAGE_CHANNEL` पर जाती है, DB में सिर्फ़ `TG_ID:`; `thumb_version()` से browser cache bust, reset पर serial probe queue. सभी endpoints admin-only + `$set` whitelist |
+| ✏️ File Editor (v5 `Edit Title Metadata`) | **हर `.vcard` पर admin-only ✏️ बटन** (`/search` + Post/Actor Videos tabs) → एक ही shared inline modal: **📝 File name, 🏷️ Caption / Search tags, 🎞️ Quality, ⏱️ Duration, 📐 Resolution, 📸 Custom poster (16:9 crop), 🔄 Original thumbnail, 🗑️ Delete**. `JoneySin/v5` के `/api/edit_name` + `/api/upload_thumb` + `/api/delete` से समझकर fsv1 के लिए दोबारा बनाया — **verbatim copy नहीं**: v5 का `target_collection` (primary/cloud/archive) **port नहीं किया** क्योंकि fsv1 में ऐसा कोई concept नहीं है, Cropper.js CDN की जगह **dependency-free canvas crop** (drag + zoom), `window.location.reload()` की जगह **JSON से card in-place update**, quality/duration/resolution chips भी editable. Custom poster `CATALOG_STORAGE_CHANNEL` पर जाती है, DB में सिर्फ़ `TG_ID:`; `thumb_version()` से browser cache bust, reset पर serial probe queue. सभी endpoints admin-only + `$set` whitelist |
 | 🎴 One Video Card | `web/web_assets.py` का `VIDEO_CARD_CSS` — `/search`, Post attached videos, Actor tag-results **तीनों बिल्कुल एक ही `.vcard`**: 16:9 poster, quality/res/duration chips, size chip, hover play overlay, 2-line नाम और नीचे **सिर्फ़ 3px gap + 9px padding** (पहले वाला बड़ा खाली space हटाया)। सब एक ही `/api/stream` modal खोलते हैं |
 | ▶ Click-to-Stream (Shared) | **`/search` + Post/Actor दोनों Videos tabs — एक ही छोटा player modal.** फाइल/वीडियो नाम या card पर क्लिक → `POST /api/stream` → BIN_CHANNEL में cached media → **HMAC-signed** `/watch/<id>` + `/download/<id>` → `<video>` player (Range/seek supported), Download, Player page, Copy link, `Esc`/✕ से बंद। `web/web_assets.py` का `PLAYER_MODAL_HTML` + `PLAYER_JS` shared component, cards पर `data-fid`/`data-name` (keyboard `Enter`/`Space` भी), कोई नई tab नहीं |
 | 🔗 Signed Links | `e` (expiry) + `s` (signature) — बिना सही signature के message-id guess करके file नहीं निकाली जा सकती। Telegram bot के Watch/Download buttons भी अब signed links बनाते हैं |
@@ -45,11 +45,11 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | POST | `/api/login`, `/api/register_step1`, `/api/register_step2`, `/api/forgot_password`, `/api/reset_password` | Auth APIs |
 | GET | `/logout` | Session खत्म (RAM + DB) |
 | GET | `/search` | Login-walled search UI (v5 sidebar के साथ) |
-| GET | `/api/search?q=&offset=&group=&section=` | Results JSON; `section=primary\|cloud\|archive` = admin editor से set की गई section browse (+ `q` उसी section में filter) |
+| GET | `/api/search?q=&offset=&group=` | Results JSON — text/regex search, Recently Added, Group/UnGroup filter |
 | GET | `/stats` | **Database Stats** (admin-only) — v5 जैसे counters, "Recently Added Files" की गिनती यहीं |
 | GET | `/api/db_stats` | उन्हीं counters का JSON (admin-only) |
 | GET | `/api/file/meta?id=` | ✏️ Editor prefill — file का safe projection (admin-only) |
-| POST | `/api/file/edit` | Name / caption / quality / duration / resolution / section save — whitelisted `$set` + search cache clear (admin-only) |
+| POST | `/api/file/edit` | Name / caption / quality / duration / resolution save — whitelisted `$set` + search cache clear (admin-only) |
 | POST | `/api/file/thumb` | 📸 16:9 cropped custom poster → Telegram → `TG_ID:` + cache bust (admin-only, ≤5 MB, JPG/PNG/WEBP) |
 | POST | `/api/file/thumb_reset` | 🔄 Custom poster हटाकर original thumbnail serial queue में (admin-only) |
 | POST | `/api/file/delete` | 🗑️ Exact `_id` से file delete (admin-only) |
@@ -171,7 +171,7 @@ server से raw HTML strings, और Cropper.js CDN पर निर्भर�
 stream_security.py               → HMAC sign/verify (नया)
 database/users_chats_db.py       → WebAuthDB: web_users + web_sessions + PBKDF2 + OTP (नया)
 database/ia_filterdb.py          → save_file में `thumb_url` (सिर्फ ID) + meta fields,
-                                    + WEB_EDITABLE_FIELDS / get_file_meta / update_file_fields / delete_file_by_id / get_files_by_section,
+                                    + WEB_EDITABLE_FIELDS / get_file_meta / update_file_fields / delete_file_by_id,
                                    search projection, get_recent_files(),
                                    update_file_meta() (सिर्फ ID backfill)
 utils.py                         → temp.USER_SESSIONS / REG_PENDING

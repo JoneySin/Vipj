@@ -11,7 +11,7 @@ JS एक IIFE में `window.play/closePlayer/copyLink` expose करता 
 page के अपने `$` / `esc` / `const` से कोई नाम-टकराव नहीं होता।
 
 ✏️ `FILE_EDIT_HTML` + `FILE_EDIT_JS` admin-only **file editor** है — v5 के
-`Edit Title Metadata` (name / caption / collection / poster / delete) का fsv1
+`Edit Title Metadata` (name / caption / poster / delete) का fsv1
 रूप: JSON API, बिना CDN का 16:9 canvas crop, बिना reload card update।
 
 🎴 `VIDEO_CARD_CSS` एक **shared video card** है — `/search` की grid और
@@ -118,7 +118,6 @@ padding:7px;flex-wrap:wrap;pointer-events:none}
 padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255,.14)}
 .vtag.gold{color:var(--gold);border-color:rgba(255,209,102,.4)}
 .vtag.blue{color:#93c5fd;border-color:rgba(147,197,253,.35)}
-.vtag.sec{background:rgba(229,9,20,.88);border-color:rgba(229,9,20,.9);color:#fff}
 .vsize{position:absolute;right:7px;bottom:7px;z-index:2;pointer-events:none;
 background:rgba(0,0,0,.78);backdrop-filter:blur(6px);color:#fff;border-radius:5px;
 padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255,.14)}
@@ -184,7 +183,7 @@ border-radius:9px;overflow:hidden;margin-bottom:10px}
 cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--txt);transition:border-color .15s,transform .1s}
 .febtn:hover{border-color:var(--red)}.febtn:active{transform:scale(.96)}
 .febtn:disabled{opacity:.5;cursor:not-allowed}
-.febtn.primary{background:var(--red);border-color:var(--red);color:#fff}
+.febtn.save{background:var(--red);border-color:var(--red);color:#fff}
 .febtn.danger{background:rgba(160,8,8,.35);border-color:rgba(229,9,20,.5)}
 .festate,.festatus{font-size:11px;color:var(--mut);font-weight:700;margin:6px 0 12px;min-height:15px}
 .fegrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -197,7 +196,7 @@ font-family:inherit;outline:none}
 .fegrid textarea{resize:vertical;min-height:58px}
 .fegrid input:focus,.fegrid select:focus,.fegrid textarea:focus{border-color:var(--red)}
 .fefoot{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line);flex-wrap:wrap}
-.fefoot .primary{margin-left:auto}
+.fefoot .save{margin-left:auto}
 .fetoast{position:fixed;left:50%;bottom:22px;z-index:420;transform:translate(-50%,160%);
 opacity:0;background:var(--bg2);border:1px solid var(--line);border-left:4px solid #2ecc71;
 color:var(--txt);border-radius:10px;padding:11px 17px;font-size:12px;font-weight:800;
@@ -232,17 +231,13 @@ box-shadow:0 12px 34px rgba(0,0,0,.55);transition:transform .3s,opacity .3s;max-
           <option value="HDR">HDR</option></select></label>
         <label>⏱️ Duration<input id="feDuration" type="text" placeholder="1:36:22"></label>
         <label>📐 Resolution<input id="feRes" type="text" placeholder="1920×1080"></label>
-        <label>📂 Section<select id="feSection">
-          <option value="primary">🟢 Primary</option>
-          <option value="cloud">🔵 Cloud</option>
-          <option value="archive">🟠 Archive</option></select></label>
       </div>
       <div class="festatus" id="feStatus">…</div>
     </div>
     <div class="fefoot">
       <button class="febtn danger" id="feDelete">🗑️ Delete file</button>
       <button class="febtn" onclick="closeFileEdit()">Cancel</button>
-      <button class="febtn primary" id="feSave">💾 Save Changes</button>
+      <button class="febtn save" id="feSave">💾 Save Changes</button>
     </div>
   </div>
 </div>
@@ -276,7 +271,6 @@ FILE_EDIT_JS = r"""<script>
         const keep=Array.prototype.filter.call(chips.querySelectorAll('.vtag'),
           n=>/^#\d+$/.test(n.textContent)).map(n=>n.outerHTML).join('');
         chips.innerHTML=keep+
-          (f.section&&f.section!=='primary'?'<span class="vtag sec">'+esc(f.section.toUpperCase())+'</span>':'')+
           (f.quality?'<span class="vtag blue">'+esc(f.quality)+'</span>':'')+
           (f.res?'<span class="vtag">'+esc(f.res)+'</span>':'')+
           (f.duration?'<span class="vtag gold">'+esc(f.duration)+'</span>':'');
@@ -337,8 +331,7 @@ FILE_EDIT_JS = r"""<script>
         if(f.quality && !Array.prototype.some.call(sel.options,o=>o.value===f.quality))
           sel.add(new Option(f.quality,f.quality));
         sel.value=f.quality||'';
-        q('#feSection').value=f.section||'primary';
-        q('#feStatus').textContent='✏️ ID: '+esc(f.file_id)+' · '+esc(f.size)+' · '+esc(f.section);
+        q('#feStatus').textContent='✏️ ID: '+esc(f.file_id)+' · '+esc(f.size)+' · '+esc(f.quality||'—');
         setPoster(f);
       }).catch(e=>{ q('#feStatus').textContent='Load error: '+String(e.message||e); });
   }
@@ -354,7 +347,7 @@ FILE_EDIT_JS = r"""<script>
     if(!current||busy) return;
     const payload={file_id:current,name:q('#feName').value,caption:q('#feCaption').value,
       quality:q('#feQuality').value,duration:q('#feDuration').value,
-      res:q('#feRes').value,section:q('#feSection').value};
+      res:q('#feRes').value};
     setBusy(true);
     try{
       const r=await fetch('/api/file/edit',{method:'POST',credentials:'same-origin',
@@ -848,9 +841,6 @@ SEARCH_BODY = """<div class="search-zone">
           <option value="all">All</option>
           <option value="group">Group</option>
           <option value="ungroup">UnGroup</option>
-          <option value="primary">🟢 Primary</option>
-          <option value="cloud">🔵 Cloud</option>
-          <option value="archive">🟠 Archive</option>
         </select>
       </div>
     </div>
@@ -874,7 +864,7 @@ let debounce=null;
 let viewMode=localStorage.getItem('ff_view_mode')||'poster';
 let groupMode=localStorage.getItem('ff_group_mode')||'all';
 if(viewMode!=='poster'&&viewMode!=='text')viewMode='poster';
-if(!['all','group','ungroup','primary','cloud','archive'].includes(groupMode))groupMode='all';
+if(!['all','group','ungroup'].includes(groupMode))groupMode='all';
 
 function applyMode(){
   const text=viewMode==='text';
@@ -889,11 +879,8 @@ function applyMode(){
   }
 }
 function setMode(v){viewMode=(v==='text')?'text':'poster';localStorage.setItem('ff_view_mode',viewMode);applyMode()}
-function setGroup(v){
-  const sections=['primary','cloud','archive'];
-  groupMode=['all','group','ungroup',...sections].includes(v)?v:'all';
-  localStorage.setItem('ff_group_mode',groupMode);applyMode();doSearch();
-}
+function setGroup(v){groupMode=['all','group','ungroup'].includes(v)?v:'all';
+  localStorage.setItem('ff_group_mode',groupMode);applyMode();doSearch()}
 function doSearch(){curQ=$('#q').value.trim();load(true)}
 $('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(debounce);doSearch()}});
 $('#q').addEventListener('input',()=>{clearTimeout(debounce);debounce=setTimeout(()=>{
@@ -909,15 +896,13 @@ function card(f){
   const thumbUrl=f.thumb?encodeURI(f.thumb):'';
   const imgAttr=viewMode==='poster'?`src="${thumbUrl}"`:`data-src="${thumbUrl}"`;
   const size=f.size?`<span class="vsize">${esc(f.size)}</span>`:'';
-  const sec=f.section&&f.section!=='primary'
-    ?`<span class="vtag sec">${esc(String(f.section).toUpperCase())}</span>`:'';
   return `<div class="vcard" role="button" tabindex="0" data-fid="${fid}" `
     + `data-name="${esc(f.name)}" aria-label="Play ${esc(f.name)}">
     <div class="vposter" id="pb-${fid}">
       <img class="vimg" ${imgAttr} alt="" loading="lazy" data-thumb="${thumbUrl}" data-retry="0"
            onload="this.classList.add('on')" onerror="thumbFail(this)">
       <div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>
-      <div class="vchips">${type}${q}${res}${dur}${sec}</div>${size}
+      <div class="vchips">${type}${q}${res}${dur}</div>${size}
       <span class="vplay">▶</span>
       ${IS_ADMIN?'<button class="vedit" title="Edit file metadata" aria-label="Edit file" data-fid="'+esc(f.file_id)+'">✏️</button>':''}
     </div>
@@ -949,9 +934,7 @@ async function load(reset){
   if(reset){offset=0;hasMore=false;$('#grid').innerHTML='';}
   loading=true;$('#srow').classList.add('loading');
   try{
-    const sec=['primary','cloud','archive'].includes(groupMode)?groupMode:'all';
-    const grp=['group','ungroup'].includes(groupMode)?groupMode:'all';
-    const r=await fetch(`/api/search?q=${encodeURIComponent(curQ)}&offset=${offset}&group=${grp}&section=${sec}`,{credentials:'same-origin'});
+    const r=await fetch(`/api/search?q=${encodeURIComponent(curQ)}&offset=${offset}&group=${groupMode}`,{credentials:'same-origin'});
     if(r.status===401){location.href='/login?err='+encodeURIComponent('Session expired. Please sign in again.');return}
     const d=await r.json();
     const list=d.results||[];

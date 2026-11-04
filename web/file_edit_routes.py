@@ -4,14 +4,15 @@ v5 `/api/edit_name` + `/api/upload_thumb` + `/api/delete` में ये edita
 
 * `file_name` — टाइटल
 * `caption` — Search Tags (text index में जाता है)
-* `target_collection` — 🟢 Primary / 🔵 Cloud / 🟠 Archive (v5 में अलग DB collections)
+* `target_collection` — v5 की 3 अलग collections (fsv1 में नहीं है, इसलिए port नहीं किया)
 * Poster thumbnail — Cropper.js से 16:9 crop → Telegram storage channel → `TG_ID:`
 * Delete file
 
-fsv1 में एक ही MongoDB collection है, इसलिए **verbatim copy नहीं** किया:
+fsv1 में एक ही MongoDB collection है और primary/cloud/archive जैसा कोई
+section/concept नहीं है, इसलिए **verbatim copy नहीं** किया — और v5 का
+"Move to collection" control भी **जानबूझकर port नहीं किया**:
 
-* "Move to collection" → whitelisted `section` field + `/api/search?section=…`
-  (`database.ia_filterdb.get_files_by_section`) — document copy/delete नहीं।
+* कोई `section` field, कोई collection-move dropdown, कोई `/api/search?section=` नहीं।
 * Cropper.js CDN → **बिल्कुल dependency-free** built-in 16:9 canvas crop (UI में)।
 * Upload `CATALOG_STORAGE_CHANNEL` पर, bytes DB/RAM में कभी नहीं — सिर्फ़ `TG_ID:`
   string, और `thumb_version()` का hash browser cache bust करता है।
@@ -40,7 +41,6 @@ file_edit_routes = web.RouteTableDef()
 
 _STORAGE_CHANNEL = getattr(_info, "CATALOG_STORAGE_CHANNEL", BIN_CHANNEL)
 _MAX_UPLOAD = 5 * 1024 * 1024
-_SECTIONS = frozenset({"primary", "cloud", "archive"})
 _QUALITY_RE = re.compile(r"^[A-Za-z0-9 +.\-]{0,16}$")
 _RES_RE = re.compile(r"^(\d{1,5})[x×](\d{1,5})$", re.I)
 
@@ -122,7 +122,6 @@ def _public_file(doc) -> dict:
         "width": w,
         "height": h,
         "size": get_size(doc.get("file_size") or 0),
-        "section": str(doc.get("section") or "primary"),
         "thumb": f"/api/thumb?file_id={quote(fid, safe='')}&v={v}",
         "v": v,
         "custom_thumb": (
@@ -180,9 +179,6 @@ async def api_file_edit(req):
     quality = _clean(data.get("quality"), 16)
     if quality and not _QUALITY_RE.match(quality):
         return _json({"ok": False, "error": "Quality value गलत है"}, 400)
-    section = str(data.get("section") or "primary").strip().lower()
-    if section not in _SECTIONS:
-        return _json({"ok": False, "error": "Unknown section"}, 400)
     duration = _parse_duration(data.get("duration"))
     if duration is None:
         return _json({"ok": False, "error": "Duration `H:MM:SS` में लिखें"}, 400)
@@ -201,7 +197,6 @@ async def api_file_edit(req):
         "duration": duration,
         "width": res[0],
         "height": res[1],
-        "section": section,
     }
     doc = await ia.update_file_fields(fid, fields)
     if not doc:

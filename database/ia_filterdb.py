@@ -65,11 +65,6 @@ def ensure_indexes(col) -> None:
             col.create_index([("quality", ASCENDING)], name="quality_idx")
             logger.info("✅ Quality index created")
 
-        # 📂 Section index — admin editor का primary/cloud/archive filter
-        if "section_idx" not in indexes:
-            col.create_index([("section", ASCENDING)], name="section_idx")
-            logger.info("✅ Section index created")
-
         # Updated timestamp index
         if "updated_at_idx" not in indexes:
             col.create_index([("updated_at", ASCENDING)], name="updated_at_idx")
@@ -91,7 +86,6 @@ WEB_EXTRA_FIELDS = {
     "mime_type": 1,
     "width": 1,
     "height": 1,
-    "section": 1,          # 📂 v5 की primary/cloud/archive collections का fsv1 equivalent
 }
 
 # =====================================================
@@ -303,14 +297,13 @@ async def update_file_meta(file_id: str, meta: dict) -> bool:
 # ✏️ WEB FILE EDITOR — v5 के /api/edit_name + /api/delete का fsv1 रूप
 # =====================================================
 # v5 में 3 अलग collections (primary/cloud/archive) थीं और edit modal file को
-# document-सहित दूसरी collection में move करता था। fsv1 में एक ही collection है,
-# इसलिए "move" एक whitelisted `section` field है — `$set` से, बिना doc copy किए।
-# Raw user dict कभी `$set` में नहीं जाता: सिर्फ़ यही keys allow हैं।
+# दूसरी collection में move करता था। fsv1 में ऐसा कोई concept नहीं है, इसलिए
+# collection-move port नहीं किया गया। Raw user dict कभी `$set` में नहीं जाता:
+# सिर्फ़ यही keys allow हैं।
 WEB_EDITABLE_FIELDS = frozenset({
     "file_name", "caption", "quality", "duration", "width", "height",
-    "section", "thumb_url", "thumb_file_id", "thumb_source", "is_thumb_permanent",
+    "thumb_url", "thumb_file_id", "thumb_source", "is_thumb_permanent",
 })
-WEB_SECTIONS = frozenset({"primary", "cloud", "archive"})
 
 
 async def get_file_meta(file_id: str) -> Optional[Dict]:
@@ -358,49 +351,6 @@ async def delete_file_by_id(file_id: str) -> bool:
     except Exception as e:
         logger.error(f"delete_file_by_id error: {e}")
         return False
-
-
-def section_filter(section: str) -> dict:
-    """पुराने docs (बिना `section`) को 🟢 Primary मानो।"""
-    if section == "primary":
-        return {"$or": [{"section": "primary"}, {"section": {"$exists": False}}]}
-    return {"section": section}
-
-
-async def get_files_by_section(section: str, offset: int = 0,
-                               max_results: int = 30, q: str = ""):
-    """📂 Section filter — `/api/search?section=cloud` (get_recent_files जैसा contract)।
-
-    v5 की अलग collections का fsv1 equivalent: अलग DB नहीं, एक indexed field
-    + यही safe projection/pagination. `q` दिया हो तो section के अंदर ही
-    name/caption regex लगता है (dropdown search query को ignore नहीं करता)।
-    """
-    if section not in WEB_SECTIONS:
-        return [], "", 0
-    flt = section_filter(section)
-    query = str(q or "").strip()
-    if query:
-        rx = re.compile(re.escape(query), re.IGNORECASE)
-        rg = ({"$or": [{"file_name": rx}, {"caption": rx}]}
-              if USE_CAPTION_FILTER else {"file_name": rx})
-        flt = {"$and": [flt, rg]}
-    proj = {
-        "file_name": 1, "file_size": 1, "caption": 1, "quality": 1,
-        **WEB_EXTRA_FIELDS,
-    }
-    try:
-        def _find():
-            return list(
-                collection.find(flt, proj)
-                .sort("updated_at", -1).skip(offset).limit(max_results)
-            )
-        docs = await asyncio.to_thread(_find)
-        total = await asyncio.to_thread(collection.count_documents, flt)
-        nxt = str(offset + max_results) if offset + max_results < total else ""
-        return docs, nxt, total
-    except Exception as e:
-        logger.error(f"get_files_by_section error: {e}")
-        return [], "", 0
 
 
 # =====================================================
