@@ -18,10 +18,19 @@ server से raw HTML strings भेजती थी।
   duplicate guard. पुराने posts के `links`-में-रखे episodes auto-migrate होते हैं।
   **🖼️ Visual gallery** — multiple image upload (Telegram पर एक-एक करके),
   thumbnails/remove, कोई plain textarea नहीं।
-* **🗂️ Detail tabs** — `ℹ️ Overview | 🎬 Videos | 🖼️ Gallery` दोनों pages पर
-  (v5 में सिर्फ़ actor detail पर थे), count badges, `?tab=` deep-link, arrow-key
-  nav, lazy Library search, staggered panels, lightbox, और **बिना reload**
-  gallery image delete.
+* **🗂️ Detail tabs** — `ℹ️ Overview | 🎬 Videos | 🖼️ Gallery` (Actor) /
+  `📸 Screenshots` (Post). v5 में tabs सिर्फ़ actor detail पर थे। Count badges,
+  `?tab=` deep-link (Post `?tab=screenshots`), arrow-key nav, staggered panels,
+  lightbox, **बिना reload** image delete/upload.
+* **🏷️ Tag-driven Videos** — v5 का `get_actor_search_results(name|tags)`: Videos
+  tab का main हिस्सा entry के **Search Tags** से Library में खोजकर आता है,
+  ऊपर search box में custom `q` टाइप करते ही tags ignore (बिल्कुल v5 जैसा)।
+  fsv1 की अपनी `$text` + regex-fallback pipeline को हर term पर चलाकर results
+  merge/dedupe/paginate करते हैं — कोई नया raw-regex layer नहीं। साथ में
+  manually attached `videos[]` भी अलग section में बने रहते हैं।
+* **🖼️ Direct gallery upload** — v5 का `<input multiple>` form अब detail tab पर
+  ही; JSON response + in-place render (v5 reload करता था), uploads Telegram पर
+  एक-एक करके anti-flood.
 * **Animations**: staggered card entrance (IntersectionObserver), 3D hover +
   poster zoom + press feedback, shimmer skeleton, modal spring-pop, button
   ripple, toast slide-in, save-flash, lightbox zoom, hero fade-up — और
@@ -52,6 +61,12 @@ CATALOGS = {
         "bodyLabel": "Short Description",
         "imageLabel": "Cover Image",
         "galleryLabel": "Screenshots",
+        "galleryTab": "📸 Screenshots",
+        "galleryIcon": "📸",
+        "uploadLabel": "📂 Upload screenshots",
+        "galleryHint": "Movie / episode के stills — एक साथ कई upload करें",
+        "galleryEmpty": "📸 अभी कोई screenshot नहीं है।",
+        "tabAlias": "screenshots",
         "linkKind": "media",
         "linkLabel": "🔗 External / Social Links",
         "linkLabelField": "Label (Trailer / IMDb / Instagram)",
@@ -80,6 +95,12 @@ CATALOGS = {
         "bodyLabel": "Biography / Details",
         "imageLabel": "Profile Photo / Icon",
         "galleryLabel": "Gallery",
+        "galleryTab": "🖼️ Gallery",
+        "galleryIcon": "🖼️",
+        "uploadLabel": "📂 Add photos to gallery",
+        "galleryHint": "एक साथ कई photos चुनें — Telegram पर एक-एक करके save होंगी",
+        "galleryEmpty": "🖼️ Gallery खाली है।",
+        "tabAlias": "gallery",
         "linkKind": "url",
         "linkLabel": "🔗 Social / Website Links",
         "linkLabelField": "Label (Instagram / YouTube / X)",
@@ -478,11 +499,49 @@ border-radius:5px;width:20px;height:20px;font-size:10px;cursor:pointer;line-heig
 .cat-sec-h{font-size:11px;font-weight:900;color:var(--mut);letter-spacing:.6px;text-transform:uppercase;
 margin:16px 0 8px;border-top:1px solid var(--line);padding-top:14px}
 
+
+/* ───────── 🏷️ Tag-driven video search (v5 का actor Linked Media) ───────── */
+.cat-subhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 12px}
+.cat-subhead h3{font-size:14px;font-weight:900;margin:0;letter-spacing:-.2px}
+.cat-subhead .cat-hint{margin:0}
+.cat-tagline{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.cat-tagpill{background:var(--bg3);border:1px solid var(--line);border-radius:20px;
+padding:4px 10px;font-size:10.5px;font-weight:800;color:var(--mut)}
+.cat-tagpill b{color:var(--red)}
+.cat-mediabar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.cat-mediabar .cat-search{flex:1 1 230px}
+.cat-mediabar .cat-search input{width:100%;box-sizing:border-box;background:var(--bg3);
+border:1.5px solid var(--line);border-radius:9px;padding:11px 14px;color:var(--txt);
+font:600 13px inherit;font-family:inherit;outline:none;transition:border-color .18s,box-shadow .18s}
+.cat-mediabar .cat-search input:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(229,9,20,.14)}
+.cat-mediainfo{font-size:11px;font-weight:700;color:var(--mut);margin:0 0 12px;min-height:14px}
+.cat-mediainfo b{color:var(--txt)}
+.cat-mediapg{display:flex;gap:9px;align-items:center;justify-content:center;margin-top:16px}
+.cat-mediapg button{background:var(--bg3);border:1px solid var(--line);color:var(--txt);
+border-radius:8px;padding:8px 14px;font:800 11px inherit;font-family:inherit;cursor:pointer}
+.cat-mediapg button:disabled{opacity:.4;cursor:default}
+.cat-mediapg span{font-size:11px;font-weight:800;color:var(--mut)}
+.cat-vgrid + .cat-subhead{margin-top:28px;border-top:1px solid var(--line);padding-top:22px}
+.cat-toast{position:fixed;bottom:24px;left:50%;transform:translate(-50%,24px);z-index:400;
+background:var(--card);border:1px solid var(--line);border-left:3px solid var(--red);
+border-radius:10px;padding:11px 16px;font-size:12px;font-weight:800;color:var(--txt);
+box-shadow:0 12px 34px rgba(0,0,0,.5);opacity:0;pointer-events:none;
+transition:opacity .25s,transform .3s cubic-bezier(.34,1.3,.64,1);white-space:nowrap}
+.cat-toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.cat-toast.err{border-left-color:#e74c3c}
+/* 🖼️ direct upload bar in Gallery/Screenshots tab */
+.cat-uploadbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--card);
+border:1px dashed var(--line);border-radius:12px;padding:14px;margin-bottom:16px}
+.cat-uploadbar .cat-hint{margin:0;flex:1 1 180px}
+.cat-uploadbar .cat-upload{margin:0}
+.cat-upnote{font-size:11px;font-weight:700;color:var(--mut);min-height:14px;margin-bottom:12px}
+
 /* ♿ v5 में नहीं था: reduced-motion वालों के लिए सारे animations बंद */
 @media(prefers-reduced-motion:reduce){
 .cat-card,.cat-card.enter,.cat-card.enter.in,.cat-hero,.cat-modal,.cat-mcard,.cat-toast,
 .cat-lightbox,.cat-lightbox img,.cat-gal img,.cat-poster,.cat-skel,.cat-poster-wrap,
-.cat-panel,.cat-vcard,.cat-galitem,.cat-vrow,.cat-gthumb,.cat-tab,.cat-tab::after{
+.cat-panel,.cat-vcard,.cat-galitem,.cat-vrow,.cat-gthumb,.cat-tab,.cat-tab::after,
+.cat-toast,.cat-tagpill{
 animation:none!important;transition:none!important;opacity:1!important;transform:none!important}
 .cat-card.enter{opacity:1!important}
 }
@@ -662,11 +721,11 @@ function editorHTML(){
         <button class="cat-btn ghost" type="button" onclick="donePicking()" style="padding:7px 13px;font-size:11px">✓ Done</button>
       </div>
       <div class="cat-picker max" id="fPicker"></div></div>
-    <div class="cat-sec-h">🖼️ ${esc(CFG.galleryLabel)}</div>
-    <div class="cat-field">
+    <div class="cat-sec-h">${esc(CFG.galleryIcon)} ${esc(CFG.galleryLabel)}</div>
+    <div class="cat-field"><span class="cat-hint">${esc(CFG.galleryHint)}</span>
       <div class="cat-galedit" id="fGalList"></div>
       <div class="cat-galadd">
-        <label class="cat-upload">📂 Upload images (multiple)
+        <label class="cat-upload">${esc(CFG.uploadLabel)} (multiple)
           <input type="file" id="fGalUpload" accept="image/*" multiple onchange="uploadGallery(this)"></label>
         <input class="cat-input" id="fGalUrl" placeholder="https://… या TG_ID:…">
         <button class="cat-btn ghost" type="button" onclick="addGalleryUrl()" style="padding:7px 13px;font-size:11px">➕ Add URL</button>
@@ -955,14 +1014,27 @@ DETAIL_JS = r"""
 <script>
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const D = __DETAIL_CFG__;
-let relatedLoaded = false;
+let GALLERY = D.gallery.slice();
+let mediaLoaded=false, mediaOffset=0, mediaNext='';
+let toastTimer=null;
 
-/* 🗂️ v5 के actor-tab-bar जैसा, पर deep-link + lazy search + keyboard nav के साथ */
+function imageSrc(v){
+  if(!v) return '';
+  if(v.indexOf('TG_ID:')===0) return '/api/catalog/photo?id='+encodeURIComponent(v.slice(6));
+  return v;
+}
+function toast(msg,type){
+  const t=document.getElementById('catToast'); if(!t) return;
+  t.className='cat-toast show '+(type||''); t.textContent=msg;
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3000);
+}
+/* 🗂️ tabs: Post का तीसरा tab "Screenshots", Actor का "Gallery" — एक ही engine */
 function switchTab(name, init){
+  if(name===D.tabAlias) name='gallery';
   if(!['overview','videos','gallery'].includes(name)) name='overview';
   document.querySelectorAll('.cat-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
   document.querySelectorAll('.cat-panel').forEach(p=>p.classList.toggle('active',p.id==='cp-'+name));
-  if(name==='videos'){ stagger('#catVideos .cat-vcard'); if(!relatedLoaded) loadRelated(); }
+  if(name==='videos'){ stagger('#catVideos .cat-vcard'); if(!mediaLoaded) loadMedia(0); }
   if(name==='gallery') stagger('#catGallery .cat-galitem');
   if(!init){
     const u=new URL(location.href); u.searchParams.set('tab',name);
@@ -977,22 +1049,105 @@ function stagger(sel){
     e.classList.add('in');
   });
 }
-async function loadRelated(){
-  relatedLoaded=true;
-  const box=document.getElementById('catRelated'); if(!box) return;
-  box.innerHTML='<span style="color:var(--mut);font-size:12px">खोजा जा रहा है…</span>';
-  try{
-    const r=await fetch('/api/search?q='+encodeURIComponent(D.q)+'&limit=8');
-    const d=await r.json();
-    const rows=(d.results||[]).map(f=>'<a href="/setup_stream?file_id='+encodeURIComponent(f.file_id)
-      +'&mode=watch" target="_blank" rel="noopener"><span>'+esc(f.name)+'</span><span>'+esc(f.size||'')+'</span></a>');
-    box.innerHTML = rows.length ? rows.join('')
-      : '<span style="color:var(--mut);font-size:12px">इस नाम से कोई file नहीं मिली।</span>';
-  }catch(e){ box.innerHTML='<span style="color:var(--mut);font-size:12px">Load नहीं हुआ।</span>'; }
+
+/* ── 🏷️ v5 का tag-driven Linked Media, पर fsv1 की JSON API से ── */
+function mediaCard(f){
+  const meta=[f.size,f.duration,f.res].filter(Boolean).join(' · ');
+  return '<a class="cat-vcard" href="'+esc(f.watch)+'" target="_blank" rel="noopener">'
+    + '<div class="cat-vposter"><div class="cat-vph">🎬</div>'
+    + '<img src="'+esc(f.thumb)+'" alt="" loading="lazy" onerror="this.remove()">'
+    + '<span class="cat-vnum">'+esc(f.quality||'VIDEO')+'</span><span class="cat-vplay">▶</span></div>'
+    + '<div class="cat-vinfo"><div class="cat-vtitle">'+esc(f.name)+'</div>'
+    + '<div class="cat-vsub">'+esc(meta||'▶ Watch / Stream')+'</div></div></a>';
 }
-document.querySelectorAll('.cat-vposter img,.cat-galitem img').forEach(img=>{
-  img.addEventListener('load',()=>img.classList.add('on'));
-});
+async function loadMedia(offset){
+  const box=document.getElementById('catMediaResults'); if(!box) return;
+  mediaLoaded=true; mediaOffset=Math.max(0,offset||0);
+  const q=(document.getElementById('catMediaQ')||{}).value||'';
+  const info=document.getElementById('catMediaInfo');
+  if(info) info.textContent='⏳ Library में खोजा जा रहा है…';
+  try{
+    const r=await fetch('/api/catalog/'+D.kind+'/media?id='+encodeURIComponent(D.id)
+      +'&q='+encodeURIComponent(q.trim())+'&offset='+mediaOffset+'&limit='+D.limit);
+    const d=await r.json();
+    mediaNext=d.next_offset||'';
+    const cards=(d.results||[]).map(mediaCard);
+    box.innerHTML=cards.length?cards.join('')
+      : '<div class="cat-vempty">🔍 इन tags से कोई Library file नहीं मिली।<br>'
+        + '<span style="font-size:11px;font-weight:600">ऊपर search box में नाम लिखकर भी ढूँढ सकते हैं।</span></div>';
+    box.querySelectorAll('img').forEach(im=>{
+      im.addEventListener('load',()=>im.classList.add('on'));
+      if(im.complete&&im.naturalWidth) im.classList.add('on');
+    });
+    if(info){
+      if(d.source==='tags') info.innerHTML='🏷️ <b>'+d.terms.length+'</b> Search Tags से <b>'+d.total+'</b> videos मिलीं';
+      else if(d.source==='custom') info.innerHTML='🔍 &quot;'+esc(q.trim())+'&quot; के लिए <b>'+d.total+'</b> results';
+      else info.innerHTML='📝 Title से <b>'+d.total+'</b> results (इस entry पर Tags नहीं हैं)';
+    }
+    const pg=document.getElementById('catMediaPg');
+    if(pg){
+      pg.style.display=(mediaOffset>0||mediaNext)?'flex':'none';
+      const pr=document.getElementById('catMediaPrev'), nx=document.getElementById('catMediaNext');
+      if(pr) pr.disabled=mediaOffset===0;
+      if(nx) nx.disabled=!mediaNext;
+      const lbl=document.getElementById('catMediaPage');
+      if(lbl) lbl.textContent='Page '+(Math.floor(mediaOffset/D.limit)+1);
+    }
+    stagger('#catMediaResults .cat-vcard');
+  }catch(e){ if(info) info.textContent='⚠️ Load नहीं हुआ'; }
+}
+function mediaPage(step){
+  const next=mediaOffset+step*D.limit;
+  if(next<0 || (step>0&&!mediaNext)) return;
+  loadMedia(next);
+}
+
+/* ── 🖼️ Gallery / Screenshots — direct upload + in-place delete ── */
+function renderGallery(){
+  const box=document.getElementById('catGallery'); if(!box) return;
+  box.innerHTML=GALLERY.length ? GALLERY.map((src,i)=>
+      '<div class="cat-galitem in" data-idx="'+i+'" data-src="'+esc(src)+'" '
+      +'onclick="openLight(this.dataset.src)">'
+      +'<img src="'+esc(src)+'" alt="" loading="lazy" '
+      +'onload="this.classList.add(\'on\')" onerror="this.remove()">'
+      +(D.admin ? '<button class="cat-galdel" title="हटाएँ" '
+        +'onclick="event.stopPropagation();deleteGallery('+i+')">✕</button>' : '')
+      +'</div>').join('')
+    : '<div class="cat-gempty">'+esc(D.galleryEmpty)+'</div>';
+  const n=document.querySelector('.cat-tab[data-tab="gallery"] .cat-tab-n');
+  if(n) n.textContent=GALLERY.length;
+}
+async function uploadGalleryFiles(input){
+  const files=Array.from(input.files||[]); if(!files.length) return;
+  const note=document.getElementById('catUpNote');
+  const fd=new FormData();
+  files.slice(0,12).forEach(f=>fd.append('image',f));
+  fd.append('id',D.id);
+  if(note) note.textContent='⏳ '+files.length+' photos Telegram पर एक-एक करके…';
+  try{
+    const r=await fetch('/api/catalog/'+D.kind+'/gallery_upload',{method:'POST',body:fd});
+    const d=await r.json();
+    if(!d.ok) throw new Error(d.error||'Upload failed');
+    (d.added||[]).forEach(v=>GALLERY.push(imageSrc(v)));
+    renderGallery();
+    if(note) note.textContent='✅ '+(d.added||[]).length+' photos जोड़ी गईं';
+    toast('🖼️ '+(d.added||[]).length+' photos added');
+  }catch(e){
+    if(note) note.textContent='⚠️ '+e.message;
+    toast('⚠️ '+e.message,'err');
+  }
+  input.value='';
+}
+async function deleteGallery(idx){
+  if(!confirm('ये image हटाएँ?')) return;
+  try{
+    const r=await fetch('/api/catalog/'+D.kind+'/gallery_delete',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({id:D.id,index:Number(idx)})});
+    const d=await r.json();
+    if(!d.ok) return toast(d.error||'Delete failed','err');
+    GALLERY.splice(idx,1); renderGallery(); toast('🗑 Image हटाई गई');
+  }catch(e){ toast('Delete failed','err'); }
+}
 function openLight(src){
   const l=document.getElementById('catLight');
   l.querySelector('img').src=src; l.classList.add('open');
@@ -1002,28 +1157,16 @@ function closeLight(){
   const l=document.getElementById('catLight'); l.classList.remove('show');
   setTimeout(()=>l.classList.remove('open'),250);
 }
-/* 🖼️ v5 reload करता था; यहाँ बिना reload image हटती है और tab count update होता है */
-async function deleteGallery(idx){
-  if(!confirm('ये image gallery से हटाएँ?')) return;
-  try{
-    const r=await fetch('/api/catalog/'+D.kind+'/gallery_delete',{method:'POST',
-      headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:D.id,index:Number(idx)})});
-    const d=await r.json();
-    if(!d.ok) return alert(d.error||'Delete failed');
-    const el=document.querySelector('#catGallery [data-idx="'+idx+'"]');
-    if(el){ el.style.transition='opacity .25s,transform .25s'; el.style.opacity='0'; el.style.transform='scale(.8)';
-      setTimeout(()=>el.remove(),240); }
-    const n=document.querySelector('.cat-tab[data-tab="gallery"] .cat-tab-n');
-    if(n) n.textContent=Math.max(0,parseInt(n.textContent||'0',10)-1);
-  }catch(e){ alert('Delete failed'); }
-}
 async function deleteDetail(id){
   if(!confirm('Delete करें?')) return;
   const r=await fetch('/api/catalog/'+D.kind+'/delete',{method:'POST',
-    headers:{'Content-Type':'application/json'}, body:JSON.stringify({id})});
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
   const d=await r.json();
-  if(d.ok) location.href=D.base; else alert('Delete failed');
+  if(d.ok) location.href=D.base; else toast('Delete failed','err');
 }
+document.querySelectorAll('.cat-vposter img,.cat-galitem img').forEach(img=>{
+  img.addEventListener('load',()=>img.classList.add('on'));
+});
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape') closeLight();
   const tag=(document.activeElement||{}).tagName;
@@ -1042,6 +1185,12 @@ document.addEventListener('pointerdown',e=>{
   i.style.cssText=`width:${d}px;height:${d}px;left:${e.clientX-r.left-d/2}px;top:${e.clientY-r.top-d/2}px`;
   b.classList.add('cat-ripple'); b.appendChild(i); setTimeout(()=>i.remove(),520);
 });
+const mq=document.getElementById('catMediaQ');
+if(mq){
+  let t;
+  mq.addEventListener('input',()=>{ clearTimeout(t); t=setTimeout(()=>loadMedia(0),320); });
+  mq.addEventListener('keydown',e=>{ if(e.key==='Enter'){ clearTimeout(t); loadMedia(0); } });
+}
 const _initTab=new URLSearchParams(location.search).get('tab');
 switchTab(_initTab||'overview',true);
 </script>
@@ -1110,7 +1259,7 @@ def build_listing_page(kind: str, role: str, tg_id: int):
 
 
 def _detail_body(kind: str, role: str, item: dict) -> str:
-    """🗂️ Overview / 🎬 Videos / 🖼️ Gallery — v5 के tabs, पर दोनों kinds पर एक ही engine।"""
+    """🗂️ Overview / 🎬 Videos (tags-driven) / 🖼️ Gallery या 📸 Screenshots।"""
     cfg = CATALOGS[kind]
     esc = html.escape
     admin = role == "admin"
@@ -1125,15 +1274,15 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
     )
     body = esc(str(item.get("body") or ""))
     item_id = esc(str(item.get("id") or ""))
+    gallery_tab = esc(cfg["galleryTab"])
 
-    # 🔗 Overview: external / social links (दोनों kinds पर URLs ही हैं)
     links_html = "".join(
         f'<a href="{esc(str(l.get("value") or ""))}" target="_blank" rel="noopener noreferrer">'
         f'🔗 {esc(str(l.get("label") or "Link"))}</a>'
         for l in (item.get("links") or [])[:20] if l.get("value")
     )
 
-    # 🎬 Videos tab — कितने भी, हर एक का अपना poster + watch link
+    # 📌 manually attached videos (पिछला multi-video feature बरकरार)
     videos = [v for v in (item.get("videos") or [])[:50] if v.get("file_id")]
     if videos:
         vids_html = ""
@@ -1148,21 +1297,26 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
                 f'<img src="{esc(poster)}" alt="" loading="lazy" onerror="this.remove()">'
                 f'<span class="cat-vnum">#{i+1}</span><span class="cat-vplay">▶</span></div>'
                 f'<div class="cat-vinfo"><div class="cat-vtitle">{label}</div>'
-                f'<div class="cat-vsub">▶ Watch / Stream · Library file</div></div></a>'
+                f'<div class="cat-vsub">📌 Attached · ▶ Watch</div></div></a>'
             )
     else:
         vids_html = (
-            '<div class="cat-vempty">🎬 अभी कोई video attach नहीं है।<br>'
-            '<span style="font-size:11px;font-weight:600">Admin: ऊपर "Add Videos" से कितने भी जोड़ें।</span></div>'
+            '<div class="cat-vempty">📌 कोई video manually attach नहीं है।'
+            '<br><span style="font-size:11px;font-weight:600">नीचे Search Tags से Library की videos अपने आप दिखेंगी।</span></div>'
         )
 
-    # 🖼️ Gallery tab
+    # 🏷️ v5 जैसा: Videos tab का मुख्य हिस्सा "Search Tags" से आता है
+    tags = [str(t).strip() for t in (item.get("tags") or []) if str(t).strip()][:12]
+    tag_pills = "".join(f'<span class="cat-tagpill">🏷️ <b>#{esc(t)}</b></span>' for t in tags)
+    if not tag_pills:
+        tag_pills = '<span class="cat-tagpill">🏷️ कोई Search Tag नहीं — <b>Title</b> से खोजेंगे</span>'
+
+    # 🖼️ / 📸 tab
     gallery = [image_src(g) for g in (item.get("gallery") or [])[:12]]
+    gallery = [u for u in gallery if u]
     if gallery:
         gal_html = ""
         for i, u in enumerate(gallery):
-            if not u:
-                continue
             del_btn = (
                 f'<button class="cat-galdel" title="हटाएँ" '
                 f'onclick="event.stopPropagation();deleteGallery(this.closest(\'.cat-galitem\').dataset.idx)">✕</button>'
@@ -1174,9 +1328,17 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
                 f'<img src="{esc(u)}" alt="" loading="lazy" onerror="this.remove()">{del_btn}</div>'
             )
     else:
-        gal_html = (
-            '<div class="cat-gempty">🖼️ Gallery खाली है।<br>'
-            '<span style="font-size:11px;font-weight:600">Editor में multiple images upload करें।</span></div>'
+        gal_html = f'<div class="cat-gempty">{esc(cfg["galleryEmpty"])}</div>'
+
+    upload_bar = ""
+    if admin:
+        upload_bar = (
+            '<div class="cat-uploadbar">'
+            f'<label class="cat-upload">{esc(cfg["uploadLabel"])}'
+            '<input type="file" id="catGalUpload" accept="image/*" multiple '
+            'onchange="uploadGalleryFiles(this)"></label>'
+            f'<span class="cat-hint">{esc(cfg["galleryHint"])}</span></div>'
+            '<div class="cat-upnote" id="catUpNote"></div>'
         )
 
     admin_bar = ""
@@ -1191,7 +1353,6 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
         f'<a class="cat-btn ghost cat-tabedit" href="{cfg["base"]}?edit={item_id}&focus=videos">'
         '🎬 Add Videos</a>' if admin else ""
     )
-
     hero_img = (
         f'<img class="cat-hero-img" src="{esc(src)}" alt="" onerror="this.style.visibility=\'hidden\'">'
         if src else '<div class="cat-hero-img" style="display:flex;align-items:center;'
@@ -1203,7 +1364,7 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
   <div class="cat-tabs" role="tablist">
     <button class="cat-tab active" data-tab="overview" onclick="switchTab('overview')">ℹ️ Overview</button>
     <button class="cat-tab" data-tab="videos" onclick="switchTab('videos')">🎬 Videos <span class="cat-tab-n">{len(videos)}</span></button>
-    <button class="cat-tab" data-tab="gallery" onclick="switchTab('gallery')">🖼️ Gallery <span class="cat-tab-n">{len(gallery)}</span></button>
+    <button class="cat-tab" data-tab="gallery" onclick="switchTab('gallery')">{gallery_tab} <span class="cat-tab-n">{len(gallery)}</span></button>
     <span class="cat-tabspace"></span>{add_videos_btn}
   </div>
 
@@ -1219,31 +1380,57 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
       </div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
-      <button class="cat-btn ghost" onclick="switchTab('videos')">🎬 {len(videos)} Videos देखें →</button>
-      <button class="cat-btn ghost" onclick="switchTab('gallery')">🖼️ {len(gallery)} Images देखें →</button>
+      <button class="cat-btn ghost" onclick="switchTab('videos')">🎬 Videos देखें →</button>
+      <button class="cat-btn ghost" onclick="switchTab('gallery')">{gallery_tab} ({len(gallery)}) →</button>
     </div>
   </section>
 
   <section class="cat-panel" id="cp-videos">
+    <div class="cat-subhead"><h3>📌 Attached Videos</h3><span class="cat-hint">Editor से जोड़े गए · {len(videos)}</span></div>
     <div class="cat-vgrid" id="catVideos">{vids_html}</div>
-    <div class="cat-lib"><div class="cat-lib-title">🔍 इस नाम की और files (Library)</div>
-      <div class="cat-related" id="catRelated"><span style="color:var(--mut);font-size:12px">Videos tab खोलते ही search…</span></div></div>
+
+    <div class="cat-subhead"><h3>🏷️ Library से — Search Tags के आधार पर</h3>
+      <span class="cat-hint">जैसे v5 का actor Linked Media tab</span></div>
+    <div class="cat-tagline" id="catTagPills">{tag_pills}</div>
+    <div class="cat-mediabar">
+      <div class="cat-search"><input type="search" id="catMediaQ" autocomplete="off"
+        placeholder="Search inside this profile… (खाली = Tags से auto)"></div>
+      <button class="cat-btn ghost" style="padding:9px 14px;font-size:11px" onclick="loadMedia(0)">🔍 Search</button>
+    </div>
+    <div class="cat-mediainfo" id="catMediaInfo">Videos tab खोलते ही Tags से search…</div>
+    <div class="cat-vgrid" id="catMediaResults"></div>
+    <div class="cat-mediapg" id="catMediaPg" style="display:none">
+      <button id="catMediaPrev" onclick="mediaPage(-1)">◀ Prev</button>
+      <span id="catMediaPage">Page 1</span>
+      <button id="catMediaNext" onclick="mediaPage(1)">Next ▶</button>
+    </div>
   </section>
 
   <section class="cat-panel" id="cp-gallery">
+    {upload_bar}
     <div class="cat-galgrid" id="catGallery">{gal_html}</div>
   </section>
 </div></div>
-<div class="cat-lightbox" id="catLight" onclick="if(event.target===this)closeLight()"><img src="" alt=""></div>"""
+<div class="cat-lightbox" id="catLight" onclick="if(event.target===this)closeLight()"><img src="" alt=""></div>
+<div class="cat-toast" id="catToast"></div>"""
 
 def build_detail_page(kind: str, role: str, tg_id: int, item: dict):
     cfg = CATALOGS[kind]
+    resolved_gallery = [
+        u for u in (image_src(g) for g in (item.get("gallery") or [])[:12]) if u
+    ]
     detail_cfg = {
         "kind": kind,
         "id": str(item.get("id") or ""),
         "q": str(item.get("title") or ""),
         "base": cfg["base"],
         "admin": role == "admin",
+        "tags": [str(t).strip() for t in (item.get("tags") or []) if str(t).strip()][:12],
+        "gallery": resolved_gallery,
+        "galleryTab": cfg["galleryTab"],
+        "galleryEmpty": cfg["galleryEmpty"],
+        "tabAlias": cfg["tabAlias"],
+        "limit": 12,
     }
     js = DETAIL_JS.replace("__DETAIL_CFG__", json.dumps(detail_cfg, ensure_ascii=False))
     return app_page(

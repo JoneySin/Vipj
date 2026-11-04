@@ -17,9 +17,10 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | 📊 Database Stats | `/stats` — v5 जैसे animated stat cards; **"🆕 Recently Added Files"** की गिनती यहीं, search पेज की meta लाइन में नहीं |
 | ⚙️ Profile Settings | `/profile` — v5 जैसा Account Settings: `#ID · ADMIN` identity, Account Status (👑 Admin / 💎 Premium / 🆓 Free), Telegram ID, Email + Password बदलना (tabs, show/hide, strength meter) |
 | 📝 Posts + 🎭 Actors | `/posts` (Movies / Web Series / App Video / Other) और `/actors` (Actor / App / Website) — **एक ही shared catalog engine** से दोनों। Poster/Text view, category filter, live search, pagination, detail pages (`/post/<id>`, `/actor/<id>`) |
-| 🗂️ Video + Gallery Tabs | **दोनों** detail pages पर `ℹ️ Overview · 🎬 Videos · 🖼️ Gallery` tabs — count badges, `?tab=videos` deep-link, ← → keyboard nav, lazy Library search, staggered entrance, lightbox. Actor में भी Video/Gallery tabs हैं (v5 में सिर्फ़ actor पर थे) |
+| 🗂️ Tabs | Actor: `ℹ️ Overview · 🎬 Videos · 🖼️ Gallery` · Post: `ℹ️ Overview · 🎬 Videos · 📸 Screenshots` — **Post में Gallery की जगह Screenshots tab** है, उसी tab में screenshots आते हैं। Count badges, `?tab=` deep-link (Post `?tab=screenshots`), ← → nav, staggered entrance, lightbox |
+| 🏷️ Tag-driven Videos (v5 जैसा) | Actor का Videos tab **Search Tags** (`tags[]`) से Library में खोजकर videos दिखाता है — v5 के `get_actor_search_results(name\|tags)` जैसा। Tags की pills, `🏷️ N tags से M videos` info, ऊपर 'Search inside this profile…' box (कुछ टाइप करते ही tags ignore), pagination. Tags न हों तो title fallback. साथ में manually attached `videos[]` अलग 📌 section में |
 | 🎬 Multiple Videos | Editor में `videos[]` — **कितने भी (50 तक)**: Library picker एक search में कई files जोड़ता है और खुला रहता है, `➕ Add Video`, ▲▼ reorder, per-row ✕, duplicate guard, live count. पुराने posts के `links` में रखे episodes **auto-migrate** होते हैं |
-| 🖼️ Visual Gallery | Plain textarea की जगह thumbnail grid — **multiple image upload** Telegram पर एक-एक करके (rate-limit safe), URL add, per-image remove, और detail के Gallery tab से **बिना page reload** delete |
+| 🖼️ Photos / 📸 Screenshots | **Actor Gallery tab पर सीधे photo upload** (`multiple`, v5 जैसा form) और Post Screenshots tab पर सीधे screenshots upload। Editor में भी visual thumbnail grid, URL add, per-image remove. Telegram uploads **एक-एक करके** (rate-limit safe), detail tab से **बिना page reload** add/delete |
 | ✏️ Inline Edit + Animations | Admin को listing पर ही **modal editor**: create / edit / delete बिना page reload, live cover preview + Telegram image upload, library से linked-media picker, unsaved-changes guard, `Ctrl/Cmd+S`, `Esc`, **Undo** वाला delete toast (पुराने deep-links बचे रहते हैं)। Animations: staggered card entrance (IntersectionObserver), 3D hover, poster zoom, shimmer skeleton, modal spring, button ripple, save-flash, toast slide, lightbox zoom — सब `prefers-reduced-motion` का सम्मान करते हैं, बिना किसी CDN के |
 | 📐 Responsive Grid | 🖥️ Desktop ≥1024px: **3 वीडियो / row** · 📟 Tablet: 2 · 📱 Mobile: **1 वीडियो / row** |
 | 🎛️ View / Filter | 2 dropdowns — **Poster / Text** mode (Text में सिर्फ़ नाम + meta की कॉम्पैक्ट लिस्ट, कोई thumbnail request नहीं) और **All / Group / UnGroup** (एक ही टाइटल की 2+ फाइलें = Group, अकेली फाइल = UnGroup)। 🖥️ **Desktop:** search bar के साथ **एक ही लाइन में** · 📱 **Mobile:** search bar के ठीक नीचे **दोनों एक ही लाइन में** (अलग-अलग rows नहीं)। दोनों चुनाव browser में याद रहते हैं |
@@ -49,6 +50,8 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | GET | `/api/catalog/{kind}?q=&category=&offset=&limit=&id=` | Unified JSON list / single item (login required) |
 | POST | `/api/catalog/{kind}/save` | **Create + Edit एक ही endpoint** (admin); `restore:true` = Undo-delete उसी id से |
 | POST | `/api/catalog/{kind}/delete` | Delete (admin) |
+| GET | `/api/catalog/{kind}/media?id=&q=&offset=&limit=` | 🏷️ **Search Tags** से Library videos (custom `q` = tags override), JSON cards + pagination |
+| POST | `/api/catalog/{kind}/gallery_upload` | Detail tab से सीधे multiple photos/screenshots → `TG_ID:` (admin, serial upload) |
 | POST | `/api/catalog/{kind}/gallery_delete` | `{id, index}` — एक gallery image हटाएँ बिना reload (admin) |
 | POST | `/api/catalog/upload` | Cover/avatar image → Telegram → permanent `TG_ID:` (admin, ≤5 MB) |
 | GET | `/api/catalog/photo?id=` | `TG_ID:` image bytes — उसी serial-safe, FloodWait-aware download engine से |
@@ -139,7 +142,9 @@ server से raw HTML strings, और Cropper.js CDN पर निर्भर�
 * **JSON API + client-side render** (`textContent`-safe escaping) → server कभी HTML
   string नहीं भेजता, markup एक जगह, XSS का रास्ता बंद।
 * **एक** `/save` endpoint create + edit + Undo-restore संभालता है (v5 में अलग API थे)।
-* **Tabs + multi-video**: v5 में सिर्फ़ actor detail के `Info / Linked Media / Gallery` tabs थे और posts में videos wizard के अंदर थे। यहाँ दोनों kinds पर वही tabs, पर `videos[]` एक proper array है (50 तक), picker एक search में कई files जोड़ता है, और gallery visual editor से multiple upload होती है। v5 `window.location.reload()` करता था — यहाँ in-place delete/Undo है।
+* **Tabs + multi-video**: v5 में सिर्फ़ actor detail के `Info / Linked Media / Gallery` tabs थे और posts में videos wizard के अंदर थे। यहाँ दोनों kinds पर tabs, पर Post का तीसरा tab **Screenshots** है, `videos[]` proper array है (50 तक), picker एक search में कई files जोड़ता है।
+* **🏷️ Tags → videos**: v5 `/api/actor/search` में `get_actor_search_results(actor_name, tags)` एक raw regex-OR `(tag1\|tag2\|…)` चलाता था (और name भूल जाता था)। यहाँ वही semantics, पर fsv1 की **अपनी** `get_search_results()` (`$text` index + regex fallback) को हर tag पर चलाकर merge/dedupe/paginate किया जाता है — index का फायदा, कोई नया query layer नहीं। Custom `q` आते ही tags ignore, बिल्कुल v5 जैसा।
+* **Gallery upload**: v5 `/api/actor/gallery_upload` form-submit + `window.location.reload()` करता था; यहाँ detail tab पर `multiple` input → JSON → in-place render, uploads serial (anti-flood)। v5 के `gallery_idx` deletion की जगह index-based in-place delete + Undo है।
 * **Inline modal** से edit → page reload नहीं; dirty guard, keyboard shortcuts, live
   preview, upload, media picker — वो सब v5 के wizards में नहीं था।
 * **Validation**: URL/scheme sanitization, media `file_id` pattern check, field length

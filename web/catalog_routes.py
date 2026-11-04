@@ -13,7 +13,9 @@ v5 में इसके लिए अलग `post_routes.py` (publish/update/d
 | GET | `/api/catalog/{kind}` | list (`q`, `category`, `offset`, `limit`) या `?id=` single |
 | POST | `/api/catalog/{kind}/save` | create + edit — **एक ही endpoint** (admin) |
 | POST | `/api/catalog/{kind}/delete` | delete (admin) |
-| POST | `/api/catalog/{kind}/gallery_delete` | एक gallery image बिना reload हटाएँ (admin) |
+| GET | `/api/catalog/{kind}/media` | **Search Tags** से Library videos (`q` override, `offset`/`limit`) — v5 actor Linked Media |
+| POST | `/api/catalog/{kind}/gallery_upload` | Tab से सीधे multiple photos/screenshots (admin, serial Telegram upload) |
+| POST | `/api/catalog/{kind}/gallery_delete` | एक image बिना reload हटाएँ (admin) |
 | POST | `/api/catalog/upload` | image → Telegram → `TG_ID:` (admin) |
 | GET | `/api/catalog/photo` | `TG_ID:` image bytes (वही serial-safe download engine) |
 
@@ -24,12 +26,14 @@ server-generated HTML string नहीं (client render करता है)।
 import io
 import logging
 import re
+from urllib.parse import quote
 
 from aiohttp import web
 
 import info as _info
 from info import BIN_CHANNEL
 from utils import temp
+from database.ia_filterdb import get_search_results
 
 # Optional dedicated channel (info.py में default = BIN_CHANNEL)।
 _STORAGE_CHANNEL = getattr(_info, "CATALOG_STORAGE_CHANNEL", BIN_CHANNEL)
@@ -61,6 +65,86 @@ def _kind(req):
 def _clean_id(value) -> str:
     """Ids सिर्फ़ short hex-ish — URLs और Mongo `_id` दोनों के लिए सुरक्षित।"""
     return re.sub(r"[^A-Za-z0-9_-]", "", str(value or ""))[:32]
+
+
+def _human_size(value) -> str:
+    try:
+        n = float(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return ""
+
+
+def _fmt_dur(value) -> str:
+    try:
+        s = int(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    if s <= 0:
+        return ""
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
+
+
+def _media_row(doc: dict) -> dict:
+    """Library doc → Videos tab का card payload (server से HTML नहीं)।"""
+    fid = str(doc.get("_id") or "")
+    w = int(doc.get("width") or 0)
+    h = int(doc.get("height") or 0)
+    return {
+        "file_id": fid,
+        "name": str(doc.get("file_name") or "Untitled"),
+        "size": _human_size(doc.get("file_size")),
+        "quality": str(doc.get("quality") or ""),
+        "duration": _fmt_dur(doc.get("duration")),
+        "res": f"{w}×{h}" if w and h else "",
+        "thumb": "/api/thumb?file_id=" + quote(fid, safe="") + "&v=1",
+        "watch": "/setup_stream?file_id=" + quote(fid, safe="") + "&mode=watch",
+    }
+
+
+async def _tag_media(item: dict, custom_q: str, offset: int, limit: int):
+    """🏷️ v5 का `get_actor_search_results(name|tags)` — tags से Library videos।
+
+    v5 एक raw regex-OR (`(tag1|tag2|...)`) चलाता था और actor name को भूल जाता था।
+    यहाँ fsv1 के **अपने** search pipeline (`$text` + regex fallback) को हर term पर
+    चलाकर results merge/dedupe करते हैं — index का फायदा मिलता है, कोई नया query
+    layer नहीं। Custom `q` टाइप करते ही tags ignore (बिल्कुल v5 जैसा)।
+    """
+    tags = [str(t).strip() for t in (item.get("tags") or []) if str(t).strip()][:12]
+    custom = str(custom_q or "").strip()
+    if custom:
+        terms, source = [custom], "custom"
+    elif tags:
+        terms, source = tags, "tags"
+    else:
+        title = str(item.get("title") or "").strip()
+        terms, source = ([title] if len(title) >= 2 else []), "title"
+    terms = [t[:80] for t in terms if len(t) >= 2][:12]
+    if not terms:
+        return [], "", [], 0, source
+
+    merged, seen = [], set()
+    for term in terms:
+        try:
+            docs = (await get_search_results(term, 0, 60))[0] or []
+        except Exception as e:
+            logger.debug(f"tag media search skipped ({term!r}): {e}")
+            docs = []
+        for d in docs:
+            fid = str(d.get("_id") or "")
+            if fid and fid not in seen:
+                seen.add(fid)
+                merged.append(d)
+    total = len(merged)
+    page = merged[offset:offset + limit]
+    nxt = str(offset + limit) if offset + limit < total else ""
+    return page, nxt, terms, total, source
 
 
 def _safe_item(kind, item):
@@ -248,6 +332,98 @@ async def api_save(req):
     if not item:
         return _json({"ok": False, "error": "Entry नहीं मिली"}, 404)
     return _json({"ok": True, "item": _safe_item(kind, item)})
+
+
+@catalog_routes.get("/api/catalog/{kind}/media")
+async def api_media(req):
+    """🎬 Videos tab — **Search Tags** से Library की videos (v5 actor जैसा)।
+
+    `q=` देने पर वही query चलेगी (tags ignore); खाली रहने पर item के tags,
+    tags न हों तो title. `offset` / `limit` से pagination।
+    """
+    role, _ = await get_auth(req)
+    if not role:
+        return _json({"error": "Login required", "login": "/login"}, 401)
+    kind = _kind(req)
+    if not kind:
+        return _json({"results": [], "terms": [], "total": 0}, 404)
+    item = await store.get_item(kind, _clean_id(req.query.get("id")))
+    if not item:
+        return _json({"results": [], "terms": [], "total": 0}, 404)
+    try:
+        offset = max(0, int(req.query.get("offset", "0")))
+        limit = max(1, min(int(req.query.get("limit", "12")), 30))
+    except ValueError:
+        offset, limit = 0, 12
+    page, nxt, terms, total, source = await _tag_media(
+        item, req.query.get("q", ""), offset, limit
+    )
+    return _json({
+        "results": [_media_row(d) for d in page],
+        "terms": terms, "source": source, "total": total,
+        "offset": offset, "next_offset": nxt,
+    })
+
+
+@catalog_routes.post("/api/catalog/{kind}/gallery_upload")
+async def api_gallery_upload(req):
+    """🖼️ Gallery/Screenshots tab से सीधे multiple photos (v5 जैसा, बिना reload)।
+
+    v5 `/api/actor/gallery_upload` form submit करके page reload कराता था; यहाँ
+    JSON response और client in-place render. Uploads **एक-एक करके** Telegram जाते
+    हैं (thumbnail वाला ही anti-flood व्यवहार), एक fail होने पर बाकी रुकते नहीं।
+    """
+    role, _ = await get_auth(req)
+    if role != "admin":
+        return _json({"ok": False, "error": "Admins only"}, 403)
+    kind = _kind(req)
+    if not kind:
+        return _json({"ok": False, "error": "Unknown catalog"}, 404)
+    try:
+        data = await req.post()
+        item_id = _clean_id(data.get("id"))
+        parts = list(data.getall("image")) if hasattr(data, "getall") else [data.get("image")]
+        blobs = []
+        for f in parts:
+            if f is None or not hasattr(f, "file"):
+                continue
+            raw = f.file.read()
+            if raw and len(raw) <= _MAX_UPLOAD:
+                blobs.append(raw)
+    except Exception as e:
+        return _json({"ok": False, "error": f"Bad upload: {e}"}, 400)
+    if not item_id or not blobs:
+        return _json({"ok": False, "error": "id या images नहीं मिले"}, 400)
+
+    item = await store.get_item(kind, item_id)
+    if not item:
+        return _json({"ok": False, "error": "Entry नहीं मिली"}, 404)
+    bot = getattr(temp, "BOT", None)
+    if bot is None:
+        return _json({"ok": False, "error": "Bot अभी ready नहीं"}, 503)
+
+    added = []
+    for i, raw in enumerate(blobs[:12], 1):
+        try:
+            buf = io.BytesIO(raw)
+            buf.name = f"gallery_{item_id}_{i}.jpg"
+            msg = await bot.send_photo(chat_id=_STORAGE_CHANNEL, photo=buf)
+            photo = getattr(msg, "photo", None)
+            sizes = getattr(photo, "sizes", None) if photo else None
+            fid = sizes[-1].file_id if sizes else getattr(photo, "file_id", "")
+            if not fid:
+                raise RuntimeError("file_id नहीं मिला")
+            added.append("TG_ID:" + fid)
+        except Exception as e:
+            logger.warning(f"gallery upload {i}/{len(blobs)} failed: {e}")
+            continue
+    if not added:
+        return _json({"ok": False, "error": "कोई image Telegram पर save नहीं हुई"}, 502)
+
+    clean = normalize(kind, item)
+    clean["gallery"] = (list(item.get("gallery") or []) + added)[:12]
+    updated = await store.save_item(kind, clean, item_id)
+    return _json({"ok": True, "added": added, "item": _safe_item(kind, updated)})
 
 
 @catalog_routes.post("/api/catalog/{kind}/gallery_delete")
