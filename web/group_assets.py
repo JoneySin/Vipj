@@ -308,10 +308,12 @@ GROUP_ADMIN_JS = r"""<script>
       '<input type="file" accept="image/*" id="gmFile" style="display:none" onchange="gUpload(this)"></label>'+
       (g.manual?'<button class="gmbtn alt" onclick="gClearCustom()">↩️ Custom हटाओ</button>':'')+'</div>'+
       '<div class="gmlabel">FILES ('+items.length+')</div>'+membersHtml(items,g.manual?String(g.gid):'')+
-      '<div class="gmrow"><button class="gmbtn" id="gmSave" onclick="gSave()">💾 Save Group</button>'+
+      '<div class="gmrow"><button class="gmbtn" id="gmSave" onclick="gSave()">'+
+        (g.manual?'💾 Save Changes (नाम / thumbnail / files)':'💾 Save Group')+'</button>'+
       (g.manual?'<button class="gmbtn danger" onclick="gUngroup(\''+jse(g.gid)+'\')">🗑️ Ungroup</button>':'')+
       '<button class="gmbtn alt" onclick="gClose()">Cancel</button></div>'+
-      '<div class="gmnote">Group को हमेशा DB में <b>group id / #number</b> मिलता है। Same-title की नई quality '+
+      '<div class="gmnote">ऊपर <b>GROUP NAME</b> बदलकर Save करने पर उसी group का नाम DB में update होता है '+
+      '(#number वही रहता है)। Group को हमेशा <b>group id / #number</b> मिलता है, और same-title की नई quality '+
       'auto_keys से अपने-आप इसी group में जुड़ जाएगी।</div>');
     if(targetGid)gFind('#'+targetGid);
   };
@@ -353,17 +355,36 @@ GROUP_ADMIN_JS = r"""<script>
   };
   window.gSave=function(){
     var g=current;if(!g)return;
-    var name=(q('#gmName')||{}).value||'';
-    if(!targetGid&&!name.trim()){toast('Group का नाम लिखिए',true);return;}
+    var name=String((q('#gmName')||{}).value||'').trim();
+    if(!targetGid&&!name){toast('Group का नाम लिखिए',true);return;}
     var btn=q('#gmSave');if(btn)btn.disabled=true;
-    var body={items:itemsFrom(g),name:name.trim()};
+    var body={items:itemsFrom(g),name:name};
     if(targetGid)body.group_id=targetGid;
     post('/api/group/save',body).then(function(d){
-      if(thumbFid&&d.group_id)return post('/api/group/update',
-        {group_id:d.group_id,thumb_file_id:thumbFid}).then(function(){return d;});
-      return d;
+      var gid=d.group_id||targetGid||'';
+      /* ✏️ नाम बदलना save-members से अलग काम है — `/api/group/update` पर
+         साफ़ तौर पर भेजो (और master thumbnail भी उसी call में)। */
+      var upd={group_id:gid};
+      if(name)upd.name=name;
+      if(thumbFid)upd.thumb_file_id=thumbFid;
+      if(!gid||(!name&&!thumbFid))return d;
+      return post('/api/group/update',upd).then(function(){return d;});
     }).then(function(d){
-      toast('🗂️ Group #'+d.num+' save हो गया');window.gClose();refresh();
+      /* तुरंत card का नाम बदलो — reload आने का इंतज़ार नहीं, और अगर fetch
+         fail हो जाए तब भी UI में नया नाम दिखे। अगर कोई दूसरा target group
+         चुना है तो यहाँ rename न दिखाएँ; refresh सही state लाएगा। */
+      var sameGroup=!targetGid||String(targetGid)===String(g.gid||'');
+      if(name&&sameGroup){
+        Array.prototype.forEach.call(document.querySelectorAll('.gcard'),function(c){
+          if(c.getAttribute('data-gid')===String(d.group_id||targetGid||'')||
+             c.getAttribute('data-gkey')===String(g.key||'')){
+            var t=c.querySelector('.gtitle');if(t)t.textContent=name;
+          }
+        });
+        var gd=window.groupGet(g.key);if(gd)gd.name=name;
+      }
+      toast('🗂️ Group #'+d.num+' save हो गया'+(name?' · नाम बदला':''));
+      window.gClose();refresh();
     }).catch(function(e){toast(e.message,true);if(btn)btn.disabled=false;});
   };
   window.gRemove=function(gid,fid){

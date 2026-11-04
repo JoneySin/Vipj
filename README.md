@@ -58,7 +58,7 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | POST | `/api/file/thumb_reset` | 🔄 Custom poster हटाकर original thumbnail serial queue में (admin-only) |
 | POST | `/api/file/delete` | 🗑️ Exact `_id` से file delete (admin-only; group से भी हटाता है) |
 | GET | `/api/group/list?q=&limit=` | 🔎 Permanent groups नाम / `#number` से खोजें (admin-only) |
-| POST | `/api/group/save` | 🆕 नया group (नया `#number`) या `{group_id}` में files जोड़ो — `{items:[{id,name}], name?}` (admin-only) |
+| POST | `/api/group/save` | 🆕 नया group (नया `#number`) या `{group_id}` में files जोड़ो — `{items:[{id,name}], name?}`; **`group_id` के साथ भेजा `name` उसी मौजूदा group का नाम बदलता है** (#number वही रहता है), इसलिए Edit modal से rename तुरंत DB + card पर दिखता है (admin-only) |
 | POST | `/api/group/update` | ✏️ नाम / `thumb_file_id` master poster / `clear_custom` (admin-only) |
 | POST | `/api/group/remove_file` | 🖇️ Group से file निकालो + `excluded` blacklist (admin-only) |
 | POST | `/api/group/delete` | 🗑️ Ungroup — files नहीं हटतीं, `group_id` unset (admin-only) |

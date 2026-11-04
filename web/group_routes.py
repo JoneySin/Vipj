@@ -334,6 +334,11 @@ async def api_group_save(req):
     await store.pull_files(fids, exclude=True)
     if gid:
         g = await store.add_members(gid, items, auto_keys=auto_keys)
+        # ✏️ Edit modal से मौजूदा group में files जोड़ते वक्त नया नाम भी आता है।
+        #    पहले इसे ignore कर दिया जाता था → rename कभी DB में नहीं पहुँचता था।
+        #    खाली नाम = कोई rename नहीं (किसी दूसरे group में सिर्फ़ files जोड़ना)।
+        if name and name != str(g.get("name") or ""):
+            g = await store.update(gid, {"name": name})
     else:
         g = await store.create(name=name, items=items, auto_keys=auto_keys)
     await store.mark_files(fids, str(g["_id"]))
