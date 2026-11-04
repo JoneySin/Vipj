@@ -46,6 +46,10 @@ from web.group_assets import (
 )
 from web.mode_assets import VIEW_MODE_OPTIONS, MODE_CSS, MODE_JS
 from web.reveal_assets import REVEAL_CSS, REVEAL_JS
+from web.welcome_assets import (
+    GUEST_BODY_CLASS, GUEST_TOPBAR, GUEST_AMBIENT,
+    WELCOME_CSS, WELCOME_JS,
+)
 
 from aiohttp import web
 
@@ -974,9 +978,7 @@ color:var(--txt);border-radius:7px;padding:9px 14px;font-size:12px;font-weight:8
 cursor:pointer;font-family:inherit}
 .mactions a.red{background:var(--red);border-color:var(--red);color:#fff}
 .mnote{padding:0 16px 15px;font-size:11px;color:var(--mut)}
-/* ── auth pages ── */
-.auth-bg{background:radial-gradient(circle at 20% 10%,rgba(229,9,20,.18),transparent 45%),
-radial-gradient(circle at 85% 80%,rgba(80,70,229,.15),transparent 45%),var(--bg)}
+/* ── auth form base (guest composition lives in web/welcome_assets.py) ── */
 .auth-wrap{min-height:calc(100vh - 62px);display:flex;align-items:center;
 justify-content:center;padding:24px}
 .auth-card{width:100%;max-width:430px;background:var(--card);border:1px solid var(--line);
@@ -1006,6 +1008,8 @@ font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 SITE_CSS += VIDEO_CARD_CSS
 SITE_CSS += FILTER_CSS
 SITE_CSS += GROUP_CSS
+# 🌐 Guest landing/auth design system (scoped to body.guest)
+SITE_CSS += WELCOME_CSS
 # ✨ One shared staggered result entrance, before the Poster/Text rules
 SITE_CSS += REVEAL_CSS
 # ⚠️ MODE_CSS comes last — the only rule-set for Poster/Text; everything above is base only
@@ -1127,6 +1131,7 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSidebar
 SITE_JS += FILTER_JS
 SITE_JS += VCARD_JS
 SITE_JS += GROUP_JS
+SITE_JS += WELCOME_JS
 SITE_JS += REVEAL_JS
 SITE_JS += MODE_JS
 
@@ -1198,33 +1203,52 @@ def html_response(body: str, status: int = 200):
 
 
 def page(title: str, body: str, body_class: str = "", topbar: str = ""):
-    """Common shell: CSS + topbar + body."""
+    """Guest shell: CSS + one shared topbar + ambient backdrop + body."""
+    ambient = GUEST_AMBIENT if GUEST_BODY_CLASS in body_class else ""
+    nav = topbar or GUEST_TOPBAR
     return html_response(
         "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<meta name='theme-color' content='#0b0b0f'>"
         f"<title>{html.escape(title)}</title>"
         "<link rel='preconnect' href='https://fonts.googleapis.com'>"
         "<link href='https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;900&display=swap' rel='stylesheet'>"
         f"<style>{SITE_CSS}{APP_CSS}</style>"
         f"<script>{SITE_JS}</script></head>"
-        f"<body class='{body_class}'>{topbar}{body}</body></html>"
+        f"<body class='{body_class}'>{ambient}{nav}{body}</body></html>"
     )
 
 
-DEFAULT_TOPBAR = (
-    "<div class='top'><a class='logo' href='/'><span class='nfi'>F</span> FAST FINDER</a>"
-    "<button class='tbtn' onclick=\"toggleTheme()\">Theme</button></div>"
-)
+# Kept as an alias: every guest page uses the same nav from welcome_assets.py.
+DEFAULT_TOPBAR = GUEST_TOPBAR
 
 
 def form_page(title: str, inner: str, err: str = "", msg: str = "", heading: str = ""):
+    """One split-layout auth page for /login, /register, OTP and password reset."""
     e = f"<div class='err'>{html.escape(err)}</div>" if err else ""
     m = f"<div class='ok'>{html.escape(msg)}</div>" if msg else ""
     body = (
-        "<div class='auth-wrap'><div class='auth-card'>"
-        f"<h2>{html.escape(heading or title)}</h2>{e}{m}{inner}</div></div>"
+        "<div class='wc-auth'>"
+          "<div class='wc-story'>"
+            "<div class='wc-eyebrow'><span class='wc-pulse'></span> FAST FINDER · WEB FILE SEARCH</div>"
+            "<h2>Everything you saved,<br><span>one search away.</span></h2>"
+            "<p>Sign in to browse your library with real posters, quality chips and "
+              "private signed streaming links — all in one place.</p>"
+            "<ul class='wc-points'>"
+              "<li><span>🔍</span> Instant search as you type</li>"
+              "<li><span>🖼️</span> Real thumbnails, never placeholders</li>"
+              "<li><span>🔐</span> Private, expiring watch links</li>"
+            "</ul>"
+            "<div class='wc-story-foot'>🤖 POWERED BY YOUR TELEGRAM BOT</div>"
+          "</div>"
+          "<div class='auth-wrap'><div class='auth-card'>"
+            "<span class='wc-kicker-card'>SECURE ACCESS</span>"
+            f"<h2>{html.escape(heading or title)}</h2>{e}{m}{inner}"
+            "<div class='wc-card-foot'>🔒 Protected by an HttpOnly session cookie</div>"
+          "</div></div>"
+        "</div>"
     )
-    return page(title, body, "auth-bg", DEFAULT_TOPBAR)
+    return page(title, body, GUEST_BODY_CLASS)
 
 
 # ─────────────────────────────────────────────────────────────

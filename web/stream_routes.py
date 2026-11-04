@@ -15,6 +15,7 @@ from web.utils.custom_dl import TGCustomYield, chunk_size, offset_fix
 from web.utils.media_info import get_media_info
 from web.utils.render_template import media_watch
 from web.web_assets import get_auth, page
+from web.welcome_assets import GUEST_BODY_CLASS, landing_body
 from stream_security import verify
 
 logger = logging.getLogger(__name__)
@@ -31,18 +32,11 @@ async def root_route_handler(request):
         return web.HTTPFound("/search")
 
     bot_username = temp.U_NAME or "AutoFilterBot"
-    body = (
-        "<div class='auth-wrap'><div class='auth-card' style='text-align:center'>"
-        "<h2>🔎 FAST FINDER</h2>"
-        "<div class='lead'>Sign in to search your files on the web, see real thumbnails "
-        "and play a video from a signed streaming link by clicking its file name.</div>"
-        "<a class='submit' style='display:block' href='/login'>Sign In to Search</a>"
-        "<div class='links' style='justify-content:center'>"
-        f"<a href='https://t.me/{bot_username}'>🤖 Telegram Bot</a>"
-        "<a href='/register'>Create Account</a></div>"
-        "</div></div>"
+    return page(
+        "FAST FINDER — Web File Search",
+        landing_body(bot_username),
+        GUEST_BODY_CLASS,
     )
-    return page("FAST FINDER — Web File Search", body, "auth-bg")
 
 
 # ======================================================
