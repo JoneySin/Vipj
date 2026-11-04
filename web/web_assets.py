@@ -3,6 +3,12 @@
 `v5` के dashboard/miniapp जैसा look — sidebar (Home / Database Stats /
 Profile Settings / Sign Out), stats cards और profile settings, पर fsv1 के
 लिए एक ही self-contained page (कोई extra template engine नहीं)।
+
+▶ `PLAYER_MODAL_HTML` + `PLAYER_JS` एक **shared player component** है: `/search`
+के अलावा `/post/<id>` और `/actor/<id>` के Videos tabs भी यही modal, यही
+`/api/stream` flow और यही signed watch/download actions इस्तेमाल करते हैं।
+JS एक IIFE में `window.play/closePlayer/copyLink` expose करता है, इसलिए हर
+page के अपने `$` / `esc` / `const` से कोई नाम-टकराव नहीं होता।
 """
 
 import html
@@ -431,6 +437,75 @@ def form_page(title: str, inner: str, err: str = "", msg: str = "", heading: str
 
 
 # ─────────────────────────────────────────────────────────────
+# ▶ SHARED PLAYER MODAL — /search + /post/<id> + /actor/<id> सब एक ही
+#   modal, एक ही `/api/stream` flow इस्तेमाल करते हैं (कोई duplicate JS नहीं)।
+#   PLAYER_JS एक IIFE में `window.play/closePlayer/copyLink` expose करता है,
+#   इसलिए page के अपने `$` / `esc` / `const` से कोई नाम-टकराव नहीं होता।
+# ─────────────────────────────────────────────────────────────
+PLAYER_MODAL_HTML = """<div class="modal" id="modal" onclick="if(event.target===this)closePlayer()">
+  <div class="mcard">
+    <div class="mhead"><div class="mtitle" id="pTitle">Loading stream…</div>
+      <button class="xbtn" onclick="closePlayer()">✕</button></div>
+    <div class="video-wrap"><video id="player" controls playsinline></video></div>
+    <div class="mactions">
+      <a class="red" id="pWatch" href="#" target="_blank" rel="noopener">▶ Player page</a>
+      <a id="pDl" href="#">⬇ Download</a>
+      <button onclick="copyLink()">🔗 Copy stream link</button>
+      <button onclick="closePlayer()">Close</button>
+    </div>
+    <div class="mnote" id="pNote">Signed streaming link — सीमित समय के लिए वैध।</div>
+  </div>
+</div>"""
+
+PLAYER_JS = r"""<script>
+(function(){
+  const q = s => document.querySelector(s);
+  let currentWatch = '';
+  window.play = async function(fid, name){
+    const modal=q('#modal'), v=q('#player');
+    if(!modal || !v) return;
+    q('#pTitle').textContent='⏳ '+name;
+    q('#pNote').textContent='Streaming link तैयार हो रही है…';
+    modal.classList.add('open');
+    v.pause(); v.removeAttribute('src');
+    try{
+      const r=await fetch('/api/stream',{method:'POST',credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({file_id:fid})});
+      if(r.status===401){location.href='/login?err='+encodeURIComponent('Session expired. Please sign in again.');return}
+      const d=await r.json();
+      if(!d.stream){q('#pTitle').textContent='❌ '+(d.error||'Stream unavailable');
+        q('#pNote').textContent='यह फाइल अभी stream नहीं हो सकी।';return}
+      currentWatch=location.origin+d.watch;
+      q('#pTitle').textContent='▶ '+name;
+      q('#pNote').textContent='Signed link · '+(d.expires_in||0)+' seconds valid · Range/seek supported';
+      q('#pWatch').href=d.watch;
+      q('#pDl').href=d.download;
+      v.poster=d.poster||'';
+      v.src=d.stream;
+      v.load();
+      const pr=v.play(); if(pr && typeof pr.catch==='function') pr.catch(()=>{});
+    }catch(e){q('#pTitle').textContent='❌ Stream error';
+      q('#pNote').textContent=String(e.message||e)}
+  };
+  window.closePlayer = function(){
+    const v=q('#player'); if(!v) return;
+    v.pause(); v.removeAttribute('src'); v.load();
+    const m=q('#modal'); if(m) m.classList.remove('open');
+  };
+  window.copyLink = function(){
+    if(!currentWatch) return;
+    const note=q('#pNote'), clip=navigator.clipboard;
+    if(!clip || !clip.writeText){ if(note) note.textContent=currentWatch; return; }
+    clip.writeText(currentWatch).then(()=>{
+      if(note) note.textContent='🔗 Link copied: '+currentWatch;
+    }).catch(()=>{ if(note) note.textContent=currentWatch; });
+  };
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') window.closePlayer(); });
+})();
+</script>"""
+
+
+# ─────────────────────────────────────────────────────────────
 # 🔍 SEARCH PAGE (login ke baad)
 # ─────────────────────────────────────────────────────────────
 SEARCH_BODY = """<div class="search-zone">
@@ -464,25 +539,12 @@ SEARCH_BODY = """<div class="search-zone">
   <button class="more" id="more" onclick="load(false)">और दिखाओ ⬇</button>
 </div>
 
-<div class="modal" id="modal" onclick="if(event.target===this)closePlayer()">
-  <div class="mcard">
-    <div class="mhead"><div class="mtitle" id="pTitle">Loading stream…</div>
-      <button class="xbtn" onclick="closePlayer()">✕</button></div>
-    <div class="video-wrap"><video id="player" controls playsinline></video></div>
-    <div class="mactions">
-      <a class="red" id="pWatch" href="#" target="_blank" rel="noopener">▶ Player page</a>
-      <a id="pDl" href="#">⬇ Download</a>
-      <button onclick="copyLink()">🔗 Copy stream link</button>
-      <button onclick="closePlayer()">Close</button>
-    </div>
-    <div class="mnote" id="pNote">Signed streaming link — सीमित समय के लिए वैध।</div>
-  </div>
-</div>
+__PLAYER_MODAL__
 
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let curQ='',offset=0,loading=false,hasMore=false,currentWatch='';
+let curQ='',offset=0,loading=false,hasMore=false;
 let debounce=null;
 let viewMode=localStorage.getItem('ff_view_mode')||'poster';
 let groupMode=localStorage.getItem('ff_group_mode')||'all';
@@ -579,45 +641,10 @@ $('#grid').addEventListener('click',e=>{
   play(decodeURIComponent(el.dataset.fid),el.dataset.name);
 });
 
-async function play(fid,name){
-  const modal=$('#modal'),v=$('#player');
-  $('#pTitle').textContent='⏳ '+name;
-  $('#pNote').textContent='Streaming link तैयार हो रही है…';
-  modal.classList.add('open');
-  v.pause();v.removeAttribute('src');
-  try{
-    const r=await fetch('/api/stream',{method:'POST',credentials:'same-origin',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify({file_id:fid})});
-    if(r.status===401){location.href='/login?err='+encodeURIComponent('Session expired. Please sign in again.');return}
-    const d=await r.json();
-    if(!d.stream){$('#pTitle').textContent='❌ '+(d.error||'Stream unavailable');
-      $('#pNote').textContent='यह फाइल अभी stream नहीं हो सकी।';return}
-    currentWatch=location.origin+d.watch;
-    $('#pTitle').textContent='▶ '+name;
-    $('#pNote').textContent='Signed link · '+(d.expires_in||0)+' seconds valid · Range/seek supported';
-    $('#pWatch').href=d.watch;
-    $('#pDl').href=d.download;
-    v.poster=d.poster||'';
-    v.src=d.stream;
-    v.load();
-    v.play().catch(()=>{});
-  }catch(e){$('#pTitle').textContent='❌ Stream error';
-    $('#pNote').textContent=String(e.message||e)}
-}
-function closePlayer(){
-  const v=$('#player');v.pause();v.removeAttribute('src');v.load();
-  $('#modal').classList.remove('open');
-}
-function copyLink(){
-  if(!currentWatch)return;
-  navigator.clipboard.writeText(currentWatch).then(()=>{
-    $('#pNote').textContent='🔗 Link copied: '+currentWatch;
-  }).catch(()=>{$('#pNote').textContent=currentWatch});
-}
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closePlayer()});
 applyMode();
 load(true);
-</script>"""
+</script>
+__PLAYER_JS__"""
 
 
 def search_page(tg_id: int, role: str):
@@ -629,7 +656,10 @@ def search_page(tg_id: int, role: str):
     * "Recently Added / Database Stats" वाली meta लाइन हटा दी गई —
       गिनती सिर्फ़ `/stats` (Database Stats) पेज पर।
     """
+    body = (SEARCH_BODY
+            .replace("__PLAYER_MODAL__", PLAYER_MODAL_HTML)
+            .replace("__PLAYER_JS__", PLAYER_JS))
     return app_page(
-        "FAST FINDER — Search Files", SEARCH_BODY,
+        "FAST FINDER — Search Files", body,
         tg_id=tg_id, role=role, active_tab="dash",
     )

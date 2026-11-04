@@ -33,6 +33,13 @@ server से raw HTML strings भेजती थी।
   **1 card/row**, tablet 2, 🖥️ desktop (≥1024px) **बिल्कुल 3 cards/row** —
   `#catVideos` और `#catMediaResults` दोनों पर, Actor + Post दोनों kinds पर।
   Search page के 1/2/3 pattern के साथ consistent; पुरानी 4-column rule हटाई।
+* **▶ Shared Click-to-Play** — Videos tab की हर card (attached `#catVideos` और
+  Actor के tag-results `#catMediaResults`) अब **main `/search` वाला ही छोटा
+  player modal** खोलती है: `web.web_assets` का `PLAYER_MODAL_HTML` + `PLAYER_JS`
+  दोनों detail pages में include है, cards `data-fid`/`data-name` + delegated
+  click/keyboard handler से `window.play(fid, name)` चलाती हैं → वही
+  `POST /api/stream` → signed `<video>` + Player page / Download / Copy link.
+  कोई नई tab, कोई अलग player UI, कोई duplicate JS नहीं।
 * **🖼️ Direct gallery upload** — v5 का `<input multiple>` form अब detail tab पर
   ही; JSON response + in-place render (v5 reload करता था), uploads Telegram पर
   एक-एक करके anti-flood.
@@ -48,7 +55,7 @@ import json
 import re
 from urllib.parse import quote
 
-from web.web_assets import app_page
+from web.web_assets import app_page, PLAYER_MODAL_HTML, PLAYER_JS
 
 # ─────────────────────────────────────────────────────────────
 # ⚙️ DATA-DRIVEN CONFIG — नया catalog जोड़ना हो तो सिर्फ़ यहाँ entry
@@ -445,8 +452,9 @@ vertical-align:middle;transition:background .2s,color .2s}
 @media(min-width:1024px){.cat-vgrid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}
 .cat-vgrid>.cat-vempty{grid-column:1/-1}
 .cat-vcard{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;
-overflow:hidden;text-decoration:none;color:var(--txt);position:relative;opacity:0;
+overflow:hidden;text-decoration:none;color:var(--txt);position:relative;opacity:0;cursor:pointer;
 transform:translateY(18px) scale(.97);transition:transform .28s,border-color .22s,box-shadow .28s}
+.cat-vcard:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .cat-vcard.in{animation:catIn .5s cubic-bezier(.34,1.2,.64,1) forwards}
 .cat-vcard:hover{transform:translateY(-5px) scale(1.015);border-color:var(--red);
 box-shadow:0 14px 34px rgba(0,0,0,.45)}
@@ -1065,13 +1073,23 @@ function stagger(sel){
 /* ── 🏷️ v5 का tag-driven Linked Media, पर fsv1 की JSON API से ── */
 function mediaCard(f){
   const meta=[f.size,f.duration,f.res].filter(Boolean).join(' · ');
-  return '<a class="cat-vcard" href="'+esc(f.watch)+'" target="_blank" rel="noopener">'
+  return '<div class="cat-vcard" role="button" tabindex="0" data-fid="'+esc(f.file_id)+'" '
+    + 'data-name="'+esc(f.name)+'" aria-label="Play '+esc(f.name)+'">'
     + '<div class="cat-vposter"><div class="cat-vph">🎬</div>'
     + '<img src="'+esc(f.thumb)+'" alt="" loading="lazy" onerror="this.remove()">'
     + '<span class="cat-vnum">'+esc(f.quality||'VIDEO')+'</span><span class="cat-vplay">▶</span></div>'
     + '<div class="cat-vinfo"><div class="cat-vtitle">'+esc(f.name)+'</div>'
-    + '<div class="cat-vsub">'+esc(meta||'▶ Watch / Stream')+'</div></div></a>';
+    + '<div class="cat-vsub">'+esc(meta ? meta+' · ▶ Click to play' : '▶ Click to play')+'</div></div></div>';
 }
+/* ▶ main page जैसा ही shared player — नाम/card पर click → छोटा modal */
+function playCard(c){
+  if(!c || !c.dataset.fid) return;
+  if(typeof window.play==='function') window.play(c.dataset.fid, c.dataset.name||'Video');
+}
+document.addEventListener('click',e=>{
+  const c=e.target.closest('.cat-vcard[data-fid]');
+  if(c) playCard(c);
+});
 async function loadMedia(offset){
   if(!D.tagMedia) return;                 /* Post पर search-text results नहीं चाहिए */
   const box=document.getElementById('catMediaResults'); if(!box) return;
@@ -1182,8 +1200,12 @@ document.querySelectorAll('.cat-vposter img,.cat-galitem img').forEach(img=>{
   img.addEventListener('load',()=>img.classList.add('on'));
 });
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape') closeLight();
-  const tag=(document.activeElement||{}).tagName;
+  if(e.key==='Escape'){ closeLight(); if(window.closePlayer) window.closePlayer(); }
+  const focused=document.activeElement||{};
+  if((e.key==='Enter'||e.key===' ') && focused.classList && focused.classList.contains('cat-vcard')){
+    e.preventDefault(); playCard(focused); return;
+  }
+  const tag=focused.tagName;
   if(tag==='INPUT'||tag==='TEXTAREA') return;
   if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
     const names=['overview','videos','gallery'];
@@ -1304,16 +1326,17 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
         vids_html = ""
         for i, v in enumerate(videos):
             fid = str(v.get("file_id") or "")
-            href = "/setup_stream?file_id=" + quote(fid, safe="") + "&mode=watch"
             poster = "/api/thumb?file_id=" + quote(fid, safe="") + "&v=1"
-            label = esc(str(v.get("label") or f"Video {i+1}"))
+            label = str(v.get("label") or f"Video {i+1}")
             vids_html += (
-                f'<a class="cat-vcard" href="{esc(href)}" target="_blank" rel="noopener">'
+                f'<div class="cat-vcard" role="button" tabindex="0" '
+                f'data-fid="{esc(fid)}" data-name="{esc(label)}" '
+                f'aria-label="Play {esc(label)}">'
                 f'<div class="cat-vposter"><div class="cat-vph">🎬</div>'
                 f'<img src="{esc(poster)}" alt="" loading="lazy" onerror="this.remove()">'
                 f'<span class="cat-vnum">#{i+1}</span><span class="cat-vplay">▶</span></div>'
-                f'<div class="cat-vinfo"><div class="cat-vtitle">{label}</div>'
-                f'<div class="cat-vsub">📌 Attached · ▶ Watch</div></div></a>'
+                f'<div class="cat-vinfo"><div class="cat-vtitle">{esc(label)}</div>'
+                f'<div class="cat-vsub">📌 Attached · ▶ Click to play</div></div></div>'
             )
     else:
         vids_html = (
@@ -1455,6 +1478,7 @@ def build_detail_page(kind: str, role: str, tg_id: int, item: dict):
     js = DETAIL_JS.replace("__DETAIL_CFG__", json.dumps(detail_cfg, ensure_ascii=False))
     return app_page(
         f"{item.get('title') or cfg['singular']} - Fast Finder",
-        f"<style>{CATALOG_CSS}</style>" + _detail_body(kind, role, item) + js,
+        (f"<style>{CATALOG_CSS}</style>" + _detail_body(kind, role, item)
+         + js + PLAYER_MODAL_HTML + PLAYER_JS),
         tg_id=tg_id, role=role, active_tab=kind,
     )

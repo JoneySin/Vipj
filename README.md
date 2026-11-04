@@ -28,7 +28,7 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | 📏 Size Chip | **File size thumbnail के अंदर** (नीचे-दाएँ badge) — फाइल नाम के नीचे की size/Stream लाइन हटा दी गई |
 | 📸 Real Thumbnails | **DB में सिर्फ़ Telegram का thumbnail file_id** — v5 की तरह `thumb_url: "TG_ID:<file_id>"` string. **Image bytes न DB में, न server RAM में** (Koyeb free पर RAM भर जाता है)। `/api/thumb` पहले से locked ID वाली फाइलों को Telegram से लाकर तुरंत response देता है और `ETag` + `Cache-Control` से **ब्राउज़र की अपनी memory/disk cache** में रखवाता है (`If-None-Match` → 304, दोबारा कोई server/Telegram call नहीं); पहली बार वाली फाइलें नीचे वाले serial warmup से आती हैं |
 | 🖼️ First-time Thumbnail Warmup (v5 logic) | पहली बार 21 नई फाइलें एक साथ खुलने पर **FLOOD_WAIT** न लगे इसलिए `send_cached_media` **एक-एक करके** चलता है (global lock + 1.2–3.0s random anti-flood gap), **FLOOD_WAIT/420** पर `wait + extra` सोकर 5 attempts तक retry, ID DB में `TG_ID:` lock, बिना poster वाली फाइल `NO_THUMB` mark। `/api/thumb` पहली बार serial queue में डालकर 404 + `Retry-After` देता है और browser `retry=true&t=…` से posters अपने आप एक-एक करके दिखा देता है (v5 के `reloadThumb` जैसा)। Bulk के लिए admin command **`/warmup_thumbs`** |
-| ▶ Click-to-Stream | फाइल नाम पर क्लिक → `/api/stream` → BIN_CHANNEL में cached media → **HMAC-signed** `/watch/<id>` + `/download/<id>` → modal `<video>` player (Range/seek supported), Download, Player page, Copy link |
+| ▶ Click-to-Stream (Shared) | **`/search` + Post/Actor दोनों Videos tabs — एक ही छोटा player modal.** फाइल/वीडियो नाम या card पर क्लिक → `POST /api/stream` → BIN_CHANNEL में cached media → **HMAC-signed** `/watch/<id>` + `/download/<id>` → `<video>` player (Range/seek supported), Download, Player page, Copy link, `Esc`/✕ से बंद। `web/web_assets.py` का `PLAYER_MODAL_HTML` + `PLAYER_JS` shared component, cards पर `data-fid`/`data-name` (keyboard `Enter`/`Space` भी), कोई नई tab नहीं |
 | 🔗 Signed Links | `e` (expiry) + `s` (signature) — बिना सही signature के message-id guess करके file नहीं निकाली जा सकती। Telegram bot के Watch/Download buttons भी अब signed links बनाते हैं |
 | ⚡ Seek Performance | `media_info` cache (5 मिनट) से हर Range request पर `get_messages()` नहीं लगती; Range parser + `StreamResponse` hardened, आख़िरी chunk सही कटता है |
 
@@ -105,6 +105,8 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
    quality, resolution, duration दिखेंगे।
 5. **फाइल नाम पर क्लिक** → streaming link तैयार → वीडियो modal में चलता है।
    चाहें तो "Player page" / "Download" / "Copy stream link" use करें।
+   यही modal `/posts`/`/actors` के detail pages के **🎬 Videos tab** में भी खुलता है
+   (attached videos और Actor के tag-driven results — दोनों पर)।
 
 > Thumbnail न मिलने पर card पर graceful placeholder दिखता है (कोई fake poster नहीं)।
 >
@@ -165,7 +167,8 @@ database/ia_filterdb.py          → save_file में `thumb_url` (सिर�
                                    update_file_meta() (सिर्फ ID backfill)
 utils.py                         → temp.USER_SESSIONS / REG_PENDING
 web/web_assets.py                → get_auth(), CSS, login shell, search UI; auto-search,
-                                   Poster/Text + All/Group/UnGroup dropdowns, size-in-poster
+                                   Poster/Text + All/Group/UnGroup dropdowns, size-in-poster;
+                                   PLAYER_MODAL_HTML + PLAYER_JS (shared /search + catalog player)
 web/auth_routes.py               → login/register/OTP/logout routes (नया)
 web/thumb_engine.py              → Telegram fetch (बिना किसी cache के), DB में सिर्फ ID backfill
 web/search_routes.py             → /search, /api/search (group filter), /api/thumb, /api/stream (नया)
@@ -175,7 +178,8 @@ web/utils/custom_dl.py           → FileId support + आख़िरी Range c
 web/stream_routes.py             → landing, signed watch/download, hardened Range
 database/catalog_db.py           → एक CatalogStore: catalog_posts + catalog_actors,
                                    short-hex ids, PyMongo→to_thread, in-memory fallback (नया)
-web/catalog.py                   → एक CATALOGS config + shared CSS/JS/detail/editor engine (नया)
+web/catalog.py                   → एक CATALOGS config + shared CSS/JS/detail/editor engine,
+                                   Videos cards → shared /api/stream player modal (नया)
 web/catalog_routes.py            → pages + generic JSON API + upload/photo (नया)
 web/thumb_engine.py              → Telegram fetch (बिना किसी cache के), DB में सिर्फ ID backfill,
                                    catalog images के लिए get_image_bytes()
