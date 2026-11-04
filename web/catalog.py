@@ -303,6 +303,12 @@ font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;transition:tra
 .cat-btn.ghost:hover{background:var(--bg2);border-color:var(--red);box-shadow:none}
 .cat-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--card);
 border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:20px}
+/* ✨ New Post / New Profile: 🖥️ desktop (>760px) पर search के साथ एक ही लाइन।
+   nowrap + `.cat-search{min-width:0}` ⇒ search ज़रूरत के हिसाब से सिकुड़ता है,
+   filters + create button अपनी जगह रहते हैं, कोई horizontal overflow नहीं।
+   📱 mobile वाला rule FILTER_CSS के उसी `@media(max-width:760px)` ब्लॉक में। */
+.cat-toolbar .cat-create{flex:0 0 auto;white-space:nowrap}
+@media(min-width:761px){.cat-toolbar.cat-toolbar{flex-wrap:nowrap}}
 .cat-search{position:relative;flex:1 1 240px;min-width:0}
 .cat-search input{width:100%;box-sizing:border-box;background:var(--bg3);border:1.5px solid var(--line);
 border-radius:9px;padding:11px 38px 11px 14px;color:var(--txt);font-size:14px;font-weight:600;
@@ -1257,8 +1263,11 @@ def _category_options(kind: str, include_all: bool = True) -> str:
 def _listing_body(kind: str, role: str) -> str:
     cfg = CATALOGS[kind]
     admin = role == "admin"
+    # ✨ Create button `.cat-toolbar` में: 🖥️ desktop पर search वाली ही लाइन,
+    #    📱 mobile पर filter buttons वाली row के ठीक नीचे (DOM order = search → filters → create)।
     create_btn = (
-        '<button class="cat-btn" onclick="openEditor(\'\')">✨ New ' + html.escape(cfg["singular"]) + "</button>"
+        '<button class="cat-btn cat-create" onclick="openEditor(\'\')">✨ New '
+        + html.escape(cfg["singular"]) + "</button>"
         if admin else ""
     )
     # 🎛️ filter buttons की परिभाषा web_assets.FILTER_OPTIONS/CATALOG_FILTERS में —
@@ -1269,7 +1278,6 @@ def _listing_body(kind: str, role: str) -> str:
   <div class="cat-head">
     <div class="cat-title">{html.escape(cfg['icon'])} {html.escape(cfg['page'])}</div>
     <span class="cat-count" id="catCount">…</span>
-    {create_btn}
   </div>
   <div class="cat-toolbar">
     <div class="cat-search" id="catSearch">
@@ -1277,6 +1285,7 @@ def _listing_body(kind: str, role: str) -> str:
       <div class="cat-spin"></div>
     </div>
     {filters_html}
+    {create_btn}
   </div>
   <div class="cat-grid vm-grid" id="catGrid"></div>
   <div class="cat-pg" id="catPg">

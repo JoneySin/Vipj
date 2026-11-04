@@ -88,6 +88,9 @@ line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:ver
 color:var(--mut);border-radius:6px;padding:4px 8px;font-size:11px;font-weight:800;
 cursor:pointer;font-family:inherit}
 .gopenbtn:hover{border-color:var(--red);color:var(--txt)}
+/* नाम के सामने अब सिर्फ़ ▾ chevron — "Files" लिखा हुआ label हटा दिया गया;
+   खुलने पर arrow घूम जाता है, toggle/expand वैसा ही काम करता है। */
+.gcard.open .gopenbtn{transform:rotate(180deg);border-color:var(--red);color:var(--txt)}
 .gvariants{display:none;border-top:1px solid var(--line);gap:12px;padding:10px;
 grid-template-columns:1fr}
 .gcard.open .gvariants{display:grid}
@@ -191,7 +194,8 @@ GROUP_CARD_TEMPLATE = (
     '<div class="gbottom vm-details">{QCHIPS}</div>{ADMIN}'
     '</div>'
     '<div class="gbody vm-body"><div class="gtitle vm-title" onclick="event.stopPropagation();gToggle(this)">{NAME}</div>'
-    '<button class="gopenbtn" onclick="event.stopPropagation();gToggle(this)">▾ Files</button></div>'
+    '<button class="gopenbtn" type="button" title="Expand / collapse" '
+    'aria-label="Expand / collapse" onclick="event.stopPropagation();gToggle(this)">▾</button></div>'
     '</div>'
     '<div class="gvariants">{VARIANTS}</div></div>'
 )
