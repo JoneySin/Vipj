@@ -191,8 +191,10 @@ transition:none!important;opacity:1!important;transform:none!important}
 #   json.dumps करके दी जाती हैं। chip जोड़ना/हटाना/क्रम बदलना/रंग बदलना
 #   हो → सिर्फ़ VCARD_CHIP_SPEC बदलो, तीनों जगह एक साथ बदलेगा।
 # ─────────────────────────────────────────────────────────────
+# ⚠️ "VIDEO"/"FILE" टाइप chip हटा दी गई — thumbnail पर अब सिर्फ़
+#    quality → res → duration chips हैं। `type` payload में रह सकता है
+#    (API/editor इस्तेमाल करते हैं), पर card पर chip नहीं बनती।
 VCARD_CHIP_SPEC = (
-    ("type",     "vtag",      ()),
     ("quality",  "vtag blue", ("unknown",)),
     ("res",      "vtag",      ()),
     ("duration", "vtag gold", ()),

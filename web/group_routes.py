@@ -302,7 +302,8 @@ async def group_cards(cards, normalize=None, auto_join=True):
             "nkey": "" if g else value[2:],
             "name": title,
             "count": len(variants),
-            "type": rep.get("type", "VIDEO"),
+            # ⚠️ कोई "VIDEO"/"FILE" टाइप chip नहीं — shared `.vcard` की तरह
+            #    group thumbnail पर भी सिर्फ़ quality/res/duration/group meta।
             # ⚠️ group card पर किसी एक फाइल का SIZE कभी नहीं — members के
             #    अलग-अलग size होते हैं (expand पर हर `.vcard` पर अपना size)।
             #    DURATION सिर्फ़ qualities-group पर: एक ही फाइल है तो साझा

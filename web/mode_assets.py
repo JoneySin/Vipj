@@ -10,6 +10,7 @@ CSS से छिप जाती है। कोई अलग HTML branch / �
 │ • नया mode label/chip/option बदलना हो   → `VIEW_MODE_OPTIONS`          │
 │ • Text mode का layout/रंग/spacing बदलना → `MODE_CSS`                   │
 │ • mode state / persistence / img src    → `MODE_JS` (`window.ViewMode`)│
+│ • डिफ़ॉल्ट mode (अभी Text) बदलना हो   → `MODE_JS` का `DEFAULT`       │
 │ • कोई नया page/card mode-aware करना हो  → नीचे वाले `VM_*` classes      │
 │   markup में जोड़ो (`vm-grid`, `vm-card`, `vm-img`, …); किसी CSS/JS    │
 │   फाइल में कोई नया नियम लिखने की ज़रूरत नहीं।                          │
@@ -96,10 +97,25 @@ transform:none;pointer-events:all}
 # ── ⚙️ JS — mode state का इकलौता engine ──────────────────────────────────
 MODE_JS = r"""/* 🖼️📄 POSTER / TEXT — single source web/mode_assets.py (SITE_JS में) */
 window.ViewMode=(function(){
-  var VALID=['poster','text'], cur='poster', cfg={}, bound=[];
-  function norm(v){return VALID.indexOf(v)>=0?v:'poster';}
+  /* ⭐ DEFAULT_VIEW_MODE — डिफ़ॉल्ट बदलना हो तो बस ये एक लाइन बदलो।
+     हर page (/search, /posts, /actors) खाली localStorage पर इसी से शुरू होगा। */
+  var DEFAULT='text', RESET_FLAG='ff_mode_default_v2';
+  var VALID=['poster','text'], cur=DEFAULT, cfg={}, bound=[];
+  function norm(v){return VALID.indexOf(v)>=0?v:DEFAULT;}
   /* storage key भी यहीं — search / posts / actors अलग-अलग याद रखते हैं */
   function storageFor(kind){return kind?'ff_cat_mode_'+kind:'ff_view_mode';}
+  /* पुराने browsers में 'poster' save था ⇒ नया डिफ़ॉल्ट एक बार लागू करो:
+     सिर्फ़ mode वाली पुरानी keys हटाते हैं, इसके बाद user की नई पसंद याद रहती है. */
+  function resetOnce(){
+    try{
+      if(localStorage.getItem(RESET_FLAG))return;
+      for(var i=localStorage.length-1;i>=0;i--){
+        var n=localStorage.key(i);
+        if(n==='ff_view_mode'||n.indexOf('ff_cat_mode_')===0)localStorage.removeItem(n);
+      }
+      localStorage.setItem(RESET_FLAG,'1');
+    }catch(e){}
+  }
   function key(){return cfg.storage||storageFor(cfg.kind);}
   function get(){return cur;}
   function isText(){return cur==='text';}
@@ -142,12 +158,14 @@ window.ViewMode=(function(){
   }
   function init(o){
     cfg=o||{};
+    resetOnce();                 /* सिर्फ़ पहली बार — पुरानी Poster preference हटे */
     var v=null;try{v=localStorage.getItem(key());}catch(e){}
-    cur=norm(v||'poster');
+    cur=norm(v||DEFAULT);       /* कोई पसंद न हो ⇒ Text mode */
     bind();apply();
   }
   return {init:init,set:set,get:get,isText:isText,apply:apply,
-          imgAttrs:imgAttrs,storageFor:storageFor,options:VALID.slice()};
+          imgAttrs:imgAttrs,storageFor:storageFor,options:VALID.slice(),
+          defaultMode:DEFAULT};
 })();
 /* पुराने inline handlers / tests के लिए छोटा alias — logic सिर्फ़ ViewMode में */
 window.setMode=function(v){window.ViewMode.set(v);};

@@ -170,6 +170,40 @@ class TestSingleSource(unittest.TestCase):
         self.assertIn("'ff_cat_mode_'", js)
         self.assertIn("'ff_view_mode'", js)
 
+    def test_09_text_is_the_default_everywhere(self):
+        """खाली localStorage ⇒ हर page Text; डिफ़ॉल्ट एक ही लाइन में बदलने योग्य।"""
+        js = js_block()
+        self.assertIn("var DEFAULT='text'", js)
+        self.assertIn("cur=DEFAULT", js)
+        self.assertIn("function norm(v){return VALID.indexOf(v)>=0?v:DEFAULT;}", js)
+        self.assertIn("cur=norm(v||DEFAULT)", js)
+        self.assertIn("defaultMode:DEFAULT", js)
+        self.assertNotIn("cur='poster'", js, "पुराना poster default बचा है")
+        self.assertNotIn("v||'poster'", js, "पुराना poster fallback बचा है")
+        # पुरानी saved 'poster' preference एक बार reset, फिर user की पसंद याद
+        self.assertIn("function resetOnce()", js)
+        self.assertIn("RESET_FLAG", js)
+        self.assertIn("localStorage.removeItem(n)", js)
+        # किसी दूसरी फाइल में अपना default/initial mode न हो
+        for name, src in OTHER_FILES.items():
+            self.assertNotIn("modeSel').value", src)
+            self.assertNotIn("catMode').value", src)
+
+    def test_10_no_video_type_chip_on_any_thumbnail(self):
+        """thumbnail पर 'VIDEO'/'FILE' टाइप chip नहीं; quality/res/duration रहें।"""
+        wa = FILES["web_assets.py"]
+        spec = re.search(r"^VCARD_CHIP_SPEC\s*=\s*\((.*?)\n\)", wa, re.S | re.M)
+        self.assertIsNotNone(spec, "VCARD_CHIP_SPEC नहीं मिला")
+        fields = re.findall(r'^\s*\(\s*"([a-z_]+)"\s*,', spec.group(1), re.M)
+        self.assertEqual(fields, ["quality", "res", "duration"])
+        self.assertNotIn("type", fields)
+        gr = FILES["group_assets.py"]
+        self.assertNotIn("g.type", gr, "group thumbnail पर VIDEO chip बची है")
+        self.assertNotIn("type:'VIDEO'", gr, "group demo payload में type बचा है")
+        routes = (WEB / "group_routes.py").read_text(encoding="utf-8")
+        self.assertNotIn('"type": rep.get("type", "VIDEO")', routes,
+                         "group payload में VIDEO chip का data बचा है")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

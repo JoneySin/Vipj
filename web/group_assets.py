@@ -208,8 +208,9 @@ _GROUP_JS_TPL = r"""/* 🗂️ SHARED GROUP CARD — template web/group_assets.p
             '<span class="vtag gold">'+esc(n)+(isEp?' EPISODES':' QUALITIES')+'</span>'+
             (showDur?'<span class="vtag gdur">⏱ '+esc(g.duration)+'</span>':'')+
             '<span class="gkind '+(isEp?'series':'quality')+'">'+
-              (isEp?'📺 SERIES':'🎞️ SINGLE TITLE')+'</span>'+
-            (g.type?'<span class="vtag">'+esc(g.type)+'</span>':'');
+              (isEp?'📺 SERIES':'🎞️ SINGLE TITLE')+'</span>';
+    /* ⚠️ कोई "VIDEO"/"FILE" टाइप chip नहीं — shared `.vcard` की तरह group
+       thumbnail पर भी सिर्फ़ quality / res / duration / group meta chips। */
     var adm='';
     if(window.IS_GROUP_ADMIN){
       var k=js1(g.key), gd=js1(g.gid||'');
@@ -561,8 +562,8 @@ GROUP_ADMIN_JS = r"""<script>
     if(items.length<2){toast('कम-से-कम 2 files चुनिए',true);return;}
     var fake={group:true,manual:false,gid:'',num:'',name:'',count:items.length,
       key:'sel:'+Date.now(),variants:items.map(function(it){
-        return {file_id:it.id,name:it.name,thumb:'',size:'',quality:'',duration:'',type:'VIDEO'};
-      }),chips:[],type:'VIDEO',duration:'',size:''};
+        return {file_id:it.id,name:it.name,thumb:'',size:'',quality:'',duration:''};
+      }),chips:[],duration:'',size:''};
     window.groupHTML(fake,'');                 /* GD में register करो */
     selMode=false;SEL={};var grid=q('#grid');if(grid)grid.classList.remove('gsel-mode');renderBar();
     window.gEdit(fake.key);
