@@ -32,6 +32,27 @@ background-size:200% 100%;animation:sh 1.5s infinite linear}
 .gposter.no-thumb{animation:none;background:none}
 .gposter.no-thumb .vph{display:flex}
 .gcard:hover .gposter .vimg.on{transform:scale(1.05)}
+/* 🗂️ GitHub reference (v5 `.grp-card.open .grp-master{display:none}`) जैसा:
+   `.gcard.open` पूरी grid चौड़ाई लेता है, इसलिए 16:9 master thumbnail desktop पर
+   बहुत बड़ा लगता था। Expand होते ही thumbnail गायब, सिर्फ़ compact header रहता है —
+   नाम + #N GROUP / QUALITIES|EPISODES / duration / kind / quality-episode chips
+   + Edit/Delete. Chips DOM में ही रहते हैं ⇒ Text mode की सारी details बची रहती हैं,
+   collapse करते ही वही master poster लौट आता है। */
+.gcard.open .gmaster{display:flex;flex-direction:column;align-items:stretch}
+.gcard.open .gbody{order:-1;padding:8px 11px 0}
+.gcard.open .gbody .gopenbtn{align-self:flex-start}
+.gcard.open .gposter{position:static;display:flex;flex-wrap:wrap;align-items:center;
+gap:6px;aspect-ratio:auto;height:auto;min-height:0;width:100%;padding:8px 11px;
+overflow:visible;background:none;animation:none}
+.gcard.open .gposter .vm-img,
+.gcard.open .gposter .vm-ph{display:none!important}
+.gcard.open .gposter .vm-details{position:static;top:auto;left:auto;right:auto;
+bottom:auto;display:flex;flex-wrap:wrap;gap:5px;padding:0;background:none;
+pointer-events:none}
+.gcard.open .gposter .vm-actions{position:static;top:auto;left:auto;right:auto;
+bottom:auto;gap:5px;padding:0;background:none;flex:0 0 auto;opacity:1;
+visibility:visible;transform:none;pointer-events:all}
+.gcard.open .gposter::after{display:none}
 .gbottom{position:absolute;left:0;right:0;bottom:0;z-index:3;display:flex;
 flex-wrap:wrap;gap:5px;padding:24px 8px 8px;
 background:linear-gradient(transparent,rgba(0,0,0,.88));pointer-events:none}

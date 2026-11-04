@@ -5,6 +5,8 @@
 **दोनों modes का markup/code बिल्कुल एक ही है**, सिर्फ़ Text mode में
  thumbnail image (`vm-img`) और image-only सजावट (`vm-ph`/`vm-overlay`)
 CSS से छिप जाती है। कोई अलग HTML branch / अलग render path नहीं।
+Text mode की grid भी यहीं: GitHub reference (v5 `.res-grid`) जैसी
+📱 1 / 📟 2 / 🖥️ 3 cards-per-row, हर card compact (नाम + chips + actions)।
 
 ┌── CHANGE IN ONE PLACE → EVERYWHERE ──────────────────────────────────┐
 │ • नया mode label/chip/option बदलना हो   → `VIEW_MODE_OPTIONS`          │
@@ -53,15 +55,21 @@ MODE_CSS = r"""
 /* ═══════════════ 🖼️📄 POSTER / TEXT — web/mode_assets.py ═══════════════
    Text mode: सिर्फ़ thumbnail + image-only decoration छिपता है।
    बाकी सब कुछ (नाम, chips, size, duration, group meta, admin actions)
-   Poster mode जैसा ही, बस inline/compact row में दिखता है। */
-.vm-grid.mode-text{display:block}
-.vm-grid.mode-text .vm-card{display:flex;flex-wrap:wrap;align-items:center;gap:7px;
-padding:9px 11px;margin-bottom:8px;border-radius:8px}
-.vm-grid.mode-text > .vm-card > .vm-master{display:flex;flex-wrap:wrap;
-align-items:center;gap:8px;padding:9px 11px}
-.vm-grid.mode-text .vm-body{order:-1;display:flex;flex-direction:row;
-align-items:center;justify-content:space-between;gap:10px;padding:0;
-flex:1 1 200px;min-width:0}
+   Poster mode जैसा ही, बस compact card में।
+   📐 GitHub reference (v5 `.res-grid`) जैसी responsive grid — 📱 1 card/row,
+   📟 2, 🖥️ 3 (Poster mode वाले `.vgrid` breakpoints से मेल खाते हैं)। */
+.vm-grid.mode-text{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;
+align-items:start}
+@media(min-width:620px){.vm-grid.mode-text{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}
+@media(min-width:1024px){.vm-grid.mode-text{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}
+.vm-grid.mode-text>.state,.vm-grid.mode-text>.vempty,
+.vm-grid.mode-text>.cat-vempty{grid-column:1/-1}
+.vm-grid.mode-text .vm-card{display:flex;flex-direction:column;align-items:stretch;
+gap:6px;padding:10px 11px;margin:0;border-radius:8px;min-width:0;max-width:100%}
+.vm-grid.mode-text > .vm-card > .vm-master{display:flex;flex-direction:column;
+align-items:stretch;gap:6px;padding:0}
+.vm-grid.mode-text .vm-body{order:-1;display:flex;flex-direction:column;
+align-items:stretch;gap:3px;padding:0;flex:0 0 auto;width:100%;min-width:0}
 .vm-grid.mode-text .vm-title{display:block;flex:1;min-width:0;white-space:nowrap;
 overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:1}
 /* ⚠️ Text mode में सिर्फ़ यही छिपता है — thumbnail से जुड़ी चीज़ें */
@@ -70,7 +78,7 @@ overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:1}
 .vm-grid.mode-text .vm-overlay{display:none!important}
 /* poster box → compact inline details strip (chips/size इसी के अंदर हैं) */
 .vm-grid.mode-text .vm-poster{position:static;display:flex;flex-wrap:wrap;
-align-items:center;gap:6px;aspect-ratio:auto;width:auto;flex:1 1 auto;
+align-items:center;gap:5px;aspect-ratio:auto;width:100%;flex:0 0 auto;
 min-width:0;padding:0;overflow:visible;background:none;animation:none;cursor:pointer}
 .vm-grid.mode-text .vm-details{position:static;top:auto;left:auto;right:auto;
 bottom:auto;display:flex;flex-wrap:wrap;gap:5px;padding:0;background:none;

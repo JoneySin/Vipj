@@ -205,5 +205,39 @@ class TestSingleSource(unittest.TestCase):
                          "group payload में VIDEO chip का data बचा है")
 
 
+    def test_11_text_mode_is_a_responsive_grid(self):
+        """GitHub reference (v5 `.res-grid`): 📱 1 / 📟 2 / 🖥️ 3 cards per row."""
+        css = css_block()
+        self.assertIn(".vm-grid.mode-text{display:grid;", css)
+        self.assertNotIn(".vm-grid.mode-text{display:block}", css,
+                         "Text mode अब भी full-width single-column list है")
+        self.assertIn("grid-template-columns:minmax(0,1fr)", css)
+        self.assertIn(
+            "@media(min-width:620px){.vm-grid.mode-text{"
+            "grid-template-columns:repeat(2,minmax(0,1fr))", css)
+        self.assertIn(
+            "@media(min-width:1024px){.vm-grid.mode-text{"
+            "grid-template-columns:repeat(3,minmax(0,1fr))", css)
+        self.assertIn("flex-direction:column", css,
+                      "3-col cards में details vertically stack होने चाहिए")
+
+    def test_12_expanded_group_has_no_giant_master_thumbnail(self):
+        """v5 `.grp-card.open .grp-master{display:none}` → fsv1 compact head."""
+        gr = FILES["group_assets.py"]
+        for token in (
+            ".gcard.open .gposter{", "aspect-ratio:auto", "height:auto",
+            ".gcard.open .gposter .vm-img", "display:none!important",
+            ".gcard.open .gposter .vm-details", ".gcard.open .gposter .vm-actions",
+            ".gcard.open .gmaster{display:flex", ".gcard.open .gbody{order:-1",
+        ):
+            self.assertIn(token, gr, f"compact open-group rule missing: {token}")
+        # variants की 1/2/3 grid बिल्कुल unchanged
+        self.assertIn(
+            "@media(min-width:1024px){.gcard.open .gvariants{"
+            "grid-template-columns:repeat(3,minmax(0,1fr))}}", gr)
+        # group card खुलने पर भी पूरी चौड़ाई ले (variants 3/row)
+        self.assertIn(".gcard.open{grid-column:1/-1", gr)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
