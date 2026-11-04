@@ -125,6 +125,23 @@ padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255
 font-size:30px;background:linear-gradient(transparent,rgba(0,0,0,.5));
 opacity:0;transition:opacity .2s;pointer-events:none}
 .vcard:hover .vplay{opacity:1}
+.vposter{cursor:pointer}
+/* 📸 v5 जैसा: thumbnail पर click → उसी poster के अंदर Edit/Delete बार slide-up */
+.vadmin{position:absolute;left:0;right:0;bottom:0;z-index:5;display:flex;gap:6px;
+padding:9px 8px;background:linear-gradient(transparent,rgba(0,0,0,.9) 45%);
+opacity:0;visibility:hidden;transform:translateY(10px);pointer-events:none;
+transition:opacity .2s ease,transform .22s ease,visibility .2s}
+.vcard.admin-active .vposter::after{content:'';position:absolute;inset:0;z-index:4;
+background:rgba(0,0,0,.42);pointer-events:none}
+.vcard.admin-active .vadmin{opacity:1;visibility:visible;transform:translateY(0);pointer-events:all}
+.vadmin button{flex:1;padding:8px 4px;border-radius:6px;font-size:11px;font-weight:800;
+font-family:inherit;cursor:pointer;color:#fff;border:1px solid rgba(255,255,255,.2);
+backdrop-filter:blur(8px);transition:background .12s,transform .1s}
+.vadmin .va-edit{background:rgba(42,42,48,.9)}
+.vadmin .va-edit:hover{background:rgba(80,80,88,.96)}
+.vadmin .va-del{background:rgba(160,8,8,.82);border-color:rgba(229,9,20,.5)}
+.vadmin .va-del:hover{background:rgba(229,9,20,.95)}
+.vadmin button:active{transform:scale(.94)}
 /* ✅ नाम के नीचे का extra space हटाया — सिर्फ़ उतनी ही padding जितनी ज़रूरी */
 .vbody{padding:8px 11px 9px}
 .vtitle{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
@@ -151,29 +168,6 @@ transition:none!important;opacity:1!important;transform:none!important}
 # ─────────────────────────────────────────────────────────────
 FILE_EDIT_HTML = r"""<style>
 /* ✏️ Shared FILE EDITOR — v5 "Edit Title Metadata" का fsv1 रूप (कोई CDN नहीं) */
-/* 📸 Thumbnail पर single click → Edit / Delete / Play वाला popup */
-.vposter{cursor:pointer}
-.fabackdrop{position:fixed;inset:0;z-index:295;background:rgba(0,0,0,.2);display:none}
-.fabackdrop.open{display:block}
-.famenu{position:fixed;z-index:310;width:min(268px,calc(100vw - 20px));display:none;
-background:var(--bg2);border:1px solid var(--line);border-radius:12px;overflow:hidden;
-box-shadow:0 18px 50px rgba(0,0,0,.68);animation:faIn .16s ease-out}
-.famenu.open{display:block}
-@keyframes faIn{from{opacity:0;transform:scale(.94) translateY(-6px)}to{opacity:1;transform:none}}
-.fahead{display:flex;align-items:center;gap:8px;padding:10px 12px;
-border-bottom:1px solid var(--line);font-size:11px;font-weight:900;color:var(--mut)}
-.fahead span{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.fahead button{background:none;border:0;color:var(--mut);font-size:17px;cursor:pointer;line-height:1}
-.faitem{display:flex;align-items:center;gap:11px;width:100%;box-sizing:border-box;
-padding:11px 13px;background:transparent;border:0;border-bottom:1px solid var(--line);
-color:var(--txt);font-family:inherit;text-align:left;cursor:pointer}
-.faitem:hover{background:var(--bg3)}
-.faitem .faico{font-size:17px;width:22px;text-align:center}
-.faitem b{display:block;font-size:12px;font-weight:900}
-.faitem small{display:block;font-size:10px;font-weight:700;color:var(--mut);margin-top:2px}
-.faitem.edit:hover{border-left:3px solid #60a5fa;padding-left:10px}
-.faitem.danger{color:#ff9a9a}
-.faitem.danger:hover{background:rgba(229,9,20,.14)}
 .femodal{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.88);display:none;
 align-items:center;justify-content:center;padding:14px}
 .femodal.open{display:flex}
@@ -253,15 +247,6 @@ box-shadow:0 12px 34px rgba(0,0,0,.55);transition:transform .3s,opacity .3s;max-
       <button class="febtn save" id="feSave">💾 Save Changes</button>
     </div>
   </div>
-</div>
-<div class="fabackdrop" id="faBackdrop" onclick="closeFileActions()"></div>
-<div class="famenu" id="faMenu" role="menu" aria-label="File actions">
-  <div class="fahead"><span id="faName">File actions</span>
-    <button onclick="closeFileActions()" aria-label="Close">✕</button></div>
-  <button class="faitem edit" id="faEdit" role="menuitem">
-    <span class="faico">✏️</span><span><b>Edit file</b><small>नाम, caption, thumbnail…</small></span></button>
-  <button class="faitem danger" id="faDelete" role="menuitem">
-    <span class="faico">🗑️</span><span><b>Delete file</b><small>Database से हटाएँ</small></span></button>
 </div>
 <div class="fetoast" id="feToast"></div>"""
 
@@ -426,60 +411,55 @@ FILE_EDIT_JS = r"""<script>
   }
   function remove(){ if(current) return deleteById(current); }
 
-  /* ── 📸 Thumbnail action popup ───────────────────────────────── */
-  let menuFid=null;
-  function closeMenu(){
-    const m=q('#faMenu'), b=q('#faBackdrop');
-    if(m) m.classList.remove('open');
-    if(b) b.classList.remove('open');
-    menuFid=null;
+  /* ── 📸 v5-style: thumbnail के अंदर Edit/Delete overlay ─────── */
+  function closeAdmin(){
+    Array.prototype.forEach.call(document.querySelectorAll('.vcard.admin-active'),
+      c=>c.classList.remove('admin-active'));
   }
-  function showMenu(fid, anchor, name){
-    const m=q('#faMenu'), b=q('#faBackdrop'); if(!m||!b) return;
-    menuFid=String(fid||'');
-    const t=q('#faName'); if(t) t.textContent=name||'File actions';
-    m.classList.add('open'); b.classList.add('open');
-    const r=anchor&&anchor.getBoundingClientRect?anchor.getBoundingClientRect():null;
-    const w=m.offsetWidth||260, h=m.offsetHeight||190;
-    let left=r?Math.min(r.right-w,window.innerWidth-w-10):(window.innerWidth-w)/2;
-    let top=r?r.bottom+8:(window.innerHeight-h)/2;
-    if(top+h>window.innerHeight-10) top=Math.max(10,(r?r.top:window.innerHeight)-h-8);
-    m.style.left=Math.max(10,left)+'px'; m.style.top=Math.max(10,top)+'px';
+  function toggleAdmin(card){
+    const was=card.classList.contains('admin-active');
+    closeAdmin();                         /* एक समय पर सिर्फ़ एक card खुला */
+    if(!was) card.classList.add('admin-active');
+  }
+  function fidOf(node){
+    let fid=node&&node.dataset?node.dataset.fid:'';
+    if(!fid){
+      const c=node&&node.closest?node.closest('.vcard[data-fid]'):null;
+      fid=c?c.dataset.fid:'';
+    }
+    try{ return decodeURIComponent(fid||''); }catch(err){ return fid||''; }
   }
   window.openFileEdit=open; window.closeFileEdit=close;
-  window.closeFileActions=closeMenu; window.deleteFileById=deleteById;
+  window.closeFileActions=closeAdmin; window.deleteFileById=deleteById;
   document.addEventListener('click',e=>{
     const t=e.target, near=(sel)=>t&&t.closest?t.closest(sel):null;
-    if(near('#faMenu')) return;             /* popup buttons अपना काम खुद करें */
+    const act=near('.vadmin button');
+    if(act){                              /* ✏️ Edit / 🗑️ Delete */
+      e.preventDefault(); e.stopPropagation();
+      const fid=fidOf(act); closeAdmin();
+      if(act.classList.contains('va-del')){ if(fid) deleteById(fid); }
+      else if(fid) open(fid);
+      return;
+    }
     const poster=near('.vcard .vposter');
     if(poster){
       const card=poster.closest('.vcard[data-fid]');
       if(card){
-        e.preventDefault(); e.stopPropagation();   /* player न खुले — popup खुले */
-        let fid=card.dataset.fid;
-        try{ fid=decodeURIComponent(fid); }catch(err){}
-        const ti=card.querySelector('.vtitle');
-        showMenu(fid,poster,card.dataset.name||(ti?ti.textContent:'')||'File actions');
+        e.preventDefault(); e.stopPropagation();   /* player न खुले — overlay खुले */
+        toggleAdmin(card);
         return;
       }
     }
-    closeMenu();                            /* बाकी कहीं click → popup बंद */
+    closeAdmin();                         /* बाहर click → सब overlay बंद */
   },true);
   document.addEventListener('keydown',e=>{
     if(e.key==='Escape'){
-      const m=q('#faMenu');
-      if(m&&m.classList.contains('open')){ closeMenu(); return; }
+      if(document.querySelector('.vcard.admin-active')){ closeAdmin(); return; }
       if(isOpen()){ close(); return; }
       return;
     }
     if(!isOpen()) return;
     if((e.ctrlKey||e.metaKey)&&String(e.key).toLowerCase()==='s'){ e.preventDefault(); save(); }
-  });
-  q('#faEdit').addEventListener('click',()=>{
-    const fid=menuFid; closeMenu(); if(fid) open(fid);
-  });
-  q('#faDelete').addEventListener('click',()=>{
-    const fid=menuFid; closeMenu(); if(fid) deleteById(fid);
   });
   q('#feSave').addEventListener('click',save);
   q('#feReset').addEventListener('click',resetThumb);
@@ -972,6 +952,7 @@ function card(f){
       <div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>
       <div class="vchips">${type}${q}${res}${dur}</div>${size}
       <span class="vplay">▶</span>
+      <div class="vadmin"><button class="va-edit" data-fid="${esc(f.file_id)}">✏️ Edit</button><button class="va-del" data-fid="${esc(f.file_id)}">🗑️ Delete</button></div>
     </div>
     <div class="vbody"><div class="vtitle">${esc(f.name)}</div></div></div>`;
 }

@@ -41,8 +41,9 @@ server से raw HTML strings भेजती थी।
   `web.web_assets` का `FILE_EDIT_HTML`+`FILE_EDIT_JS` `/search` और दोनों detail
   pages पर, हर `.vcard` पर ✏️ बटन → `web/file_edit_routes.py` का JSON API.
   fsv1 के quality/duration/resolution chips भी editable; thumbnail बिना CDN के 16:9 canvas crop
-  से Telegram पर, card **बिना reload** update. Thumbnail पर एक click → Edit/Delete popup,
-  फाइल नाम पर click → वही shared player; card में कोई "Click to play" लाइन नहीं.
+  से Telegram पर, card **बिना reload** update. v5 जैसा **thumbnail पर click → उसी poster
+  के अंदर Edit/Delete overlay**; फाइल नाम पर click → वही shared player; card में कोई
+  "Click to play" लाइन नहीं.
 * **▶ Shared Click-to-Play** — Videos tab की हर card (attached `#catVideos` और
   Actor के tag-results `#catMediaResults`) अब **main `/search` वाला ही छोटा
   player modal** खोलती है: `web.web_assets` का `PLAYER_MODAL_HTML` + `PLAYER_JS`
@@ -187,7 +188,9 @@ def video_card_html(fid: str, name: str, poster: str, chips: str = "") -> str:
         f'<img class="vimg" src="{e(poster, quote=True)}" alt="" loading="lazy" '
         f'{onload} {onerror}>'
         f'<div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>'
-        f'<div class="vchips">{chips}</div><span class="vplay">▶</span></div>'
+        f'<div class="vchips">{chips}</div><span class="vplay">▶</span>'
+        f'<div class="vadmin"><button class="va-edit" data-fid="{e(fid)}">✏️ Edit</button>'
+        f'<button class="va-del" data-fid="{e(fid)}">🗑️ Delete</button></div></div>'
         f'<div class="vbody"><div class="vtitle">{e(name)}</div></div></div>'
     )
 
@@ -1099,7 +1102,9 @@ function mediaCard(f){
     + '<div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>'
     + '<div class="vchips">'+chips+'</div>'
     + (f.size?'<span class="vsize">'+esc(f.size)+'</span>':'')
-    + '<span class="vplay">▶</span></div>'
+    + '<span class="vplay">▶</span>'
+    + '<div class="vadmin"><button class="va-edit" data-fid="'+esc(f.file_id)+'">✏️ Edit</button>'
+    + '<button class="va-del" data-fid="'+esc(f.file_id)+'">🗑️ Delete</button></div></div>'
     + '<div class="vbody"><div class="vtitle">'+esc(f.name)+'</div></div></div>';
 }
 /* ▶ main page जैसा ही shared player — नाम/card पर click → छोटा modal */
