@@ -4,6 +4,7 @@
 #   stream_routes  → /, /watch/<id>, /download/<id> (signed + Range streaming)
 #   auth_routes    → /login, /register, OTP, /logout (cookie sessions)
 #   search_routes  → /search, /api/search, /api/thumb, /api/stream
+#   file_edit_routes → /api/file/{meta,edit,thumb,thumb_reset,delete} (admin)
 #   catalog_routes → /posts, /actors, /post/<id>, /actor/<id> + generic JSON API
 #   stats_routes   → /stats, /api/db_stats (v5 जैसा "Database Stats")
 #   profile_routes → /profile, /api/update_profile (v5 जैसा "Profile Settings")
@@ -22,6 +23,7 @@ from web.search_routes import search_routes as _search_routes
 from web.catalog_routes import catalog_routes as _catalog_routes
 from web.stats_routes import stats_routes as _stats_routes
 from web.profile_routes import profile_routes as _profile_routes
+from web.file_edit_routes import file_edit_routes as _file_edit_routes
 
 
 def create_app():
@@ -33,6 +35,7 @@ def create_app():
     app.add_routes(_catalog_routes)
     app.add_routes(_stats_routes)
     app.add_routes(_profile_routes)
+    app.add_routes(_file_edit_routes)
 
     return app
 

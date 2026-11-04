@@ -4,6 +4,7 @@ Login के बाद `/search` पर:
   * `/api/search`  → DB (text + regex) search, "Recently Added" भी
   * `/api/thumb`   → असली Telegram thumbnail (cache + backfill)
   * `/api/stream`  → BIN_CHANNEL में cached media → signed /watch + /download link
+  * `?section=`   → 🟢 Primary / 🔵 Cloud / 🟠 Archive (admin editor से set)
 """
 
 import html
@@ -26,6 +27,7 @@ from database.ia_filterdb import (
     get_search_results,
     get_recent_files,
     get_file_details,
+    get_files_by_section,
 )
 from stream_security import sign_params
 from web.web_assets import get_auth, search_page
@@ -145,6 +147,7 @@ def _result(doc) -> dict:
         "res": res,
         "thumb": _thumb_url(doc),
         "caption": str(doc.get("caption") or "")[:300],
+        "section": str(doc.get("section") or "primary"),
     }
 
 
@@ -183,9 +186,16 @@ async def api_search(req):
     group_mode = (req.query.get("group") or "all").strip().lower()
     if group_mode not in ("all", "group", "ungroup"):
         group_mode = "all"
+    # 📂 v5 की primary/cloud/archive collections का fsv1 equivalent: एक `section`
+    #    field + यही dropdown. `q` उसी section के अंदर filter होता है (ignore नहीं)।
+    section = (req.query.get("section") or "all").strip().lower()
+    if section not in ("all", "primary", "cloud", "archive"):
+        section = "all"
 
     try:
-        if group_mode != "all":
+        if section != "all":
+            docs, next_offset, total = await get_files_by_section(section, offset, limit, q)
+        elif group_mode != "all":
             docs, next_offset, total = await _group_page(q, offset, limit, group_mode)
         elif q:
             docs, next_offset, total = await get_search_results(q, offset, limit)
@@ -201,6 +211,7 @@ async def api_search(req):
         "next_offset": next_offset,
         "query": q,
         "group": group_mode,
+        "section": section,
         "is_admin": role == "admin",
     })
 

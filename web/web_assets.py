@@ -10,6 +10,10 @@ Profile Settings / Sign Out), stats cards और profile settings, पर fsv1 �
 JS एक IIFE में `window.play/closePlayer/copyLink` expose करता है, इसलिए हर
 page के अपने `$` / `esc` / `const` से कोई नाम-टकराव नहीं होता।
 
+✏️ `FILE_EDIT_HTML` + `FILE_EDIT_JS` admin-only **file editor** है — v5 के
+`Edit Title Metadata` (name / caption / collection / poster / delete) का fsv1
+रूप: JSON API, बिना CDN का 16:9 canvas crop, बिना reload card update।
+
 🎴 `VIDEO_CARD_CSS` एक **shared video card** है — `/search` की grid और
 Post/Actor Videos tabs बिल्कुल वही `.vcard`/`.vgrid` markup वाली cards,
 वही 1/2/3 responsive grid और नाम के नीचे वही compact padding दिखाती हैं।
@@ -114,6 +118,7 @@ padding:7px;flex-wrap:wrap;pointer-events:none}
 padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255,.14)}
 .vtag.gold{color:var(--gold);border-color:rgba(255,209,102,.4)}
 .vtag.blue{color:#93c5fd;border-color:rgba(147,197,253,.35)}
+.vtag.sec{background:rgba(229,9,20,.88);border-color:rgba(229,9,20,.9);color:#fff}
 .vsize{position:absolute;right:7px;bottom:7px;z-index:2;pointer-events:none;
 background:rgba(0,0,0,.78);backdrop-filter:blur(6px);color:#fff;border-radius:5px;
 padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255,.14)}
@@ -148,6 +153,298 @@ transition:none!important;opacity:1!important;transform:none!important}
 
 # 🎨 SHARED CSS
 # ─────────────────────────────────────────────────────────────
+FILE_EDIT_HTML = r"""<style>
+/* ✏️ Shared FILE EDITOR — v5 "Edit Title Metadata" का fsv1 रूप (कोई CDN नहीं) */
+.vedit{position:absolute;top:8px;right:8px;z-index:4;border:1px solid rgba(255,255,255,.22);
+background:rgba(0,0,0,.8);color:#fff;border-radius:7px;width:30px;height:30px;
+font-size:14px;line-height:1;cursor:pointer;opacity:0;transform:translateY(-4px);
+transition:opacity .18s,transform .18s;backdrop-filter:blur(6px)}
+.vcard:hover .vedit,.vcard:focus-within .vedit{opacity:1;transform:none}
+.vedit:hover{background:var(--red);border-color:var(--red)}
+@media(hover:none){.vedit{opacity:1;transform:none}}
+.femodal{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.88);display:none;
+align-items:center;justify-content:center;padding:14px}
+.femodal.open{display:flex}
+.fecard{background:var(--bg2);border:1px solid var(--line);border-radius:14px;width:100%;
+max-width:640px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;
+box-shadow:0 24px 70px rgba(0,0,0,.7)}
+.fehead{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line)}
+.fetitle{flex:1;font-weight:900;font-size:15px}
+.fex{background:transparent;border:0;color:var(--mut);font-size:22px;cursor:pointer;line-height:1}
+.febody{padding:14px 16px;overflow-y:auto}
+.feposter{position:relative;width:100%;aspect-ratio:16/9;background:#000;border:1px solid var(--line);
+border-radius:9px;overflow:hidden;margin-bottom:10px}
+.feposter img,.feposter canvas{width:100%;height:100%;object-fit:contain;display:block}
+.feposter canvas{object-fit:cover;cursor:grab;touch-action:none;display:none}
+.feposter canvas:active{cursor:grabbing}
+.fethumbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.fezoom{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:var(--mut);flex:1;min-width:130px}
+.fezoom input{flex:1;min-width:70px;accent-color:var(--red)}
+.febtn{border:1px solid var(--line);border-radius:8px;padding:9px 13px;font-size:12px;font-weight:800;
+cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--txt);transition:border-color .15s,transform .1s}
+.febtn:hover{border-color:var(--red)}.febtn:active{transform:scale(.96)}
+.febtn:disabled{opacity:.5;cursor:not-allowed}
+.febtn.primary{background:var(--red);border-color:var(--red);color:#fff}
+.febtn.danger{background:rgba(160,8,8,.35);border-color:rgba(229,9,20,.5)}
+.festate,.festatus{font-size:11px;color:var(--mut);font-weight:700;margin:6px 0 12px;min-height:15px}
+.fegrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:560px){.fegrid{grid-template-columns:1fr}}
+.fegrid label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:800;color:var(--mut)}
+.fegrid label.wide{grid-column:1/-1}
+.fegrid input,.fegrid select,.fegrid textarea{width:100%;box-sizing:border-box;background:var(--bg3);
+border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--txt);font:700 13px inherit;
+font-family:inherit;outline:none}
+.fegrid textarea{resize:vertical;min-height:58px}
+.fegrid input:focus,.fegrid select:focus,.fegrid textarea:focus{border-color:var(--red)}
+.fefoot{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line);flex-wrap:wrap}
+.fefoot .primary{margin-left:auto}
+.fetoast{position:fixed;left:50%;bottom:22px;z-index:420;transform:translate(-50%,160%);
+opacity:0;background:var(--bg2);border:1px solid var(--line);border-left:4px solid #2ecc71;
+color:var(--txt);border-radius:10px;padding:11px 17px;font-size:12px;font-weight:800;
+box-shadow:0 12px 34px rgba(0,0,0,.55);transition:transform .3s,opacity .3s;max-width:92vw}
+.fetoast.show{transform:translate(-50%,0);opacity:1}
+.fetoast.err{border-left-color:var(--red)}
+</style>
+<div class="femodal" id="feModal" onclick="if(event.target===this)closeFileEdit()">
+  <div class="fecard">
+    <div class="fehead"><div class="fetitle">✏️ Edit File Metadata</div>
+      <button class="fex" onclick="closeFileEdit()" aria-label="Close">✕</button></div>
+    <div class="febody">
+      <div class="feposter"><img id="fePoster" src="" alt="Current poster">
+        <canvas id="feCanvas" width="1280" height="720"></canvas></div>
+      <div class="fethumbar">
+        <label class="febtn">📂 New poster<input type="file" id="feFile" accept="image/*" hidden></label>
+        <label class="fezoom">Zoom <input type="range" id="feZoom" min="1" max="3" step="0.05" value="1"></label>
+        <button class="febtn" id="feReset">🔄 Original</button>
+      </div>
+      <div class="festate" id="feThumbState">🖼️ Telegram original</div>
+      <div class="fegrid">
+        <label class="wide">📝 File name<input id="feName" type="text" maxlength="300"></label>
+        <label class="wide">🏷️ Caption / Search tags<textarea id="feCaption" maxlength="1000"
+          placeholder="e.g. Ajay Devgan, 1080p, Comedy…"></textarea></label>
+        <label>🎞️ Quality<select id="feQuality">
+          <option value="">Unknown</option><option value="144p">144p</option>
+          <option value="240p">240p</option><option value="360p">360p</option>
+          <option value="480p">480p</option><option value="720p">720p</option>
+          <option value="1080p">1080p</option><option value="1440p">1440p</option>
+          <option value="2160p">2160p</option><option value="4K">4K</option>
+          <option value="8K">8K</option><option value="HD">HD</option>
+          <option value="HDR">HDR</option></select></label>
+        <label>⏱️ Duration<input id="feDuration" type="text" placeholder="1:36:22"></label>
+        <label>📐 Resolution<input id="feRes" type="text" placeholder="1920×1080"></label>
+        <label>📂 Section<select id="feSection">
+          <option value="primary">🟢 Primary</option>
+          <option value="cloud">🔵 Cloud</option>
+          <option value="archive">🟠 Archive</option></select></label>
+      </div>
+      <div class="festatus" id="feStatus">…</div>
+    </div>
+    <div class="fefoot">
+      <button class="febtn danger" id="feDelete">🗑️ Delete file</button>
+      <button class="febtn" onclick="closeFileEdit()">Cancel</button>
+      <button class="febtn primary" id="feSave">💾 Save Changes</button>
+    </div>
+  </div>
+</div>
+<div class="fetoast" id="feToast"></div>"""
+
+FILE_EDIT_JS = r"""<script>
+(function(){
+  const q = s => document.querySelector(s);
+  const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let current=null, crop=null, busy=false, toastTimer=null;
+  function toast(msg, err){
+    const t=q('#feToast'); if(!t) return;
+    t.textContent=msg; t.classList.toggle('err',!!err); t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3200);
+  }
+  function isOpen(){ const m=q('#feModal'); return !!m && m.classList.contains('open'); }
+  function cards(fid){
+    return Array.prototype.filter.call(document.querySelectorAll('.vcard[data-fid]'),c=>{
+      try{ return decodeURIComponent(c.dataset.fid)===fid; }catch(e){ return c.dataset.fid===fid; }
+    });
+  }
+  function syncCard(f){
+    const list=cards(f.file_id);
+    list.forEach(c=>{
+      if(c.dataset.label!=='1'){
+        const t=c.querySelector('.vtitle'); if(t) t.textContent=f.name;
+        c.dataset.name=f.name; c.setAttribute('aria-label','Play '+f.name);
+      }
+      const chips=c.querySelector('.vchips');
+      if(chips){
+        const keep=Array.prototype.filter.call(chips.querySelectorAll('.vtag'),
+          n=>/^#\d+$/.test(n.textContent)).map(n=>n.outerHTML).join('');
+        chips.innerHTML=keep+
+          (f.section&&f.section!=='primary'?'<span class="vtag sec">'+esc(f.section.toUpperCase())+'</span>':'')+
+          (f.quality?'<span class="vtag blue">'+esc(f.quality)+'</span>':'')+
+          (f.res?'<span class="vtag">'+esc(f.res)+'</span>':'')+
+          (f.duration?'<span class="vtag gold">'+esc(f.duration)+'</span>':'');
+      }
+      const im=c.querySelector('.vimg');
+      if(im && f.thumb){ im.src=f.thumb; im.classList.remove('hidden'); }
+    });
+  }
+  function setPoster(f){
+    const im=q('#fePoster'); if(!im) return;
+    im.src=f.thumb+'&t='+Date.now(); im.style.display='block';
+    const cv=q('#feCanvas'); if(cv) cv.style.display='none';
+    const st=q('#feThumbState');
+    if(st) st.textContent=f.custom_thumb?'📸 Custom poster (web upload)':'🖼️ Telegram original';
+  }
+  function drawCrop(){
+    const cv=q('#feCanvas'); if(!cv) return;
+    const ctx=cv.getContext && cv.getContext('2d'); if(!ctx) return;
+    ctx.fillStyle='#000'; ctx.fillRect(0,0,1280,720);
+    if(!crop||!crop.img) return;
+    const im=crop.img, scale=Math.max(1280/im.width,720/im.height)*crop.zoom;
+    const w=im.width*scale, h=im.height*scale;
+    let x=(1280-w)/2+crop.x, y=(720-h)/2+crop.y;
+    x=Math.min(0,Math.max(1280-w,x)); y=Math.min(0,Math.max(720-h,y));
+    crop.x=x-(1280-w)/2; crop.y=y-(720-h)/2;
+    ctx.drawImage(im,x,y,w,h);
+  }
+  function loadLocal(input){
+    const file=input.files&&input.files[0]; if(!file) return;
+    const rd=new FileReader();
+    rd.onload=e=>{
+      const im=new Image();
+      im.onload=()=>{
+        crop={img:im,zoom:1,x:0,y:0,dragging:false};
+        q('#feZoom').value=1;
+        const po=q('#fePoster'); if(po) po.style.display='none';
+        const cv=q('#feCanvas'); if(cv) cv.style.display='block';
+        drawCrop();
+        q('#feStatus').textContent='✂️ 16:9 crop — drag से position, slider से zoom';
+      };
+      im.src=e.target.result;
+    };
+    rd.readAsDataURL(file);
+  }
+  function open(fid){
+    if(!fid||!q('#feModal')) return;
+    current=String(fid); crop=null; busy=false;
+    q('#feModal').classList.add('open');
+    q('#feStatus').textContent='लोड हो रहा है…';
+    q('#feFile').value=''; q('#feZoom').value=1;
+    fetch('/api/file/meta?id='+encodeURIComponent(current),{credentials:'same-origin'})
+      .then(r=>r.json()).then(d=>{
+        if(!d.ok){ q('#feStatus').textContent=d.error||'Load failed'; return; }
+        const f=d.file;
+        q('#feName').value=f.name; q('#feCaption').value=f.caption;
+        q('#feDuration').value=f.duration; q('#feRes').value=f.res;
+        const sel=q('#feQuality');
+        if(f.quality && !Array.prototype.some.call(sel.options,o=>o.value===f.quality))
+          sel.add(new Option(f.quality,f.quality));
+        sel.value=f.quality||'';
+        q('#feSection').value=f.section||'primary';
+        q('#feStatus').textContent='✏️ ID: '+esc(f.file_id)+' · '+esc(f.size)+' · '+esc(f.section);
+        setPoster(f);
+      }).catch(e=>{ q('#feStatus').textContent='Load error: '+String(e.message||e); });
+  }
+  function close(){
+    const m=q('#feModal'); if(m) m.classList.remove('open');
+    current=null; crop=null; busy=false;
+  }
+  function setBusy(v){
+    busy=v;
+    const b=q('#feSave'); if(b){ b.disabled=v; b.textContent=v?'Processing…':'💾 Save Changes'; }
+  }
+  async function save(){
+    if(!current||busy) return;
+    const payload={file_id:current,name:q('#feName').value,caption:q('#feCaption').value,
+      quality:q('#feQuality').value,duration:q('#feDuration').value,
+      res:q('#feRes').value,section:q('#feSection').value};
+    setBusy(true);
+    try{
+      const r=await fetch('/api/file/edit',{method:'POST',credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const d=await r.json();
+      if(!d.ok){ toast(d.error||'Save failed',true); return; }
+      let f=d.file;
+      if(crop && crop.img){
+        const cv=q('#feCanvas');
+        const blob=await new Promise(res=>{
+          if(!cv.toBlob){ res(null); return; }
+          cv.toBlob(res,'image/jpeg',0.9);
+        });
+        if(blob){
+          const fd=new FormData(); fd.append('file_id',current);
+          fd.append('image',blob,'poster.jpg');
+          const ur=await fetch('/api/file/thumb',{method:'POST',credentials:'same-origin',body:fd});
+          const ud=await ur.json();
+          if(ud.ok) f=ud.file; else toast('Poster: '+(ud.error||'upload failed'),true);
+        }
+      }
+      syncCard(f); setPoster(f); toast('✨ File updated — बिना reload'); close();
+    }catch(e){ toast('Network error: '+String(e.message||e),true); }
+    finally{ setBusy(false); }
+  }
+  async function resetThumb(){
+    if(!current||busy) return;
+    if(!confirm('Custom poster हटाकर Telegram की original thumbnail लाएँ?')) return;
+    setBusy(true);
+    try{
+      const r=await fetch('/api/file/thumb_reset',{method:'POST',credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({file_id:current})});
+      const d=await r.json();
+      if(!d.ok){ toast(d.error||'Reset failed',true); return; }
+      syncCard(d.file); setPoster(d.file);
+      toast('🔄 Original thumbnail serial queue में डाली गई');
+    }catch(e){ toast('Network error: '+String(e.message||e),true); }
+    finally{ setBusy(false); }
+  }
+  async function remove(){
+    if(!current||busy) return;
+    if(!confirm('इस file को database से permanently हटाएँ?')) return;
+    setBusy(true);
+    try{
+      const r=await fetch('/api/file/delete',{method:'POST',credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({file_id:current})});
+      const d=await r.json();
+      if(!d.ok){ toast(d.error||'Delete failed',true); return; }
+      cards(current).forEach(c=>c.remove());
+      toast('🗑️ File deleted'); close();
+    }catch(e){ toast('Network error: '+String(e.message||e),true); }
+    finally{ setBusy(false); }
+  }
+  window.openFileEdit=open; window.closeFileEdit=close;
+  document.addEventListener('click',e=>{
+    const b=e.target&&e.target.closest?e.target.closest('.vedit'):null;
+    if(!b) return;
+    e.preventDefault(); e.stopPropagation(); open(b.dataset.fid);
+  },true);
+  document.addEventListener('keydown',e=>{
+    if(!isOpen()) return;
+    if(e.key==='Escape'){ close(); return; }
+    if((e.ctrlKey||e.metaKey)&&String(e.key).toLowerCase()==='s'){ e.preventDefault(); save(); }
+  });
+  q('#feSave').addEventListener('click',save);
+  q('#feReset').addEventListener('click',resetThumb);
+  q('#feDelete').addEventListener('click',remove);
+  q('#feFile').addEventListener('change',e=>loadLocal(e.target));
+  q('#feZoom').addEventListener('input',e=>{
+    if(crop){ crop.zoom=Number(e.target.value); drawCrop(); }
+  });
+  const cv=q('#feCanvas');
+  if(cv){
+    cv.addEventListener('pointerdown',e=>{
+      if(!crop) return;
+      crop.dragging=true; crop.sx=e.clientX; crop.sy=e.clientY;
+    });
+    cv.addEventListener('pointermove',e=>{
+      if(!crop||!crop.dragging) return;
+      const r=cv.getBoundingClientRect();
+      crop.x+=(e.clientX-crop.sx)*(1280/(r.width||1280));
+      crop.y+=(e.clientY-crop.sy)*(720/(r.height||720));
+      crop.sx=e.clientX; crop.sy=e.clientY; drawCrop();
+    });
+    cv.addEventListener('pointerup',()=>{ if(crop) crop.dragging=false; });
+  }
+})();
+</script>"""
+
+
 SITE_CSS = """
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0b0b0f;--bg2:#14141c;--bg3:#1e1e2a;--card:#16161f;--line:#2a2a38;
@@ -551,6 +848,9 @@ SEARCH_BODY = """<div class="search-zone">
           <option value="all">All</option>
           <option value="group">Group</option>
           <option value="ungroup">UnGroup</option>
+          <option value="primary">🟢 Primary</option>
+          <option value="cloud">🔵 Cloud</option>
+          <option value="archive">🟠 Archive</option>
         </select>
       </div>
     </div>
@@ -563,16 +863,18 @@ SEARCH_BODY = """<div class="search-zone">
 </div>
 
 __PLAYER_MODAL__
+__FILE_EDIT_HTML__
 
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const IS_ADMIN = __IS_ADMIN__;
 let curQ='',offset=0,loading=false,hasMore=false;
 let debounce=null;
 let viewMode=localStorage.getItem('ff_view_mode')||'poster';
 let groupMode=localStorage.getItem('ff_group_mode')||'all';
 if(viewMode!=='poster'&&viewMode!=='text')viewMode='poster';
-if(!['all','group','ungroup'].includes(groupMode))groupMode='all';
+if(!['all','group','ungroup','primary','cloud','archive'].includes(groupMode))groupMode='all';
 
 function applyMode(){
   const text=viewMode==='text';
@@ -587,8 +889,11 @@ function applyMode(){
   }
 }
 function setMode(v){viewMode=(v==='text')?'text':'poster';localStorage.setItem('ff_view_mode',viewMode);applyMode()}
-function setGroup(v){groupMode=['all','group','ungroup'].includes(v)?v:'all';
-  localStorage.setItem('ff_group_mode',groupMode);applyMode();doSearch()}
+function setGroup(v){
+  const sections=['primary','cloud','archive'];
+  groupMode=['all','group','ungroup',...sections].includes(v)?v:'all';
+  localStorage.setItem('ff_group_mode',groupMode);applyMode();doSearch();
+}
 function doSearch(){curQ=$('#q').value.trim();load(true)}
 $('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(debounce);doSearch()}});
 $('#q').addEventListener('input',()=>{clearTimeout(debounce);debounce=setTimeout(()=>{
@@ -604,14 +909,17 @@ function card(f){
   const thumbUrl=f.thumb?encodeURI(f.thumb):'';
   const imgAttr=viewMode==='poster'?`src="${thumbUrl}"`:`data-src="${thumbUrl}"`;
   const size=f.size?`<span class="vsize">${esc(f.size)}</span>`:'';
+  const sec=f.section&&f.section!=='primary'
+    ?`<span class="vtag sec">${esc(String(f.section).toUpperCase())}</span>`:'';
   return `<div class="vcard" role="button" tabindex="0" data-fid="${fid}" `
     + `data-name="${esc(f.name)}" aria-label="Play ${esc(f.name)}">
     <div class="vposter" id="pb-${fid}">
       <img class="vimg" ${imgAttr} alt="" loading="lazy" data-thumb="${thumbUrl}" data-retry="0"
            onload="this.classList.add('on')" onerror="thumbFail(this)">
       <div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>
-      <div class="vchips">${type}${q}${res}${dur}</div>${size}
+      <div class="vchips">${type}${q}${res}${dur}${sec}</div>${size}
       <span class="vplay">▶</span>
+      ${IS_ADMIN?'<button class="vedit" title="Edit file metadata" aria-label="Edit file" data-fid="'+esc(f.file_id)+'">✏️</button>':''}
     </div>
     <div class="vbody"><div class="vtitle">${esc(f.name)}</div>
       <div class="vsub">▶ Click to play</div></div></div>`;
@@ -641,7 +949,9 @@ async function load(reset){
   if(reset){offset=0;hasMore=false;$('#grid').innerHTML='';}
   loading=true;$('#srow').classList.add('loading');
   try{
-    const r=await fetch(`/api/search?q=${encodeURIComponent(curQ)}&offset=${offset}&group=${groupMode}`,{credentials:'same-origin'});
+    const sec=['primary','cloud','archive'].includes(groupMode)?groupMode:'all';
+    const grp=['group','ungroup'].includes(groupMode)?groupMode:'all';
+    const r=await fetch(`/api/search?q=${encodeURIComponent(curQ)}&offset=${offset}&group=${grp}&section=${sec}`,{credentials:'same-origin'});
     if(r.status===401){location.href='/login?err='+encodeURIComponent('Session expired. Please sign in again.');return}
     const d=await r.json();
     const list=d.results||[];
@@ -666,6 +976,7 @@ $('#grid').addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{
   if(e.key!=='Enter'&&e.key!==' ')return;
   const a=document.activeElement;
+  if(a&&a.closest&&a.closest('.vedit'))return;   // ✏️ editor button → player न खुले
   const el=a&&a.closest?a.closest('.vcard[data-fid]'):null;
   if(!el)return;
   e.preventDefault();play(decodeURIComponent(el.dataset.fid),el.dataset.name);
@@ -674,7 +985,8 @@ document.addEventListener('keydown',e=>{
 applyMode();
 load(true);
 </script>
-__PLAYER_JS__"""
+__PLAYER_JS__
+__FILE_EDIT_JS__"""
 
 
 def search_page(tg_id: int, role: str):
@@ -686,9 +998,13 @@ def search_page(tg_id: int, role: str):
     * "Recently Added / Database Stats" वाली meta लाइन हटा दी गई —
       गिनती सिर्फ़ `/stats` (Database Stats) पेज पर।
     """
+    admin = role == "admin"
     body = (SEARCH_BODY
             .replace("__PLAYER_MODAL__", PLAYER_MODAL_HTML)
-            .replace("__PLAYER_JS__", PLAYER_JS))
+            .replace("__PLAYER_JS__", PLAYER_JS)
+            .replace("__IS_ADMIN__", "true" if admin else "false")
+            .replace("__FILE_EDIT_HTML__", FILE_EDIT_HTML if admin else "")
+            .replace("__FILE_EDIT_JS__", FILE_EDIT_JS if admin else ""))
     return app_page(
         "FAST FINDER — Search Files", body,
         tg_id=tg_id, role=role, active_tab="dash",

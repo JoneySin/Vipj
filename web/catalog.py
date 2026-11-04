@@ -36,6 +36,13 @@ server से raw HTML strings भेजती थी।
   contract `/search`, Post attached videos और Actor tag-results तीनों में एक ही
   markup/CSS: poster + chips + size + play overlay, नाम के नीचे **compact**
   `.vbody` padding (पुराना extra खाली space हटाया), एक ही `/api/stream` modal.
+* **✏️ Shared File Editor** — v5 के `Edit Title Metadata` (name / caption /
+  collection / custom poster / delete) का fsv1 रूप: admin-only inline modal,
+  `web.web_assets` का `FILE_EDIT_HTML`+`FILE_EDIT_JS` `/search` और दोनों detail
+  pages पर, हर `.vcard` पर ✏️ बटन → `web/file_edit_routes.py` का JSON API.
+  fsv1 के quality/duration/resolution chips और `section` (v5 की 3 collections
+  का single-DB equivalent) भी editable; thumbnail बिना CDN के 16:9 canvas crop
+  से Telegram पर, card **बिना reload** update.
 * **▶ Shared Click-to-Play** — Videos tab की हर card (attached `#catVideos` और
   Actor के tag-results `#catMediaResults`) अब **main `/search` वाला ही छोटा
   player modal** खोलती है: `web.web_assets` का `PLAYER_MODAL_HTML` + `PLAYER_JS`
@@ -58,7 +65,8 @@ import json
 import re
 from urllib.parse import quote
 
-from web.web_assets import app_page, PLAYER_MODAL_HTML, PLAYER_JS
+from web.web_assets import (app_page, PLAYER_MODAL_HTML, PLAYER_JS,
+                            FILE_EDIT_HTML, FILE_EDIT_JS)
 
 # ─────────────────────────────────────────────────────────────
 # ⚙️ DATA-DRIVEN CONFIG — नया catalog जोड़ना हो तो सिर्फ़ यहाँ entry
@@ -162,7 +170,7 @@ _MEDIA_ID_RE = re.compile(r"^[A-Za-z0-9_\-=]{2,256}$")
 
 
 def video_card_html(fid: str, name: str, poster: str, chips: str = "",
-                    sub: str = "▶ Click to play") -> str:
+                    sub: str = "▶ Click to play", admin: bool = False) -> str:
     '''🎴 SHARED VIDEO CARD — `web.web_assets.VIDEO_CARD_CSS` का `.vcard` contract.
 
     यही markup `/search` की `card(f)` JS और Actor के `mediaCard(f)` JS भी
@@ -172,15 +180,18 @@ def video_card_html(fid: str, name: str, poster: str, chips: str = "",
     onload = "onload=\"this.classList.add('on')\""
     onerror = ("onerror=\"this.classList.add('hidden');"
                "this.closest('.vposter').classList.add('no-thumb')\"")
+    edit = (f'<button class="vedit" title="Edit file metadata" '
+            f'aria-label="Edit file" data-fid="{e(fid)}">✏️</button>'
+            if admin else '')
     return (
-        f'<div class="vcard enter" role="button" tabindex="0" '
+        f'<div class="vcard enter" role="button" tabindex="0" data-label="1" '
         f'data-fid="{e(fid, quote=True)}" data-name="{e(name, quote=True)}" '
         f'aria-label="Play {e(name, quote=True)}">'
         f'<div class="vposter">'
         f'<img class="vimg" src="{e(poster, quote=True)}" alt="" loading="lazy" '
         f'{onload} {onerror}>'
         f'<div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>'
-        f'<div class="vchips">{chips}</div><span class="vplay">▶</span></div>'
+        f'<div class="vchips">{chips}</div><span class="vplay">▶</span>{edit}</div>'
         f'<div class="vbody"><div class="vtitle">{e(name)}</div>'
         f'<div class="vsub">{e(sub)}</div></div></div>'
     )
@@ -1040,6 +1051,7 @@ load(true).then(()=>{
 DETAIL_JS = r"""
 <script>
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ADMIN = __ADMIN__;
 const D = __DETAIL_CFG__;
 let GALLERY = D.gallery.slice();
 let mediaLoaded=false, mediaOffset=0, mediaNext='';
@@ -1093,7 +1105,10 @@ function mediaCard(f){
     + '<div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>'
     + '<div class="vchips">'+chips+'</div>'
     + (f.size?'<span class="vsize">'+esc(f.size)+'</span>':'')
-    + '<span class="vplay">▶</span></div>'
+    + '<span class="vplay">▶</span>'
+    + (ADMIN?'<button class="vedit" title="Edit file metadata" aria-label="Edit file" '
+       + 'data-fid="'+esc(f.file_id)+'">✏️</button>':'')
+    + '</div>'
     + '<div class="vbody"><div class="vtitle">'+esc(f.name)+'</div>'
     + '<div class="vsub">▶ Click to play</div></div></div>';
 }
@@ -1218,6 +1233,7 @@ document.querySelectorAll('.vposter img,.cat-galitem img').forEach(img=>{
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){ closeLight(); if(window.closePlayer) window.closePlayer(); }
   const focused=document.activeElement||{};
+  if(focused.closest && focused.closest('#feModal')) return;  // ✏️ editor modal खुला हो तो tab-nav बंद
   if((e.key==='Enter'||e.key===' ') && focused.classList && focused.classList.contains('vcard')){
     e.preventDefault(); playCard(focused); return;
   }
@@ -1348,6 +1364,7 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
                 fid, label, poster,
                 chips=f'<span class="vtag">#{i+1}</span>',
                 sub="📌 Attached · ▶ Click to play",
+                admin=(role == "admin"),
             )
     else:
         vids_html = (
@@ -1486,10 +1503,13 @@ def build_detail_page(kind: str, role: str, tg_id: int, item: dict):
         "tagMedia": cfg["tagMedia"],
         "limit": 12,
     }
-    js = DETAIL_JS.replace("__DETAIL_CFG__", json.dumps(detail_cfg, ensure_ascii=False))
+    js = (DETAIL_JS
+          .replace("__DETAIL_CFG__", json.dumps(detail_cfg, ensure_ascii=False))
+          .replace("__ADMIN__", "true" if role == "admin" else "false"))
     return app_page(
         f"{item.get('title') or cfg['singular']} - Fast Finder",
         (f"<style>{CATALOG_CSS}</style>" + _detail_body(kind, role, item)
-         + js + PLAYER_MODAL_HTML + PLAYER_JS),
+         + js + PLAYER_MODAL_HTML + PLAYER_JS
+         + ((FILE_EDIT_HTML + FILE_EDIT_JS) if role == "admin" else "")),
         tg_id=tg_id, role=role, active_tab=kind,
     )

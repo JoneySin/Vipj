@@ -93,6 +93,19 @@ def is_no_thumb(doc) -> bool:
     return str((doc or {}).get("thumb_url") or "") == "NO_THUMB"
 
 
+def invalidate_thumb(fid: str) -> None:
+    """✏️ Admin ने custom poster बदला → in-flight download/probe पुराना न लौटाए।
+
+    fsv1 में कोई RAM thumbnail cache नहीं है, पर एक ही request के दौरान चल रहे
+    `_INFLIGHT` download task और serial queue में पड़ा probe पुराने `TG_ID` के
+    हो सकते हैं। Browser cache अलग से `thumb_version()` के नए `v=` से bust होता है।
+    """
+    if not fid:
+        return
+    _INFLIGHT.pop(f"dl:{fid}", None)
+    _queued.discard(fid)
+
+
 def thumb_queue_state() -> dict:
     """/stats / /api/db_stats के लिए हल्का progress snapshot."""
     return {

@@ -65,6 +65,11 @@ def ensure_indexes(col) -> None:
             col.create_index([("quality", ASCENDING)], name="quality_idx")
             logger.info("✅ Quality index created")
 
+        # 📂 Section index — admin editor का primary/cloud/archive filter
+        if "section_idx" not in indexes:
+            col.create_index([("section", ASCENDING)], name="section_idx")
+            logger.info("✅ Section index created")
+
         # Updated timestamp index
         if "updated_at_idx" not in indexes:
             col.create_index([("updated_at", ASCENDING)], name="updated_at_idx")
@@ -80,11 +85,13 @@ ensure_indexes(collection)
 WEB_EXTRA_FIELDS = {
     "thumb_url": 1,        # v5 format: "TG_ID:<telegram_thumb_file_id>"
     "thumb_file_id": 1,    # पुराने indexed docs के लिए read-compat alias
+    "thumb_source": 1,     # "web" = admin ने custom poster upload किया
     "duration": 1,
     "file_type": 1,
     "mime_type": 1,
     "width": 1,
     "height": 1,
+    "section": 1,          # 📂 v5 की primary/cloud/archive collections का fsv1 equivalent
 }
 
 # =====================================================
@@ -289,6 +296,111 @@ async def update_file_meta(file_id: str, meta: dict) -> bool:
     except Exception as e:
         logger.debug(f"update_file_meta skipped: {e}")
         return False
+
+
+
+# =====================================================
+# ✏️ WEB FILE EDITOR — v5 के /api/edit_name + /api/delete का fsv1 रूप
+# =====================================================
+# v5 में 3 अलग collections (primary/cloud/archive) थीं और edit modal file को
+# document-सहित दूसरी collection में move करता था। fsv1 में एक ही collection है,
+# इसलिए "move" एक whitelisted `section` field है — `$set` से, बिना doc copy किए।
+# Raw user dict कभी `$set` में नहीं जाता: सिर्फ़ यही keys allow हैं।
+WEB_EDITABLE_FIELDS = frozenset({
+    "file_name", "caption", "quality", "duration", "width", "height",
+    "section", "thumb_url", "thumb_file_id", "thumb_source", "is_thumb_permanent",
+})
+WEB_SECTIONS = frozenset({"primary", "cloud", "archive"})
+
+
+async def get_file_meta(file_id: str) -> Optional[Dict]:
+    """Edit modal prefill के लिए पूरा doc (sync PyMongo को thread में)।"""
+    if not file_id:
+        return None
+    try:
+        return await asyncio.to_thread(collection.find_one, {"_id": file_id})
+    except Exception as e:
+        logger.error(f"get_file_meta error: {e}")
+        return None
+
+
+async def update_file_fields(file_id: str, fields: dict) -> Optional[Dict]:
+    """सिर्फ़ whitelisted keys `$set` करो, cache clear करो, ताज़ा doc लौटाओ।
+
+    `update_file_meta()` thumbnail engine के लिए है; यह admin editor के लिए है
+    और unknown keys को चुपचाप drop कर देता है (mass-assignment से बचाव)।
+    """
+    if not file_id:
+        return None
+    clean = {k: v for k, v in (fields or {}).items() if k in WEB_EDITABLE_FIELDS}
+    if not clean:
+        return None
+    clean["updated_at"] = datetime.utcnow()
+    try:
+        await asyncio.to_thread(
+            collection.update_one, {"_id": file_id}, {"$set": clean}
+        )
+        cache_clear()
+        return await get_file_meta(file_id)
+    except Exception as e:
+        logger.error(f"update_file_fields error: {e}")
+        return None
+
+
+async def delete_file_by_id(file_id: str) -> bool:
+    """v5 के /api/delete जैसा — पर exact `_id` से (`delete_many` regex नहीं)।"""
+    if not file_id:
+        return False
+    try:
+        res = await asyncio.to_thread(collection.delete_one, {"_id": file_id})
+        cache_clear()
+        return bool(getattr(res, "deleted_count", 0))
+    except Exception as e:
+        logger.error(f"delete_file_by_id error: {e}")
+        return False
+
+
+def section_filter(section: str) -> dict:
+    """पुराने docs (बिना `section`) को 🟢 Primary मानो।"""
+    if section == "primary":
+        return {"$or": [{"section": "primary"}, {"section": {"$exists": False}}]}
+    return {"section": section}
+
+
+async def get_files_by_section(section: str, offset: int = 0,
+                               max_results: int = 30, q: str = ""):
+    """📂 Section filter — `/api/search?section=cloud` (get_recent_files जैसा contract)।
+
+    v5 की अलग collections का fsv1 equivalent: अलग DB नहीं, एक indexed field
+    + यही safe projection/pagination. `q` दिया हो तो section के अंदर ही
+    name/caption regex लगता है (dropdown search query को ignore नहीं करता)।
+    """
+    if section not in WEB_SECTIONS:
+        return [], "", 0
+    flt = section_filter(section)
+    query = str(q or "").strip()
+    if query:
+        rx = re.compile(re.escape(query), re.IGNORECASE)
+        rg = ({"$or": [{"file_name": rx}, {"caption": rx}]}
+              if USE_CAPTION_FILTER else {"file_name": rx})
+        flt = {"$and": [flt, rg]}
+    proj = {
+        "file_name": 1, "file_size": 1, "caption": 1, "quality": 1,
+        **WEB_EXTRA_FIELDS,
+    }
+    try:
+        def _find():
+            return list(
+                collection.find(flt, proj)
+                .sort("updated_at", -1).skip(offset).limit(max_results)
+            )
+        docs = await asyncio.to_thread(_find)
+        total = await asyncio.to_thread(collection.count_documents, flt)
+        nxt = str(offset + max_results) if offset + max_results < total else ""
+        return docs, nxt, total
+    except Exception as e:
+        logger.error(f"get_files_by_section error: {e}")
+        return [], "", 0
 
 
 # =====================================================
