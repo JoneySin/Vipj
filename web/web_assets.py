@@ -130,11 +130,9 @@ opacity:0;transition:opacity .2s;pointer-events:none}
 .vtitle{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
 font-size:13px;font-weight:700;line-height:1.35;cursor:pointer;transition:color .18s}
 .vcard:hover .vtitle{color:var(--red)}
-.vsub{font-size:10px;color:var(--mut);font-weight:700;margin-top:3px;
-white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .state{grid-column:1/-1;text-align:center;padding:70px 20px;color:var(--mut);
 font-weight:600;line-height:1.7}
-/* Text mode: सिर्फ़ नाम + meta वाली कॉम्पैक्ट लिस्ट, कोई thumbnail नहीं */
+/* Text mode: सिर्फ़ नाम वाली कॉम्पैक्ट लिस्ट, कोई thumbnail नहीं */
 .vgrid.mode-text{display:block}
 .vgrid.mode-text .vcard{display:flex;align-items:center;gap:6px;padding:8px 11px;
 margin-bottom:8px;border-radius:8px}
@@ -142,7 +140,6 @@ margin-bottom:8px;border-radius:8px}
 .vgrid.mode-text .vbody{display:flex;align-items:center;gap:10px;padding:0;flex:1;min-width:0}
 .vgrid.mode-text .vtitle{display:block;flex:1;min-width:0;white-space:nowrap;overflow:hidden;
 text-overflow:ellipsis;-webkit-line-clamp:1}
-.vgrid.mode-text .vsub{display:none}
 @media(prefers-reduced-motion:reduce){
 .vcard,.vcard.enter,.vcard.enter.in,.vposter{animation:none!important;
 transition:none!important;opacity:1!important;transform:none!important}
@@ -154,13 +151,29 @@ transition:none!important;opacity:1!important;transform:none!important}
 # ─────────────────────────────────────────────────────────────
 FILE_EDIT_HTML = r"""<style>
 /* ✏️ Shared FILE EDITOR — v5 "Edit Title Metadata" का fsv1 रूप (कोई CDN नहीं) */
-.vedit{position:absolute;top:8px;right:8px;z-index:4;border:1px solid rgba(255,255,255,.22);
-background:rgba(0,0,0,.8);color:#fff;border-radius:7px;width:30px;height:30px;
-font-size:14px;line-height:1;cursor:pointer;opacity:0;transform:translateY(-4px);
-transition:opacity .18s,transform .18s;backdrop-filter:blur(6px)}
-.vcard:hover .vedit,.vcard:focus-within .vedit{opacity:1;transform:none}
-.vedit:hover{background:var(--red);border-color:var(--red)}
-@media(hover:none){.vedit{opacity:1;transform:none}}
+/* 📸 Thumbnail पर single click → Edit / Delete / Play वाला popup */
+.vposter{cursor:pointer}
+.fabackdrop{position:fixed;inset:0;z-index:295;background:rgba(0,0,0,.2);display:none}
+.fabackdrop.open{display:block}
+.famenu{position:fixed;z-index:310;width:min(268px,calc(100vw - 20px));display:none;
+background:var(--bg2);border:1px solid var(--line);border-radius:12px;overflow:hidden;
+box-shadow:0 18px 50px rgba(0,0,0,.68);animation:faIn .16s ease-out}
+.famenu.open{display:block}
+@keyframes faIn{from{opacity:0;transform:scale(.94) translateY(-6px)}to{opacity:1;transform:none}}
+.fahead{display:flex;align-items:center;gap:8px;padding:10px 12px;
+border-bottom:1px solid var(--line);font-size:11px;font-weight:900;color:var(--mut)}
+.fahead span{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.fahead button{background:none;border:0;color:var(--mut);font-size:17px;cursor:pointer;line-height:1}
+.faitem{display:flex;align-items:center;gap:11px;width:100%;box-sizing:border-box;
+padding:11px 13px;background:transparent;border:0;border-bottom:1px solid var(--line);
+color:var(--txt);font-family:inherit;text-align:left;cursor:pointer}
+.faitem:hover{background:var(--bg3)}
+.faitem .faico{font-size:17px;width:22px;text-align:center}
+.faitem b{display:block;font-size:12px;font-weight:900}
+.faitem small{display:block;font-size:10px;font-weight:700;color:var(--mut);margin-top:2px}
+.faitem.edit:hover{border-left:3px solid #60a5fa;padding-left:10px}
+.faitem.danger{color:#ff9a9a}
+.faitem.danger:hover{background:rgba(229,9,20,.14)}
 .femodal{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.88);display:none;
 align-items:center;justify-content:center;padding:14px}
 .femodal.open{display:flex}
@@ -240,6 +253,15 @@ box-shadow:0 12px 34px rgba(0,0,0,.55);transition:transform .3s,opacity .3s;max-
       <button class="febtn save" id="feSave">💾 Save Changes</button>
     </div>
   </div>
+</div>
+<div class="fabackdrop" id="faBackdrop" onclick="closeFileActions()"></div>
+<div class="famenu" id="faMenu" role="menu" aria-label="File actions">
+  <div class="fahead"><span id="faName">File actions</span>
+    <button onclick="closeFileActions()" aria-label="Close">✕</button></div>
+  <button class="faitem edit" id="faEdit" role="menuitem">
+    <span class="faico">✏️</span><span><b>Edit file</b><small>नाम, caption, thumbnail…</small></span></button>
+  <button class="faitem danger" id="faDelete" role="menuitem">
+    <span class="faico">🗑️</span><span><b>Delete file</b><small>Database से हटाएँ</small></span></button>
 </div>
 <div class="fetoast" id="feToast"></div>"""
 
@@ -387,30 +409,77 @@ FILE_EDIT_JS = r"""<script>
     }catch(e){ toast('Network error: '+String(e.message||e),true); }
     finally{ setBusy(false); }
   }
-  async function remove(){
-    if(!current||busy) return;
+  async function deleteById(fid){
+    if(!fid||busy) return;
     if(!confirm('इस file को database से permanently हटाएँ?')) return;
     setBusy(true);
     try{
       const r=await fetch('/api/file/delete',{method:'POST',credentials:'same-origin',
-        headers:{'Content-Type':'application/json'},body:JSON.stringify({file_id:current})});
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({file_id:fid})});
       const d=await r.json();
       if(!d.ok){ toast(d.error||'Delete failed',true); return; }
-      cards(current).forEach(c=>c.remove());
-      toast('🗑️ File deleted'); close();
+      cards(fid).forEach(c=>c.remove());
+      toast('🗑️ File deleted');
+      if(current===fid) close();
     }catch(e){ toast('Network error: '+String(e.message||e),true); }
     finally{ setBusy(false); }
   }
+  function remove(){ if(current) return deleteById(current); }
+
+  /* ── 📸 Thumbnail action popup ───────────────────────────────── */
+  let menuFid=null;
+  function closeMenu(){
+    const m=q('#faMenu'), b=q('#faBackdrop');
+    if(m) m.classList.remove('open');
+    if(b) b.classList.remove('open');
+    menuFid=null;
+  }
+  function showMenu(fid, anchor, name){
+    const m=q('#faMenu'), b=q('#faBackdrop'); if(!m||!b) return;
+    menuFid=String(fid||'');
+    const t=q('#faName'); if(t) t.textContent=name||'File actions';
+    m.classList.add('open'); b.classList.add('open');
+    const r=anchor&&anchor.getBoundingClientRect?anchor.getBoundingClientRect():null;
+    const w=m.offsetWidth||260, h=m.offsetHeight||190;
+    let left=r?Math.min(r.right-w,window.innerWidth-w-10):(window.innerWidth-w)/2;
+    let top=r?r.bottom+8:(window.innerHeight-h)/2;
+    if(top+h>window.innerHeight-10) top=Math.max(10,(r?r.top:window.innerHeight)-h-8);
+    m.style.left=Math.max(10,left)+'px'; m.style.top=Math.max(10,top)+'px';
+  }
   window.openFileEdit=open; window.closeFileEdit=close;
+  window.closeFileActions=closeMenu; window.deleteFileById=deleteById;
   document.addEventListener('click',e=>{
-    const b=e.target&&e.target.closest?e.target.closest('.vedit'):null;
-    if(!b) return;
-    e.preventDefault(); e.stopPropagation(); open(b.dataset.fid);
+    const t=e.target, near=(sel)=>t&&t.closest?t.closest(sel):null;
+    if(near('#faMenu')) return;             /* popup buttons अपना काम खुद करें */
+    const poster=near('.vcard .vposter');
+    if(poster){
+      const card=poster.closest('.vcard[data-fid]');
+      if(card){
+        e.preventDefault(); e.stopPropagation();   /* player न खुले — popup खुले */
+        let fid=card.dataset.fid;
+        try{ fid=decodeURIComponent(fid); }catch(err){}
+        const ti=card.querySelector('.vtitle');
+        showMenu(fid,poster,card.dataset.name||(ti?ti.textContent:'')||'File actions');
+        return;
+      }
+    }
+    closeMenu();                            /* बाकी कहीं click → popup बंद */
   },true);
   document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){
+      const m=q('#faMenu');
+      if(m&&m.classList.contains('open')){ closeMenu(); return; }
+      if(isOpen()){ close(); return; }
+      return;
+    }
     if(!isOpen()) return;
-    if(e.key==='Escape'){ close(); return; }
     if((e.ctrlKey||e.metaKey)&&String(e.key).toLowerCase()==='s'){ e.preventDefault(); save(); }
+  });
+  q('#faEdit').addEventListener('click',()=>{
+    const fid=menuFid; closeMenu(); if(fid) open(fid);
+  });
+  q('#faDelete').addEventListener('click',()=>{
+    const fid=menuFid; closeMenu(); if(fid) deleteById(fid);
   });
   q('#feSave').addEventListener('click',save);
   q('#feReset').addEventListener('click',resetThumb);
@@ -858,7 +927,6 @@ __FILE_EDIT_HTML__
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const IS_ADMIN = __IS_ADMIN__;
 let curQ='',offset=0,loading=false,hasMore=false;
 let debounce=null;
 let viewMode=localStorage.getItem('ff_view_mode')||'poster';
@@ -904,10 +972,8 @@ function card(f){
       <div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>
       <div class="vchips">${type}${q}${res}${dur}</div>${size}
       <span class="vplay">▶</span>
-      ${IS_ADMIN?'<button class="vedit" title="Edit file metadata" aria-label="Edit file" data-fid="'+esc(f.file_id)+'">✏️</button>':''}
     </div>
-    <div class="vbody"><div class="vtitle">${esc(f.name)}</div>
-      <div class="vsub">▶ Click to play</div></div></div>`;
+    <div class="vbody"><div class="vtitle">${esc(f.name)}</div></div></div>`;
 }
 // v5 के reloadThumb(fileId) जैसा: पहली बार poster serial warmup queue में
 // एक-एक करके निकलता है, इसलिए 404 पर `retry=true&t=...` से धीरे-धीरे दोबारा
@@ -959,7 +1025,6 @@ $('#grid').addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{
   if(e.key!=='Enter'&&e.key!==' ')return;
   const a=document.activeElement;
-  if(a&&a.closest&&a.closest('.vedit'))return;   // ✏️ editor button → player न खुले
   const el=a&&a.closest?a.closest('.vcard[data-fid]'):null;
   if(!el)return;
   e.preventDefault();play(decodeURIComponent(el.dataset.fid),el.dataset.name);
@@ -985,7 +1050,6 @@ def search_page(tg_id: int, role: str):
     body = (SEARCH_BODY
             .replace("__PLAYER_MODAL__", PLAYER_MODAL_HTML)
             .replace("__PLAYER_JS__", PLAYER_JS)
-            .replace("__IS_ADMIN__", "true" if admin else "false")
             .replace("__FILE_EDIT_HTML__", FILE_EDIT_HTML if admin else "")
             .replace("__FILE_EDIT_JS__", FILE_EDIT_JS if admin else ""))
     return app_page(
