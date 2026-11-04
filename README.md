@@ -1,311 +1,222 @@
-# 🚀 FAST FINDER — Web File Search + Real Thumbnails + Streaming
+# 🚀 FAST FINDER — Web File Search, Real Thumbnails and Streaming
 
-Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करके** फाइलें खोजने, हर फाइल के साथ
-**असली Telegram thumbnail** देखने और **फाइल नाम पर क्लिक करते ही signed streaming लिंक से
-वीडियो चलाने** की सुविधा देता है। यही flow `JoneySin/v5` में है — यहाँ उसे `fsv1` के
-मौजूदा PyMongo + aiohttp architecture के अनुकूल port किया गया है।
+The Telegram Auto-Filter Bot (`fsv1`) now lets you **sign in on the web**, search your files, see a **real Telegram thumbnail** for each result and **play a video from a signed streaming link by clicking the file name**. The same flow exists in `JoneySin/v5`; here it has been adapted to fsv1's existing PyMongo + aiohttp architecture.
 
 ---
 
-## ✨ क्या-क्या नया है
+## ✨ What's new
 
 | Feature | Detail |
 |---|---|
-| 🔐 Login / Register | Email + Password, registration Telegram bot PM में **OTP** से, forgot-password OTP reset, HttpOnly cookie session (RAM + MongoDB यानी restart पर भी login बना रहे) |
-| 🔍 Web Search | `/search` → `/api/search` → MongoDB text search + regex fallback, **टाइप करते ही auto-search** (Search बटन नहीं), **21 results प्रति पेज** (3 columns × 7 rows desktop), "और दिखाओ" pagination, खाली query पर **Recently Added** grid (अब कोई "Recently Added / Database Stats" टेक्स्ट लाइन नहीं — गिनती सिर्फ़ **Database Stats** पेज पर) |
-| 🧭 Sidebar | हर logged-in पेज पर hamburger sidebar — **Home · 📝 Posts · 🎭 Actors · Database Stats (admin-only) · Profile Settings**, footer में **Sign Out**। Desktop topbar/sidebar से **`#ID · ADMIN` badge हटा दिया गया** — identity अब सिर्फ़ `/profile` पर। Main/topbar पर दोबारा **Sign Out नहीं** है |
-| 📊 Database Stats | `/stats` — v5 जैसे animated stat cards; **"🆕 Recently Added Files"** की गिनती यहीं, search पेज की meta लाइन में नहीं |
-| ⚙️ Profile Settings | `/profile` — v5 जैसा Account Settings: `#ID · ADMIN` identity, Account Status (👑 Admin / 💎 Premium / 🆓 Free), Telegram ID, Email + Password बदलना (tabs, show/hide, strength meter) |
-| 📝 Posts + 🎭 Actors | `/posts` (Movies / Web Series / App Video / Other) और `/actors` (Actor / App / Website) — **एक ही shared catalog engine** से दोनों। Poster/Text view, category filter, live search, pagination, detail pages (`/post/<id>`, `/actor/<id>`) |
-| 🗂️ Tabs | Actor: `ℹ️ Overview · 🎬 Videos · 🖼️ Gallery` · Post: `ℹ️ Overview · 🎬 Videos · 📸 Screenshots` — **Post में Gallery की जगह Screenshots tab** है, उसी tab में screenshots आते हैं। Count badges, `?tab=` deep-link (Post `?tab=screenshots`), ← → nav, staggered entrance, lightbox |
-| 🏷️ Tag-driven Videos (सिर्फ़ Actor) | Actor का Videos tab **Search Tags** (`tags[]`) से Library में खोजकर videos दिखाता है — v5 के `get_actor_search_results(name\|tags)` जैसा। Tags की pills, `🏷️ N tags से M videos` info, ऊपर 'Search inside this profile…' box (कुछ टाइप करते ही tags ignore), pagination. Tags न हों तो title fallback. **Post में यह search block हटा दिया गया** — वहाँ Videos tab पर सिर्फ़ attached videos हैं, `/media` API भी `disabled` लौटाता है |
-| 📐 Responsive grids | 🎬 **सभी video grids** (`/search` + `#catVideos` + `#catMediaResults`): 📱 **1/row** · tablet 2 · 🖥️ **3/row** — shared `.vgrid`। 📝🎭 **Post/Actor listing** (`.cat-grid`): 📱 **2/row** · tablet 3–4 · 🖥️ **5/row** |
-| 🎬 Multiple Videos | Editor में `videos[]` — **कितने भी (50 तक)**: Library picker एक search में कई files जोड़ता है और खुला रहता है, `➕ Add Video`, ▲▼ reorder, per-row ✕, duplicate guard, live count. पुराने posts के `links` में रखे episodes **auto-migrate** होते हैं |
-| 🖼️ Photos / 📸 Screenshots | **Actor Gallery tab पर सीधे photo upload** (`multiple`, v5 जैसा form) और Post Screenshots tab पर सीधे screenshots upload। Editor में भी visual thumbnail grid, URL add, per-image remove. Telegram uploads **एक-एक करके** (rate-limit safe), detail tab से **बिना page reload** add/delete |
-| ✏️ Inline Edit + Animations | Admin को listing पर ही **modal editor**: create / edit / delete बिना page reload, live cover preview + Telegram image upload, library से linked-media picker, unsaved-changes guard, `Ctrl/Cmd+S`, `Esc`, **Undo** वाला delete toast (पुराने deep-links बचे रहते हैं)। Animations: staggered card entrance (IntersectionObserver), 3D hover, poster zoom, shimmer skeleton, modal spring, button ripple, save-flash, toast slide, lightbox zoom — सब `prefers-reduced-motion` का सम्मान करते हैं, बिना किसी CDN के |
-| 📐 Responsive Grid | **Poster और Text दोनों modes में एक ही responsive grid** (GitHub reference `JoneySin/v5` की `.res-grid` जैसा): 🖥️ Desktop ≥1024px **3 cards / row** · 📟 Tablet ≥620px 2 · 📱 Mobile **1 card / row**। Text mode अब full-width लिस्ट नहीं बल्कि यही grid है (`web/mode_assets.py` का `.vm-grid.mode-text`); हर compact card में नाम ऊपर single-line ellipsis और नीचे quality/res/duration chips + size + admin actions wrap होते हैं — कोई detail नहीं छिपती |
-| 🎛️ View / Filter | main पेज पर **सिर्फ़ 2 filter buttons/dropdowns** — कोई `Mode` / `Filter` टेक्स्ट label नहीं (सिर्फ़ `aria-label`/`title` accessibility के लिए)। **Poster / Text** mode — **डिफ़ॉल्ट हर जगह 📄 Text** (`web/mode_assets.py` का `DEFAULT='text'`; पुरानी saved Poster preference एक बार reset होकर उसके बाद user की नई पसंद याद रहती है)। **Text में सिर्फ़ thumbnail image छिपती है, बाकी सब कुछ Poster जैसा ही दिखता है**: नाम + `quality / res / duration` chips (**कोई `VIDEO` टाइप chip नहीं**) + `size` + group card के `#number`, `N QUALITIES` / `N EPISODES`, duration, kind और quality/episode chips (expand पर हर variant के भी) — `img` को `src` की जगह `data-src` मिलता है इसलिए **thumbnail request जाती ही नहीं**, Poster mode पर लौटते ही src लग जाता है (सब `web/mode_assets.py` से — नीचे 🖼️📄 row) और **All / Group / UnGroup**। 🖥️ **Desktop:** search bar के साथ **एक ही लाइन में** · 📱 **Mobile:** ठीक नीचे **दोनों एक लाइन में**। **✨ New Post / ✨ New Profile** button भी उसी `.cat-toolbar` में: 🖥️ desktop पर search वाली लाइन में (filters के बाद), 📱 mobile पर filter-row के **ठीक नीचे पूरी चौड़ाई** की अपनी लाइन में। चुनाव browser में याद रहते हैं। **🎛️ Category filter button का default label सिर्फ़ `All`** (`web/catalog.py` का `CATEGORY_ALL_LABEL = "📂 All"` — listing filter और inline editor दोनों इसी एक constant से; `All Categories` नहीं)। **🧩 `/posts` / `/actors` पर अब कोई `Content Posts` / `Directory Profiles` heading नहीं** — GitHub reference (v5 `.search-box`) जैसा **एक ही card-box** (`var(--card)` background + border + `16px` padding + shadow) जिसमें search bar, Category/Mode filter buttons, ✨ New Post/Profile और छोटा `#catCount` — 🖥️ desktop और 📱 mobile दोनों पर; mobile पर अंदर के controls तीन लाइनों में बँटते हैं पर box वैसा ही रहता है |
-| 📏 Size Chip | **File size thumbnail के अंदर** (नीचे-दाएँ badge) — फाइल नाम के नीचे की size/Stream लाइन हटा दी गई |
-| 📸 Real Thumbnails | **DB में सिर्फ़ Telegram का thumbnail file_id** — v5 की तरह `thumb_url: "TG_ID:<file_id>"` string. **Image bytes न DB में, न server RAM में** (Koyeb free पर RAM भर जाता है)। `/api/thumb` पहले से locked ID वाली फाइलों को Telegram से लाकर तुरंत response देता है और `ETag` + `Cache-Control` से **ब्राउज़र की अपनी memory/disk cache** में रखवाता है (`If-None-Match` → 304, दोबारा कोई server/Telegram call नहीं); पहली बार वाली फाइलें नीचे वाले serial warmup से आती हैं |
-| 🖼️ First-time Thumbnail Warmup (v5 logic) | पहली बार 21 नई फाइलें एक साथ खुलने पर **FLOOD_WAIT** न लगे इसलिए `send_cached_media` **एक-एक करके** चलता है (global lock + 1.2–3.0s random anti-flood gap), **FLOOD_WAIT/420** पर `wait + extra` सोकर 5 attempts तक retry, ID DB में `TG_ID:` lock, बिना poster वाली फाइल `NO_THUMB` mark। `/api/thumb` पहली बार serial queue में डालकर 404 + `Retry-After` देता है और browser `retry=true&t=…` से posters अपने आप एक-एक करके दिखा देता है (v5 के `reloadThumb` जैसा)। Bulk के लिए admin command **`/warmup_thumbs`** |
-| 🛡️ **`/warmup_thumbs` = असली thumbnail + सच्चा metadata** | GitHub reference (`JoneySin/v5` के `media_probe.py` + `plugins/warmup.py` + `web/search_api.py`) से **समझकर**, fsv1 के अपने ढंग से — verbatim copy नहीं। हर serial probe में सिर्फ़ poster नहीं, **duration, quality, width×height, mime, file_size, file_type** भी DB में `$set` होते हैं (`meta_v` + `probed_at` के साथ)। `media_probe.py` MP4/MKV/AVI के **असली bytes** (सिर्फ़ ~2 MB head, ज़रूरत पर ~4 MB tail) से dimensions/duration निकालता है — Telegram के uploader-लिखे अक्सर **झूठे `1280×720` / default duration** attributes नहीं; probe fail हो तो attributes/filename fallback, कभी fail-hard नहीं। `quality` सच्ची height से derive (`2160p…240p`)। **fake "NO IMAGE" poster कभी save नहीं**: `web/image_validate.py` सब candidate thumbs के bytes जाँचता है (JPEG/PNG/WEBP magic, ≥`THUMB_MIN_BYTES`, ≥`THUMB_MIN_DIM`, RGB variance, `NO IMAGE`/`NO_THUMB` markers, Pillow `verify()`), सच्ची image को v5 की तरह `send_photo` से `CATALOG_STORAGE_CHANNEL` पर **permanent re-upload** कर `thumb_url`/`thumb_verified`/`is_thumb_permanent` लिखता है; fake/blank/tiny हो तो **`NO_THUMB`** mark — DB में कोई फ़र्ज़ी ID नहीं, `/api/thumb` उसे serve भी नहीं करता (force re-probe)। Query उन्हीं docs की है जिनका thumbnail **verified** नहीं या `meta_v` पुराना है, इसलिए index-time की बिना-जाँचे `TG_ID:` भी इसी run में validate हो जाती है; admin का `thumb_source:"web"` custom poster कभी overwrite नहीं। Report में real posters / meta saved / fake rejected / NO_THUMB अलग-अलग गिनती दिखती है |
-| ✏️ File Editor (v5 `Edit Title Metadata`) | **Thumbnail पर एक click** (`/search` + Post/Actor Videos tabs) → v5 की `.poster-admin` जैसा **उसी thumbnail के अंदर** admin-only **✏️ Edit / 🗑️ Delete** बार slide-up (बाहर कोई floating menu नहीं); Edit से एक ही shared inline modal: **📝 File name, 🏷️ Caption / Search tags, 🎞️ Quality, ⏱️ Duration, 📐 Resolution, 📸 Custom poster (16:9 crop), 🔄 Original thumbnail, 🗑️ Delete**. `JoneySin/v5` के `/api/edit_name` + `/api/upload_thumb` + `/api/delete` से समझकर fsv1 के लिए दोबारा बनाया — **verbatim copy नहीं**: v5 का `target_collection` (primary/cloud/archive) **port नहीं किया** क्योंकि fsv1 में ऐसा कोई concept नहीं है, Cropper.js CDN की जगह **dependency-free canvas crop** (drag + zoom), `window.location.reload()` की जगह **JSON से card in-place update**, quality/duration/resolution chips भी editable. Custom poster `CATALOG_STORAGE_CHANNEL` पर जाती है, DB में सिर्फ़ `TG_ID:`; `thumb_version()` से browser cache bust, reset पर serial probe queue. सभी endpoints admin-only + `$set` whitelist |
-| 🖱️ Card Clicks | **Thumbnail (poster) पर single click → उसी poster के अंदर वाला `.vadmin` overlay** (v5 का `toggleAdminBtns` pattern): नीचे से ✏️ Edit / 🗑️ Delete बार slide-up, poster हल्का dim, एक समय पर सिर्फ़ एक card active; **फाइल नाम / `.vbody` पर click → उसी छोटे shared player में video चले**; overlay दोबारा thumbnail click, बाहर click या `Esc` से बंद। Non-admin के लिए thumbnail सीधे play करता है (overlay hidden)। Card के नाम के नीचे **"▶ Click to play" लाइन हटा दी गई** — अब सिर्फ़ नाम + compact padding |
-| 🎛️ Shared Filter Dropdown | **सभी filter controls का UI एक ही जगह** — `web/web_assets.py` का `FILTER_CSS` + `FILTER_JS` (`window.FilterDD`)। कोई भी `<select class="filter-dd">` अपने आप styled button + custom options menu में upgrade हो जाता है (native OS dropdown कभी नहीं खुलता): caption, icon, hover/selected state, ✓ tick, keyboard `↑↓/Enter/Esc`, drop-up, outside-click close, `MutationObserver` से बाद में आए selects भी। `/search` (Mode/Filter), `/posts`–`/actors` (Category/Mode), editor modals (Category/Quality) — सब एक ही component; **options, labels, captions और markup भी एक ही जगह**: `FILTER_OPTIONS` + `SEARCH_FILTERS`/`CATALOG_FILTERS` + `filter_buttons()` — कोई page अपना `<option>` या `.filters` div नहीं लिखता, नया button/नाम बदलना हो तो सिर्फ़ ये specs बदलो। `sel.value = …` लिखते ही label अपने आप sync (`watchValue`), इसलिए pages पर अलग `ddSet()` code नहीं; **mobile पर `/search` और `/posts`–`/actors` दोनों का toolbar एक ही `.filters` row है**: search bar अपनी लाइन पर, दोनों filter buttons ठीक नीचे एक लाइन में बराबर चौड़ाई के (catalog का `.cat-box` card background/border/padding mobile पर भी बरकरार) — बदलाव सिर्फ़ `FILTER_CSS` के **एक** `@media(max-width:760px)` नियम में; **रंग, spacing, animation बदलने के लिए सिर्फ़ `FILTER_CSS` बदलो, सब pages पर दिखेगा**। Native `<select>` hidden रहकर `value`/`change` बनाए रखता है, इसलिए filter logic unchanged |
-| 🎴 **One Video Card — एकमात्र source** | **पूरा card markup + chips + data `web/web_assets.py` में एक बार**: `VCARD_TEMPLATE`, `VCARD_CHIP_SPEC` (`quality → res → duration` — `VIDEO`/`FILE` टाइप chip हटा दी गई, payload में `type` सिर्फ़ API/editor के लिए रहता है), `vcard_meta()`, `vcard_chips()`, `vcard_size()`, `render_vcard()`; उसी template/spec से `SITE_JS` का `vcardHTML()/vcardChips()/vcardSize()` बनता है (`json.dumps` से)। `/search` की `card(f)`, Post attached videos की `video_card_html()`, Actor tag-results की `mediaCard(f)` — **तीनों बिल्कुल एक जैसे** size / duration / quality / res / type chips + `.vsize` दिखाते हैं; Post attached videos को भी Library doc से वही metadata मिलता है। **Chip जोड़ना/हटाना/क्रम/रंग बदलना हो → सिर्फ़ `VCARD_CHIP_SPEC` बदलो**, `syncCard()` (edit के बाद) भी उसी spec से चलता है; `VIDEO_CARD_CSS` — `/search`, Post attached videos, Actor tag-results **तीनों बिल्कुल एक ही `.vcard`**: 16:9 poster, quality/res/duration chips, size chip, hover play overlay, 2-line नाम और नीचे **सिर्फ़ 3px gap + 9px padding** (पहले वाला बड़ा खाली space हटाया)। सब एक ही `/api/stream` modal खोलते हैं |
-| 🖼️📄 **One View Mode — एकमात्र source** | **Poster और Text दोनों का code/markup बिल्कुल एक ही है** — `web/mode_assets.py` इकलौती फाइल: `VIEW_MODE_OPTIONS` (dropdown labels), `MODE_CSS` (सारे `.mode-text` नियम), `MODE_JS` (`window.ViewMode` — state, localStorage keys, `data-vm-select` auto-bind, `src ⇄ data-src`)। `/search`, `/posts`, `/actors`, group cards, group variants सब उसी **एक** engine + एक CSS से चलते हैं; catalog में Text mode का **अलग HTML branch हटा दिया गया**, अब `cardHTML()` दोनों modes को एक ही markup देता है। **Class contract**: markup में semantic `vm-*` classes (`vm-grid`, `vm-card`, `vm-master`, `vm-poster`, `vm-img`, `vm-ph`, `vm-overlay`, `vm-details`, `vm-chip`, `vm-size`, `vm-actions`, `vm-always`, `vm-body`, `vm-title`) — Text mode में CSS **सिर्फ़** `vm-img`/`vm-ph`/`vm-overlay` छिपाता है, बाकी सब static/inline होकर वैसा ही दिखता है। नया page/card mode-aware करना हो तो बस ये classes लगाओ, किसी दूसरी CSS/JS फाइल में नया नियम लिखने की ज़रूरत नहीं। **बदलाव एक जगह → सब जगह**: रंग/spacing/layout = `MODE_CSS`, option labels = `VIEW_MODE_OPTIONS`, state/persistence/img behaviour = `MODE_JS` — तीनों pages पर एक साथ दिखेगा। `MODE_CSS` `SITE_CSS` में सबसे आख़िर में, `MODE_JS` `SITE_JS` में, दोनों हर logged-in page पर मौजूद। **डिफ़ॉल्ट mode बदलना हो → सिर्फ़ `MODE_JS` की `DEFAULT='text'` लाइन** (एक बार की पुरानी-preference reset `resetOnce()` उसी मॉड्यूल में) |
-| 🗂️ **Permanent Quality Groups** | GitHub reference (`JoneySin/v5` के `QualityGroups`/`QualityGroupSeq` + `/api/group/*`) से **समझकर**, fsv1 के अपने ढंग से — verbatim copy नहीं और **कोई primary/cloud/archive/`section` नहीं** (fsv1 में एक ही `collection` है)। हर group DB में **permanent**: अपना **`group_id` / `#number`** (`quality_group_seq` counter), `name`, `members` (file_ids), `auto_keys`, `excluded`, master thumbnail, timestamps; हर member file doc पर **sparse `group_id`** mark। `/api/search` **group-first** cards दिखाता है: बड़ा master poster, `#N GROUP` + quality chips (720p/1080p/2160p…), click पर expand होकर **बिल्कुल वही shared `.vcard`** variants (1/2/3 responsive grid), चाहे कोई variant उस search page पर न हो — सारे members DB से आते हैं। Admin: **☑️ Group Mode** FAB से कई cards चुनकर नया group, **मौजूदा group खोजकर (#number/नाम) उसी में files जोड़ना**, **🔀 Merge** (source → target number), **✏️ Rename**, **🖇️ Remove file** (blacklist ताकि auto वापस न लाए), **🗑️ Ungroup** (files delete नहीं होतीं), **📸 master thumbnail** (AUTO = highest quality / किसी member का poster / custom upload), **⚙️ Scan all & build groups** (पूरी library, progress, idempotent, 30+ वाले आम नाम skip, टूटे `group_id` marks ठीक)। **नई quality अपने-आप जुड़ती है**: index-time + search-time दोनों `auto_keys`/title-key से उसी permanent group में add होती है; title-key, filter, scan, auto-join **एक ही** `database/group_db.py` से। Group/UnGroup फ़िल्टर अब saved groups को भी पहचानता है (पहले सिर्फ़ नाम से)। **🎞️/📺 Group Type:** हर group DB में `kind: qualities \| episodes` + `episode_map` रखता है; Edit modal में **GROUP TYPE** से बदला जा सकता है, और episode labels `S01E01`/`1x03`/`Ep 4`/custom भी वहीं edit होते हैं। Group card पर **किसी एक फाइल का `size` कभी नहीं** दिखता (members के अलग-अलग size होते हैं)। **⏱ DURATION सिर्फ़ 🎞️ qualities-group पर** दिखता है — एक ही फाइल की qualities हैं तो duration सबका साझा/एक जैसा होता है; **📺 series/episode-mark वाले group पर duration बिल्कुल नहीं** (हर episode का अलग duration)। Badges: **`3 QUALITIES`** या **`12 EPISODES`** + 🎞️ `SINGLE TITLE` / 📺 `SERIES` chip; expand पर हर variant का अपना size/duration उसी shared `.vcard` पर रहता है। Group नाम के सामने **"▾ Files" वाला label हटा दिया गया** — अब सिर्फ़ छोटा `▾` chevron है (नाम या chevron click से expand/collapse, खुले group पर arrow घूम जाता है)। `/stats` पर **🗂️ Permanent Groups** count। **🗂️ Expand पर compact head** (v5 `.grp-card.open .grp-master{display:none}` जैसा): group खुलते ही `.gcard.open` पूरी grid चौड़ाई लेता था और उसका 16:9 master thumbnail desktop पर बहुत बड़ा लगता था — अब thumbnail छिपकर सिर्फ़ एक पतली header रहती है (नाम + `#N GROUP` / `N QUALITIES` / duration / kind / quality-episode chips + Edit/Delete) और अंदर की variants पहले जैसी 1/2/3 grid में दिखती हैं; collapse करते ही वही 16:9 master poster लौट आता है |
-| ▶ Click-to-Stream (Shared) | **`/search` + Post/Actor दोनों Videos tabs — एक ही छोटा player modal.** **फाइल नाम पर क्लिक** → `POST /api/stream` → BIN_CHANNEL में cached media → **HMAC-signed** `/watch/<id>` + `/download/<id>` → `<video>` player (Range/seek supported), Download, Player page, Copy link, `Esc`/✕ से बंद। `web/web_assets.py` का `PLAYER_MODAL_HTML` + `PLAYER_JS` shared component, cards पर `data-fid`/`data-name` (keyboard `Enter`/`Space` भी), कोई नई tab नहीं |
-| 🔗 Signed Links | `e` (expiry) + `s` (signature) — बिना सही signature के message-id guess करके file नहीं निकाली जा सकती। Telegram bot के Watch/Download buttons भी अब signed links बनाते हैं |
-| ⚡ Seek Performance | `media_info` cache (5 मिनट) से हर Range request पर `get_messages()` नहीं लगती; Range parser + `StreamResponse` hardened, आख़िरी chunk सही कटता है |
+| 🔐 Login / Register | Email + password, **OTP in the Telegram bot PM** for registration, OTP-based password reset, HttpOnly cookie sessions (RAM + MongoDB, so a login survives restarts) |
+| 🔍 Web Search | `/search` → `/api/search` → MongoDB text search + regex fallback, **search as you type** (no Search button), **21 results per page** (3 columns × 7 rows on desktop), "Show more" pagination and a **Recently Added** grid for an empty query. The "Recently Added / Database Stats" text line is gone — the count lives on the **Database Stats** page |
+| 🧭 Sidebar | A hamburger sidebar on every logged-in page — **Home · 📝 Posts · 🎭 Actors · Database Stats (admin-only) · Profile Settings**, with **Sign Out** in the footer. The **`#ID · ADMIN` badge was removed** from the desktop topbar/sidebar; identity appears only on `/profile`, and Sign Out is not repeated in the main area |
+| 📊 Database Stats | `/stats` — animated stat cards like v5, including the **"🆕 Recently Added Files"** count that used to sit in the search meta line |
+| ⚙️ Profile Settings | `/profile` — v5-style Account Settings: `#ID · ADMIN` identity, Account Status (👑 Admin / 💎 Premium / 🆓 Free), Telegram ID, and email/password changes with tabs, show/hide and a strength meter |
+| 📝 Posts + 🎭 Actors | `/posts` (Movies / Web Series / App Video / Other) and `/actors` (Actor / App / Website) are both served by **one shared catalog engine**. Poster/Text view, category filter, live search, pagination and detail pages (`/post/<id>`, `/actor/<id>`) |
+| 🗂️ Tabs | Actor: `ℹ️ Overview · 🎬 Videos · 🖼️ Gallery` · Post: `ℹ️ Overview · 🎬 Videos · 📸 Screenshots` — **Posts use a Screenshots tab instead of Gallery**, where screenshots are shown. Count badges, `?tab=` deep links (Post `?tab=screenshots`), arrow-key navigation, staggered entrance and a lightbox |
+| 🏷️ Tag-driven Videos (Actors only) | The Actor Videos tab finds videos in the Library using **Search Tags** (`tags[]`), like v5's `get_actor_search_results(name\|tags)`. Tag pills, `🏷️ N tags → M videos` info, a "Search inside this profile…" box above (typing ignores tags) and pagination; the title is used when there are no tags. **Posts do not have this search block** — their Videos tab shows attached videos only and the `/media` API returns `disabled` |
+| 📐 Responsive grids | 🎬 **All video grids** (`/search` + `#catVideos` + `#catMediaResults`): 📱 **1/row** · tablet 2 · 🖥️ **3/row** via the shared `.vgrid`. 📝🎭 **Post/Actor listing** (`.cat-grid`): 📱 **2/row** · tablet 3–4 · 🖥️ **5/row** |
+| 🎬 Multiple Videos | `videos[]` in the editor — **as many as 50**: the Library picker adds several files from one search and stays open, `➕ Add Video`, ▲▼ reorder, per-row ✕, duplicate guard and a live count. Episodes stored in `links` on older posts are **auto-migrated** |
+| 🖼️ Photos / 📸 Screenshots | **Direct photo upload on the Actor Gallery tab** (`multiple`, like v5) and direct screenshot upload on the Post Screenshots tab. The editor also has a visual thumbnail grid, URL add and per-image remove. Telegram uploads run **one at a time** (rate-limit safe) and add/delete from the detail tab happens **without a page reload** |
+| ✏️ Inline Edit + Animations | Admins get a **modal editor** on the listing: create / edit / delete without a reload, live cover preview + Telegram image upload, a linked-media Library picker, an unsaved-changes guard, `Ctrl/Cmd+S`, `Esc` and a delete toast with **Undo** (old deep links keep working). Animations: staggered card entrance (IntersectionObserver), 3D hover, poster zoom, shimmer skeleton, modal spring, button ripple, save-flash, toast slide and lightbox zoom — all respecting `prefers-reduced-motion`, with no CDN |
+| 📐 Responsive Grid | **Poster and Text share the same responsive grid** (like `JoneySin/v5`'s `.res-grid`): 🖥️ Desktop ≥1024px **3 cards / row** · 📟 Tablet ≥620px 2 · 📱 Mobile **1 card / row**. Text mode is no longer a full-width list; compact cards keep the name in a single-line ellipsis above quality/res/duration chips + size + wrapping admin actions, so no detail is hidden |
+| 🎛️ View / Filter | The main page has **only 2 filter buttons/dropdowns** — no `Mode` / `Filter` text labels (only `aria-label`/`title` for accessibility). **Poster / Text** mode defaults to **📄 Text everywhere** (`DEFAULT='text'` in `web/mode_assets.py`; an old saved Poster preference is reset once, then the new choice is remembered). **Text mode hides only the thumbnail image; everything else looks like Poster mode**: name + `quality / res / duration` chips (**no `VIDEO` type chip**) + `size` + a group card's `#number`, `N QUALITIES` / `N EPISODES`, duration, kind and quality/episode chips (also on each expanded variant) — `img` receives `data-src` instead of `src`, so **no thumbnail request is made**, and switching back to Poster restores `src` (all from `web/mode_assets.py`). The second filter is **All / Group / UnGroup**. 🖥️ **Desktop:** both buttons share the search line · 📱 **Mobile:** both sit on one line directly below it. **✨ New Post / ✨ New Profile** also live in `.cat-toolbar`: 🖥️ on the search line after the filters, 📱 on a **full-width line directly below the filter row**. Choices are remembered in the browser. **🎛️ The Category filter's default label is just `All`** (`CATEGORY_ALL_LABEL = "📂 All"` in `web/catalog.py` — the listing filter and the inline editor both use this one constant; the longer label is gone). **🧩 `/posts` / `/actors` have no `Content Posts` / `Directory Profiles` heading** — like the GitHub reference (v5 `.search-box`), there is **one card-box** (`var(--card)` background + border + `16px` padding + shadow) holding the search bar, Category/Mode filter buttons, ✨ New Post/Profile and the small `#catCount`, on desktop and mobile alike; on mobile the controls inside split into three lines while the box stays intact |
+| 📏 Size Chip | **File size sits inside the thumbnail** (bottom-right badge); the old size/Stream line under the file name was removed |
+| 📸 Real Thumbnails | **Only the Telegram thumbnail file_id is stored in the DB** — a `thumb_url: "TG_ID:<file_id>"` string, as in v5. **No image bytes in the DB or server RAM** (Koyeb's free tier has limited memory). `/api/thumb` serves already-locked ids immediately and uses `ETag` + `Cache-Control` so the **browser's own memory/disk cache** holds the poster (`If-None-Match` → 304, no repeat server/Telegram call); first-time files come from the serial warmup below |
+| 🖼️ First-time Thumbnail Warmup (v5 logic) | Opening 21 new files at once can trigger **FLOOD_WAIT**, so `send_cached_media` runs **one file at a time** (global lock + a random 1.2–3.0s anti-flood gap), sleeping `wait + extra` and retrying up to 5 times on **FLOOD_WAIT/420**. The id is locked as `TG_ID:` in the DB; files without a poster are marked `NO_THUMB`. On the first request `/api/thumb` enqueues the file and returns 404 + `Retry-After`, and the browser's `retry=true&t=…` reveals posters automatically (like v5's `reloadThumb`). Admins can warm the whole library with **`/warmup_thumbs`** |
+| 🛡️ **`/warmup_thumbs` = real thumbnails + accurate metadata** | Built for fsv1 after **studying** the GitHub reference (`JoneySin/v5`'s `media_probe.py` + `plugins/warmup.py` + `web/search_api.py`) — not a verbatim copy. Every serial probe writes not just a poster but **duration, quality, width×height, mime, file_size and file_type** to the DB (`$set` with `meta_v` + `probed_at`). `media_probe.py` reads the **real bytes** of MP4/MKV/AVI files (only ~2 MB head, plus ~4 MB tail when needed) for dimensions/duration instead of trusting the uploader's often **wrong `1280×720` / default duration** attributes; on failure it falls back to attributes/filename and never fails hard. `quality` comes from the true height (`2160p…240p`). **A fake "NO IMAGE" poster is never saved**: `web/image_validate.py` checks every candidate's bytes (JPEG/PNG/WEBP magic, ≥`THUMB_MIN_BYTES`, ≥`THUMB_MIN_DIM`, RGB variance, `NO IMAGE`/`NO_THUMB` markers, Pillow `verify()`), then permanently re-uploads a genuine image with `send_photo` to `CATALOG_STORAGE_CHANNEL` (like v5) and writes `thumb_url`/`thumb_verified`/`is_thumb_permanent`. Fake/blank/tiny images are marked **`NO_THUMB`** — no bogus id in the DB, and `/api/thumb` will not serve one (it forces a re-probe). The query selects only documents whose thumbnail is not **verified** or whose `meta_v` is stale, so unverified index-time `TG_ID:` ids are validated in the same run; an admin's `thumb_source:"web"` custom poster is never overwritten. The report breaks out real posters / metadata saved / fakes rejected / NO_THUMB separately |
+| ✏️ File Editor (v5 `Edit Title Metadata`) | **One click on the thumbnail** (`/search` + Post/Actor Videos tabs) slides an admin-only **✏️ Edit / 🗑️ Delete** bar up **inside that thumbnail** (like v5's `.poster-admin`; no floating menu outside). Edit opens one shared inline modal: **📝 File name, 🏷️ Caption / Search tags, 🎞️ Quality, ⏱️ Duration, 📐 Resolution, 📸 Custom poster (16:9 crop), 🔄 Original thumbnail, 🗑️ Delete**. Rebuilt for fsv1 after studying v5's `/api/edit_name` + `/api/upload_thumb` + `/api/delete` — **not a verbatim copy**: v5's `target_collection` (primary/cloud/archive) was **not ported** because fsv1 has no such concept, the Cropper.js CDN is replaced by a **dependency-free canvas crop** (drag + zoom), `window.location.reload()` by a **JSON in-place card update**, and quality/duration/resolution chips are editable too. Custom posters go to `CATALOG_STORAGE_CHANNEL`, only `TG_ID:` reaches the DB, `thumb_version()` busts the browser cache and reset uses the serial probe queue. Every endpoint is admin-only with a `$set` whitelist |
+| 🖱️ Card Clicks | **A single click on the thumbnail opens the `.vadmin` overlay inside that poster** (v5's `toggleAdminBtns` pattern): the ✏️ Edit / 🗑️ Delete bar slides up, the poster dims slightly and only one card is active at a time; **clicking the file name / `.vbody` plays the video in the same small shared player**. The overlay closes on a second thumbnail click, an outside click or `Esc`. Non-admins play the video directly (the overlay is hidden). The **"▶ Click to play" line under the name was removed** — only the name and compact padding remain |
+| 🎛️ Shared Filter Dropdown | **The UI for every filter control lives in one place** — `FILTER_CSS` + `FILTER_JS` (`window.FilterDD`) in `web/web_assets.py`. Any `<select class="filter-dd">` is upgraded automatically into a styled button + custom options menu (the native OS dropdown never opens): caption, icon, hover/selected state, ✓ tick, keyboard `↑↓/Enter/Esc`, drop-up, outside-click close, and a `MutationObserver` for selects added later. `/search` (Mode/Filter), `/posts`–`/actors` (Category/Mode) and editor modals (Category/Quality) all use this one component; **options, labels, captions and markup also live here** in `FILTER_OPTIONS` + `SEARCH_FILTERS`/`CATALOG_FILTERS` + `filter_buttons()` — no page writes its own `<option>` or `.filters` div, so adding a button or renaming one means editing only these specs. Setting `sel.value = …` syncs the label automatically (`watchValue`), so no page needs its own `ddSet()` code. **On mobile `/search` and `/posts`–`/actors` share one `.filters` row**: the search bar on its own line, both filter buttons directly below at equal width (the catalog `.cat-box` keeps its background/border/padding on mobile too) — all changes live in **one** `@media(max-width:760px)` rule in `FILTER_CSS`; **edit `FILTER_CSS` once to change colours, spacing or animation everywhere**. The native `<select>` stays hidden but keeps `value`/`change`, so filter logic is unchanged |
+| 🎴 **One Video Card — single source** | **All card markup + chips + data are written once in `web/web_assets.py`**: `VCARD_TEMPLATE`, `VCARD_CHIP_SPEC` (`quality → res → duration` — the `VIDEO`/`FILE` type chip was removed; `type` remains in the payload for the API/editor only), `vcard_meta()`, `vcard_chips()`, `vcard_size()` and `render_vcard()`. `json.dumps` feeds the same template/spec to `vcardHTML()/vcardChips()/vcardSize()` in `SITE_JS`. `/search`'s `card(f)`, Post attached videos' `video_card_html()` and Actor tag-results' `mediaCard(f)` therefore show **exactly the same** size / duration / quality / res / type chips and `.vsize`; attached videos get the same metadata from their Library doc. **To add/remove a chip, reorder them or change colours, edit only `VCARD_CHIP_SPEC`** — `syncCard()` after an edit uses the same spec. `VIDEO_CARD_CSS` gives `/search`, Post attached videos and Actor tag-results **the same `.vcard`**: 16:9 poster, quality/res/duration chips, size chip, hover play overlay, a 2-line name and only **3px gap + 9px padding** below it (the old empty space is gone). All three open the same `/api/stream` modal |
+| 🖼️📄 **One View Mode — single source** | **Poster and Text share exactly the same code and markup** — `web/mode_assets.py` is the only file: `VIEW_MODE_OPTIONS` (dropdown labels), `MODE_CSS` (every `.mode-text` rule) and `MODE_JS` (`window.ViewMode` — state, localStorage keys, `data-vm-select` auto-binding, `src ⇄ data-src`). `/search`, `/posts`, `/actors`, group cards and group variants all run on that **one** engine + one CSS; catalog's separate Text HTML branch was removed, so `cardHTML()` returns one markup for both modes. **Class contract**: semantic `vm-*` classes (`vm-grid`, `vm-card`, `vm-master`, `vm-poster`, `vm-img`, `vm-ph`, `vm-overlay`, `vm-details`, `vm-chip`, `vm-size`, `vm-actions`, `vm-always`, `vm-body`, `vm-title`) — in Text mode CSS hides **only** `vm-img`/`vm-ph`/`vm-overlay`; everything else becomes static/inline and looks the same. To make a new page/card mode-aware, just add these classes; no new rules belong in another CSS/JS file. **Change one place → change everywhere**: colour/spacing/layout = `MODE_CSS`, option labels = `VIEW_MODE_OPTIONS`, state/persistence/image behaviour = `MODE_JS`. `MODE_CSS` is appended last to `SITE_CSS`, `MODE_JS` to `SITE_JS`, and both are present on every logged-in page. **To change the default mode, edit the single `DEFAULT='text'` line in `MODE_JS`** (the one-time old-preference reset `resetOnce()` lives in the same module) |
+| 🗂️ **Permanent Quality Groups** | Built for fsv1 after **studying** the GitHub reference (`JoneySin/v5`'s `QualityGroups`/`QualityGroupSeq` + `/api/group/*`) — not a verbatim copy, and **no primary/cloud/archive/`section`** (fsv1 has a single `collection`). Each group is **permanent in the DB**: its own **`group_id` / `#number`** (`quality_group_seq` counter), `name`, `members` (file ids), `auto_keys`, `excluded`, master thumbnail and timestamps; each member file doc carries a **sparse `group_id`** mark. `/api/search` shows **group-first** cards: a large master poster, `#N GROUP` + quality chips (720p/1080p/2160p…), expanding into **the exact same shared `.vcard`** variants (1/2/3 responsive grid), even for members not on that page — all members come from the DB. Admins can use the **☑️ Group Mode** FAB to select several cards and create a group, **find an existing group (#number/name) and add files to it**, **🔀 Merge** (source → target number), **✏️ Rename**, **🖇️ Remove file** (blacklisted so auto-join cannot restore it), **🗑️ Ungroup** (files are not deleted), **📸 master thumbnail** (AUTO = highest quality / a member's poster / custom upload) and **⚙️ Scan all & build groups** (whole library, progress, idempotent, skips common names with 30+ files, repairs broken `group_id` marks). **New qualities join automatically**: `auto_keys`/title-key at both index time and search time add them to the same permanent group; title-key, filter, scan and auto-join come from **one** `database/group_db.py`. The Group/UnGroup filter also recognises saved groups (it used to look at names only). **🎞️/📺 Group Type:** every group stores `kind: qualities \| episodes` + `episode_map`; **GROUP TYPE** in the Edit modal changes it, and episode labels `S01E01`/`1x03`/`Ep 4`/custom are edited there too. A group card **never shows one file's `size`** (members have different sizes). **⏱ DURATION appears only on 🎞️ qualities groups** — one file's qualities share the same duration; **📺 series/episode groups show none** (each episode differs). Badges: **`3 QUALITIES`** or **`12 EPISODES`** + 🎞️ `SINGLE TITLE` / 📺 `SERIES` chip; on expand each variant keeps its own size/duration on the shared `.vcard`. The **"▾ Files" label next to the group name was removed** — now only a small `▾` chevron remains (clicking the name or chevron expands/collapses; the arrow rotates when open). `/stats` shows the **🗂️ Permanent Groups** count. **🗂️ Compact head on expand** (like v5 `.grp-card.open .grp-master{display:none}`): the open `.gcard.open` used to span the whole grid width and its 16:9 master thumbnail looked huge on desktop — now the thumbnail is hidden and a thin header remains (name + `#N GROUP` / `N QUALITIES` / duration / kind / quality-episode chips + Edit/Delete), while the variants keep their 1/2/3 grid; collapsing restores the same 16:9 master poster |
+| ▶ Click-to-Stream (Shared) | **`/search` + both Post/Actor Videos tabs use one small player modal.** **Clicking a file name** → `POST /api/stream` → cached media in BIN_CHANNEL → **HMAC-signed** `/watch/<id>` + `/download/<id>` → `<video>` player (Range/seek supported), Download, Player page, Copy link, closed with `Esc`/✕. `PLAYER_MODAL_HTML` + `PLAYER_JS` from `web/web_assets.py` are the shared component; cards carry `data-fid`/`data-name` (keyboard `Enter`/`Space` too) and no new tab is opened |
+| 🔗 Signed Links | `e` (expiry) + `s` (signature) — guessing a message id cannot retrieve a file without the correct signature. The Telegram bot's Watch/Download buttons also produce signed links |
+| ⚡ Seek Performance | A 5-minute `media_info` cache avoids `get_messages()` on every Range request; the Range parser and `StreamResponse` are hardened and the final chunk is trimmed correctly |
 
 ---
 
 ## 🧭 Routes
 
-| Method | Path | काम |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/` | Logged-in → `/search`, वरना landing page (uptime-safe 200) |
+| GET | `/` | Logged-in users → `/search`; otherwise the landing page (uptime-safe 200) |
 | GET | `/login`, `/register`, `/verify_registration`, `/forgot_password` | Auth pages |
 | POST | `/api/login`, `/api/register_step1`, `/api/register_step2`, `/api/forgot_password`, `/api/reset_password` | Auth APIs |
-| GET | `/logout` | Session खत्म (RAM + DB) |
-| GET | `/search` | Login-walled search UI (v5 sidebar के साथ) |
+| GET | `/logout` | Ends the session (RAM + DB) |
+| GET | `/search` | Login-walled search UI with the v5-style sidebar |
 | GET | `/api/search?q=&offset=&group=` | Results JSON — text/regex search, Recently Added, Group/UnGroup filter |
-| GET | `/stats` | **Database Stats** (admin-only) — v5 जैसे counters, "Recently Added Files" की गिनती यहीं |
-| GET | `/api/db_stats` | उन्हीं counters का JSON (admin-only) |
-| GET | `/api/file/meta?id=` | ✏️ Editor prefill — file का safe projection (admin-only) |
-| POST | `/api/file/edit` | Name / caption / quality / duration / resolution save — whitelisted `$set` + search cache clear (admin-only) |
+| GET | `/stats` | **Database Stats** (admin-only) — v5-style counters, including "Recently Added Files" |
+| GET | `/api/db_stats` | The same counters as JSON (admin-only) |
+| GET | `/api/file/meta?id=` | ✏️ Editor prefill — a safe projection of a file (admin-only) |
+| POST | `/api/file/edit` | Save name / caption / quality / duration / resolution — whitelisted `$set` + search cache clear (admin-only) |
 | POST | `/api/file/thumb` | 📸 16:9 cropped custom poster → Telegram → `TG_ID:` + cache bust (admin-only, ≤5 MB, JPG/PNG/WEBP) |
-| POST | `/api/file/thumb_reset` | 🔄 Custom poster हटाकर original thumbnail serial queue में (admin-only) |
-| POST | `/api/file/delete` | 🗑️ Exact `_id` से file delete (admin-only; group से भी हटाता है) |
-| POST | `/api/group/save` | 🆕 नया group (नया `#number`) या `{group_id}` में files जोड़ो — `{items:[{id,name}], name?, kind?, episode_map?}`; **`group_id` के साथ भेजा `name` उसी मौजूदा group का नाम बदलता है** (#number वही रहता है), इसलिए Edit modal से rename तुरंत DB + card पर दिखता है। `kind` न दिया हो तो file नामों से qualities/episodes auto-detect (admin-only) |
-| POST | `/api/group/update` | ✏️ नाम / `thumb_file_id` master poster / `clear_custom` / **`kind: qualities\|episodes`** / **`episode_map: {file_id: "E05"}`**; गलत `kind` → `400` (admin-only) |
-| GET | `/api/group/list?q=&limit=` | 🔎 हर group में `kind`, `qualities`, `episodes`, `episode_map` — किस group में qualities हैं, किस में कितने episodes |
-| POST | `/api/group/remove_file` | 🖇️ Group से file निकालो + `excluded` blacklist (admin-only) |
-| POST | `/api/group/delete` | 🗑️ Ungroup — files नहीं हटतीं, `group_id` unset (admin-only) |
-| POST | `/api/group/merge` | 🔀 `{source, target}` — source की सारी files/keys target `#number` में, source मिटे (admin-only) |
-| POST | `/api/group/scan_all` · GET `/api/group/scan_status` | ⚙️ पूरी library scan → permanent groups + progress (admin-only) |
-| POST | `/api/group/upload_thumb` · GET `/api/group/thumb?gid=` | 📸 Custom master poster (multipart ≤5 MB) + उसे serve (admin / login) |
-| GET | `/profile` | **Profile Settings** — v5 जैसा Account Settings (`#ID · ADMIN`, status, email, password) |
-| GET | `/posts`, `/actors` | shared catalog UI (search, `All` category filter, Poster/Text, pagination) — कोई page heading नहीं, सब एक `.cat-box` में |
+| POST | `/api/file/thumb_reset` | 🔄 Remove the custom poster and requeue the original thumbnail (admin-only) |
+| POST | `/api/file/delete` | 🗑️ Delete a file by exact `_id` (admin-only; also removes it from groups) |
+| POST | `/api/group/save` | 🆕 New group (new `#number`) or add files to `{group_id}` — `{items:[{id,name}], name?, kind?, episode_map?}`; **a `name` sent with `group_id` renames that existing group** (the #number stays), so renaming in the Edit modal appears in the DB and on the card immediately. Without `kind`, qualities/episodes are detected from file names (admin-only) |
+| POST | `/api/group/update` | ✏️ Name / `thumb_file_id` master poster / `clear_custom` / **`kind: qualities\|episodes`** / **`episode_map: {file_id: "E05"}`**; an invalid `kind` returns `400` (admin-only) |
+| GET | `/api/group/list?q=&limit=` | 🔎 Each group with `kind`, `qualities`, `episodes`, `episode_map` — which groups hold qualities and how many episodes each has |
+| POST | `/api/group/remove_file` | 🖇️ Remove a file from a group + `excluded` blacklist (admin-only) |
+| POST | `/api/group/delete` | 🗑️ Ungroup — files are kept, `group_id` is unset (admin-only) |
+| POST | `/api/group/merge` | 🔀 `{source, target}` — all files/keys of the source move into the target `#number`, then the source is deleted (admin-only) |
+| POST | `/api/group/scan_all` · GET `/api/group/scan_status` | ⚙️ Whole-library scan → permanent groups + progress (admin-only) |
+| POST | `/api/group/upload_thumb` · GET `/api/group/thumb?gid=` | 📸 Custom master poster (multipart ≤5 MB) and serving it (admin / login) |
+| GET | `/profile` | **Profile Settings** — v5-style Account Settings (`#ID · ADMIN`, status, email, password) |
+| GET | `/posts`, `/actors` | Shared catalog UI (search, `All` category filter, Poster/Text, pagination) — no page heading, everything in one `.cat-box` |
 | GET | `/post/<id>`, `/actor/<id>` | Detail page — hero, description, tags, gallery lightbox, links, admin Edit/Delete |
 | GET | `/api/catalog/{kind}?q=&category=&offset=&limit=&id=` | Unified JSON list / single item (login required) |
-| POST | `/api/catalog/{kind}/save` | **Create + Edit एक ही endpoint** (admin); `restore:true` = Undo-delete उसी id से |
+| POST | `/api/catalog/{kind}/save` | **Create + Edit in one endpoint** (admin); `restore:true` = Undo-delete with the same id |
 | POST | `/api/catalog/{kind}/delete` | Delete (admin) |
-| GET | `/api/catalog/{kind}/media?id=&q=&offset=&limit=` | 🏷️ **सिर्फ़ Actor**: **Search Tags** से Library videos (custom `q` = tags override), JSON cards + pagination; Post → `source: disabled` |
-| POST | `/api/catalog/{kind}/gallery_upload` | Detail tab से सीधे multiple photos/screenshots → `TG_ID:` (admin, serial upload) |
-| POST | `/api/catalog/{kind}/gallery_delete` | `{id, index}` — एक gallery image हटाएँ बिना reload (admin) |
+| GET | `/api/catalog/{kind}/media?id=&q=&offset=&limit=` | 🏷️ **Actors only**: Library videos from **Search Tags** (custom `q` overrides tags), JSON cards + pagination; Posts → `source: disabled` |
+| POST | `/api/catalog/{kind}/gallery_upload` | Multiple photos/screenshots straight from the detail tab → `TG_ID:` (admin, serial upload) |
+| POST | `/api/catalog/{kind}/gallery_delete` | `{id, index}` — remove one gallery image without a reload (admin) |
 | POST | `/api/catalog/upload` | Cover/avatar image → Telegram → permanent `TG_ID:` (admin, ≤5 MB) |
-| GET | `/api/catalog/photo?id=` | `TG_ID:` image bytes — उसी serial-safe, FloodWait-aware download engine से |
-| POST | `/api/update_profile` | Email / password update (password बदलने पर सभी sessions बंद) |
+| GET | `/api/catalog/photo?id=` | `TG_ID:` image bytes via the same serial-safe, FloodWait-aware download engine |
+| POST | `/api/update_profile` | Email / password update (changing the password closes every session) |
 | GET | `/api/search?q=&offset=&limit=&group=` | JSON results (`file_id`, `name`, `size`, `quality`, `duration`, `res`, `thumb`); `group=all\|group\|ungroup` |
-| GET | `/api/thumb?file_id=&v=` | असली thumbnail image (login required) |
+| GET | `/api/thumb?file_id=&v=` | Real thumbnail image (login required) |
 | POST | `/api/stream` `{file_id}` | `{watch, download, stream, poster, expires_in}` |
-| GET | `/setup_stream?file_id=&mode=` | GET shortcut, signed watch/download पर redirect |
+| GET | `/setup_stream?file_id=&mode=` | GET shortcut that redirects to signed watch/download |
 | GET | `/watch/<id>?e=&s=&poster=` | Signed player page |
 | GET | `/download/<id>?e=&s=` | Signed Range streaming (206/416/HEAD) |
 
-> **Stream links shareable हैं:** एक बार जारी किया गया signed link logout के बाद भी
-> `WEB_STREAM_TTL` तक चलता है (जैसे v5 में)। नया link बनाने के लिए login ज़रूरी है।
+> **Stream links are shareable:** once issued, a signed link keeps working after logout until `WEB_STREAM_TTL` expires (as in v5). Signing in is required to create a new link.
 
 ---
 
 ## ⚙️ Environment Variables
 
-जो vars कोड में सच में use होते हैं (`API_ID`, `API_HASH`, `BOT_TOKEN`, `ADMINS`,
-`DATA_DATABASE_URL`, `DATABASE_NAME`, `COLLECTION_NAME`, `BIN_CHANNEL`, `URL`, `MAX_BTN`,
-`PM_FILE_DELETE_TIME`, `IS_STREAM`, `USE_CAPTION_FILTER`, `PROTECT_CONTENT`, …) वैसे ही
-रहेंगे। `info.py` से **unused legacy vars** (`SUPPORT_GROUP`, `SUPPORT_LINK`, `TUTORIAL`,
-`QUALITY`, `LANGUAGES`, `CACHE_TIME`, `DELETE_TIME`, `TIME_ZONE`, `IS_VERIFY`, `AUTO_DELETE`,
-`LINK_MODE`, `VERIFY_EXPIRE`, hot/cold collection names, …) हटा दिए गए हैं — इन्हें अब set
-करने की कोई ज़रूरत नहीं, और `SUPPORT_GROUP` अब mandatory भी नहीं है। नए optional vars:
+Variables that are actually used in code (`API_ID`, `API_HASH`, `BOT_TOKEN`, `ADMINS`, `DATA_DATABASE_URL`, `DATABASE_NAME`, `COLLECTION_NAME`, `BIN_CHANNEL`, `URL`, `MAX_BTN`, `PM_FILE_DELETE_TIME`, `IS_STREAM`, `USE_CAPTION_FILTER`, `PROTECT_CONTENT`, …) remain unchanged. **Unused legacy variables** (`SUPPORT_GROUP`, `SUPPORT_LINK`, `TUTORIAL`, `QUALITY`, `LANGUAGES`, `CACHE_TIME`, `DELETE_TIME`, `TIME_ZONE`, `IS_VERIFY`, `AUTO_DELETE`, `LINK_MODE`, `VERIFY_EXPIRE`, hot/cold collection names, …) were removed from `info.py` — they no longer need to be set, and `SUPPORT_GROUP` is no longer mandatory. New optional variables:
 
-| Var | Default | मतलब |
+| Var | Default | Meaning |
 |---|---|---|
-| `MAX_WEB_RESULTS` | `21` | एक page में results (3×7 desktop); env से बदल सकते हैं |
-| `WEB_SESSION_TTL` | `604800` | Login cookie validity (seconds, 7 दिन) |
-| `WEB_STREAM_TTL` | `21600` | Web stream link validity (6 घंटे) |
-| `THUMB_BROWSER_CACHE` | `604800` | ब्राउज़र poster कितने सेकंड अपने cache में रखे (7 दिन) |
-| `CATALOG_STORAGE_CHANNEL` | `BIN_CHANNEL` | Posts/Actors के cover images किस Telegram channel में जाएँ। अगर `BIN_CHANNEL` भी `INDEX_CHANNELS` में है तो अलग private channel दे दें, वरना covers file-search में आ सकते हैं |
-| `THUMB_FETCH_CONCURRENCY` | `6` | सिर्फ़ **पहले से `TG_ID:` वाली** फाइलों के download की concurrency (first-time probe हमेशा 1 ही) |
-| `THUMB_PROBE_GAP_MIN` / `THUMB_PROBE_GAP_MAX` | `1.2` / `3.0` | v5 warmup जैसा **हर first-time probe के बीच** random anti-flood gap (seconds) |
-| `THUMB_PROBE_ATTEMPTS` | `5` | एक file के लिए `send_cached_media` के maximum attempts |
-| `THUMB_FLOOD_EXTRA` | `10` | FLOOD_WAIT में Telegram के बताए seconds के ऊपर extra buffer |
-| `THUMB_MIN_BYTES` | `512` | इससे छोटी image = fake/placeholder मानकर reject (`NO_THUMB`) |
-| `THUMB_MIN_DIM` | `48` | Poster की न्यूनतम चौड़ाई **और** ऊँचाई px (1×1 / 16×16 tracking pixel रोकता है) |
-| `THUMB_MIN_STDDEV` | `6.0` | RGB channel variance — सादे रंग का blank "NO IMAGE" कार्ड ≈ 0, असली video frame ≫ 6 |
-| `STREAM_SECRET` | `BOT_TOKEN` से derive | HMAC secret — production में **ज़रूर सेट करें**, बदलने पर पुराने links expire हो जाएँगे |
-| `ALLOW_UNSIGNED_LINKS` | `False` | Deploy से पहले बंटे पुराने unsigned `/watch/<id>` links को चालू रखने के लिए `True` करें |
+| `MAX_WEB_RESULTS` | `21` | Results per page (3×7 on desktop); configurable via env |
+| `WEB_SESSION_TTL` | `604800` | Login cookie lifetime in seconds (7 days) |
+| `WEB_STREAM_TTL` | `21600` | Web stream link lifetime (6 hours) |
+| `CATALOG_STORAGE_CHANNEL` | `BIN_CHANNEL` | Telegram channel for Post/Actor cover images. If `BIN_CHANNEL` is also in `INDEX_CHANNELS`, use a separate private channel so covers do not appear in file search |
+| `THUMB_BROWSER_CACHE` | `604800` | How long the browser caches a poster in seconds (7 days) |
+| `THUMB_FETCH_CONCURRENCY` | `6` | Download concurrency for files that **already have a `TG_ID:`** (first-time probing is always 1) |
+| `THUMB_PROBE_GAP_MIN` / `THUMB_PROBE_GAP_MAX` | `1.2` / `3.0` | Random anti-flood gap between first-time probes in seconds, like the v5 warmup |
+| `THUMB_PROBE_ATTEMPTS` | `5` | Maximum `send_cached_media` attempts per file |
+| `THUMB_FLOOD_EXTRA` | `10` | Extra buffer added to the seconds Telegram reports on FLOOD_WAIT |
+| `THUMB_MIN_BYTES` | `512` | Smaller images are rejected as fake/placeholder (`NO_THUMB`) |
+| `THUMB_MIN_DIM` | `48` | Minimum poster width **and** height in px (blocks 1×1 / 16×16 tracking pixels) |
+| `THUMB_MIN_STDDEV` | `6.0` | RGB channel variance — a blank solid-colour "NO IMAGE" card ≈ 0, a real video frame ≫ 6 |
+| `STREAM_SECRET` | Derived from `BOT_TOKEN` | HMAC secret — **set it in production**; changing it expires old links |
+| `ALLOW_UNSIGNED_LINKS` | `False` | Set to `True` to keep old unsigned `/watch/<id>` links that were shared before deployment working |
 
 ---
 
-## 🧑‍💻 पहली बार use कैसे करें
+## 🧑‍💻 Getting started
 
-1. Telegram में bot को `/start` भेजें (OTP वहीं आएगा)।
-2. `https://<your-domain>/register` खोलें → **Telegram ID + Email + Password** भरें →
-   "Send OTP via Telegram" → bot PM में मिला 6-digit OTP डालें → Account बन गया।
-3. `/login` पर Email + Password से sign in → `/search`।
-4. Search box में नाम लिखें (या चिप्स दबाएँ) → cards में **असली thumbnail**, size,
-   quality, resolution, duration दिखेंगे।
-5. **फाइल नाम पर क्लिक** → streaming link तैयार → वीडियो modal में चलता है।
-   चाहें तो "Player page" / "Download" / "Copy stream link" use करें।
-   यही modal `/posts`/`/actors` के detail pages के **🎬 Videos tab** में भी खुलता है
-   (attached videos और Actor के tag-driven results — दोनों पर)।
+1. Send `/start` to the bot on Telegram (the OTP arrives there).
+2. Open `https://<your-domain>/register` → enter **Telegram ID + Email + Password** → click "Send OTP via Telegram" → enter the 6-digit OTP from the bot PM → your account is created.
+3. Sign in at `/login` with your email + password → `/search`.
+4. Type a name in the search box (or pick a chip) → cards show **real thumbnails**, size, quality, resolution and duration.
+5. **Click a file name** → a streaming link is prepared → the video plays in the modal. You can also use "Player page" / "Download" / "Copy stream link". The same modal opens on the **🎬 Videos tab** of `/posts` / `/actors` detail pages (for attached videos and Actor tag-driven results alike).
 
-> Thumbnail न मिलने पर card पर graceful placeholder दिखता है (कोई fake poster नहीं)।
+> When no thumbnail exists, the card shows a graceful placeholder (never a fake poster).
 >
-> **🖼️ पहली बार की फाइलें:** web खोलते ही सारे posters एक साथ नहीं मँगाए जाते —
-> `web/thumb_engine.py` का single-worker queue उन्हें Telegram से **एक-एक करके**
-> निकालकर DB में `TG_ID:` lock करता है; ब्राउज़र `retry=true` से कुछ सेकंड में
-> poster अपने आप दिखा देता है। पूरी library पहले से ready चाहिए तो Telegram में
-> bot को **`/warmup_thumbs`** भेजें (v5 के warmup engine जैसा sequential scan,
-> progress के साथ)। ये command अब **thumbnail के साथ-साथ duration / quality /
-> resolution / mime / size / type भी DB में save** करता है — वो भी फाइल के असली
-> bytes से probe करके, Telegram के अक्सर-गलत `1280×720` attributes पर भरोसा किए
-> बिना। और **सिर्फ़ सच्ची image ही `TG_ID:` में जाती है**: "NO IMAGE" कार्ड, खाली
-> सादा frame, 1×1 pixel या कोई error body मिला तो उसे reject करके `NO_THUMB` mark
-> कर दिया जाता है (web पर फ़र्ज़ी poster कभी नहीं दिखता)। `Database Stats` पेज पर
-> "⏳ Thumb Warmup Queue" में बची फाइलें देख सकते हैं।
+> **🖼️ First-time files:** opening the web UI does not request all posters at once — the single-worker queue in `web/thumb_engine.py` fetches them from Telegram **one at a time** and locks a `TG_ID:` in the DB; the browser's `retry=true` shows each poster automatically within a few seconds. To prepare the whole library in advance, send **`/warmup_thumbs`** to the bot on Telegram (a sequential scan with progress, like the v5 warmup engine). This command now also **saves duration / quality / resolution / mime / size / type** alongside the thumbnail, probed from the file's real bytes instead of trusting Telegram's often-wrong `1280×720` attributes. **Only genuine images become `TG_ID:`**: a "NO IMAGE" card, blank solid frame, 1×1 pixel or error body is rejected and marked `NO_THUMB`, so a fake poster never appears on the web. Remaining files are visible under "⏳ Thumb Warmup Queue" on the Database Stats page.
 
-> **🗂️ Permanent Groups / Group–UnGroup:** अब fsv1 में सच में **permanent groups**
-> हैं — `quality_groups` collection + `quality_group_seq` counter, और हर grouped file
-> पर sparse `group_id` (`database/group_db.py`)। Title-key (`quality`/भाषा/codec/
-> extension हटाकर) **एक ही जगह** से search filter, auto-join और scan-all चलते हैं:
-> admin के बनाए group `#number` के साथ हमेशा DB में रहते हैं, same title की **नई
-> quality अपने-आप उसी group में जुड़ जाती है** (`auto_keys`), और admin ने निकाली file
-> `excluded` में रहकर वापस नहीं आती। `/api/search` में 2+ files वाला हर bucket एक
-> **group card** है (master poster + quality chips + expand पर वही shared `.vcard`
-> variants); **Group** = सिर्फ़ group cards, **UnGroup** = सिर्फ़ अकेली files,
-> **All** = दोनों। Group कार्ड में **कोई image bytes DB/RAM में नहीं** — सिर्फ़
-> `TG_ID:`/`/api/thumb` reference, और पुराना browser ETag cache वैसा ही है।
+> **🗂️ Permanent Groups / Group–UnGroup:** fsv1 now has genuinely **permanent groups** — a `quality_groups` collection + `quality_group_seq` counter and a sparse `group_id` on every grouped file (`database/group_db.py`). The title key (with `quality`/language/codec/extension stripped) comes from **one place** and drives the search filter, auto-join and scan-all: groups an admin created stay in the DB with their `#number`, a **new quality of the same title automatically joins the same group** (`auto_keys`), and a file an admin removed stays in `excluded` and never returns. In `/api/search`, every bucket of 2+ files is a **group card** (master poster + quality chips + the same shared `.vcard` variants on expand); **Group** = group cards only, **UnGroup** = single files only, **All** = both. Group cards hold **no image bytes in the DB or RAM** — only a `TG_ID:`/`/api/thumb` reference, with the existing browser ETag cache unchanged.
 
-> **📸 Thumbnail storage:** `files` doc में `thumb_url: "TG_ID:<telegram_thumb_file_id>"`
-> — बस एक छोटी सी string (DB)। असली JPEG/PNG/WEBP bytes **न MongoDB में, न server RAM
-> cache में** — वे `/api/thumb` के `ETag` + `Cache-Control: private, max-age=...` से
-> **उसी ब्राउज़र/साइट की memory-disk cache** में रहती हैं। Server पर सिर्फ़ चल रही request
-> के दौरान ~10–60 KB transient buffer आता है और response के साथ free हो जाता है।
-> `v` (= thumb_url का hash) बदलने पर ETag/URL बदलता है, तो नया poster अपने आप आ जाता है।
+> **📸 Thumbnail storage:** a `files` document holds `thumb_url: "TG_ID:<telegram_thumb_file_id>"` — just a short string in the DB. The real JPEG/PNG/WEBP bytes live **neither in MongoDB nor in a server RAM cache**; `/api/thumb` uses `ETag` + `Cache-Control: private, max-age=...` so they stay in **that browser's own memory/disk cache**. The server only holds a ~10–60 KB transient buffer for the in-flight request, released with the response. Changing `v` (the thumb_url hash) changes the ETag/URL, so a new poster appears automatically.
 
 ---
 
-## 🧠 Permanent Groups का restructuring
+## 🧠 Restructuring permanent groups
 
-`JoneySin/v5` में groups `QualityGroups`/`QualityGroupSeq` + `web/search_api.py`
-के `/api/group/*` + `web/dashboard_routes.py` के admin JS में बंटे थे, और हर file
-`primary`/`cloud`/`archive` तीन collections में ढूँढी जाती थी (`source_col`,
-`thumb_col`, `COLLECTIONS`)। यहाँ **सिर्फ़ features समझे गए**, ढाँचा fsv1 का अपना है:
+In `JoneySin/v5`, groups were spread across `QualityGroups`/`QualityGroupSeq`, `/api/group/*` in `web/search_api.py` and admin JS in `web/dashboard_routes.py`, and every file was looked up in three collections (`primary`/`cloud`/`archive`, with `source_col`, `thumb_col`, `COLLECTIONS`). Here **only the features were studied**; the structure is fsv1's own:
 
-* **एक ही** `collection` — `section` / `target_collection` / 3-collection lookup
-  **बिल्कुल नहीं**; group card पर कोई PRIMARY/CLOUD/ARCHIVE pill नहीं।
-* Store **एक** `database/group_db.py`: sync PyMongo → `asyncio.to_thread`, MongoDB
-  न हो तो transparent in-memory fallback (जैसे `catalog_db.py`)। High-level methods
-  (`get` / `by_members` / `by_keys` / `add_members` / `merge` / `mark_files` …) —
-  routes में कोई raw `$addToSet`/`$pull` query नहीं, operator logic एक जगह।
-* **Number** `quality_group_seq` counter से; sparse `group_id` index; `auto_keys`
-  से index-time **और** search-time दोनों पर नई quality का auto-join; `excluded`
-  blacklist; `scan_all` idempotent (बार-बार चलाना safe) + progress endpoint।
-* **UI एकमात्र source** `web/group_assets.py`: `GROUP_CSS`, `GROUP_CARD_TEMPLATE`,
-  `GROUP_JS` (`SITE_JS` में), admin-only `GROUP_ADMIN_HTML`/`GROUP_ADMIN_JS`।
-  Group के अंदर की हर variant उसी `window.cardHTML()` → `VCARD_TEMPLATE` से बनती
-  है, इसलिए `/search` / Post / Actor तीनों पर card/chips एक जैसे रहते हैं; filter
-  dropdown (`FILTER_CSS`/`FILTER_JS`) और in-poster `.vadmin` overlay unchanged।
-* **Group metadata:** `kind` (`qualities`/`episodes`), `episode_map` और
-  `episode_label()`/`detect_episodes()`/`guess_kind()`/`episode_chips()` सिर्फ़
-  `database/group_db.py` में — cards, `/api/group/*` और admin modal उसी एक source
-  से पढ़ते हैं। Card payload में **`size` key ही नहीं** होती; `duration` सिर्फ़
-  qualities-group पर भरी जाती है (सबसे आम/साझा duration) और episodes-group पर `""`
-  रहती है — JS भी `!isEp && g.duration` guard से series पर कभी duration नहीं दिखाता।
-  group-level chips `N QUALITIES` / `N EPISODES` होते हैं और per-variant `.vcard`
-  unchanged रहता है।
-  `S01E02`, `2x03`, `Ep 4`, `4 of 12` जैसे नामों से episode numbers निकलते हैं; admin
-  Edit modal में कोई भी label override कर सकता है। नया group पर नामों से type का अंदाज़ा,
-  saved group पर admin की पसंद हमेशा DB में रहती है।
-* File editor में delete → group cleanup, rename → `files[].name` + auto_key ताज़ा;
-  `/stats` और `/api/db_stats` में `groups` count; custom master poster उसी
-  `CATALOG_STORAGE_CHANNEL` + `get_image_bytes()` path से (कोई नया channel नहीं)।
-* सारे write endpoints **admin-only**, ids whitelist से (`file_edit_routes._file_id()`
-  वाला ही pattern), field length caps, fail-soft DB errors; ungroup पर files कभी
-  delete नहीं होतीं।
+* **One** `collection` — no `section` / `target_collection` / 3-collection lookup and no PRIMARY/CLOUD/ARCHIVE pill on group cards.
+* **One** store, `database/group_db.py`: sync PyMongo → `asyncio.to_thread`, with a transparent in-memory fallback when MongoDB is unavailable (like `catalog_db.py`). High-level methods (`get` / `by_members` / `by_keys` / `add_members` / `merge` / `mark_files`, …) mean no raw `$addToSet`/`$pull` queries in the routes; operator logic lives in one place.
+* **Numbers** come from the `quality_group_seq` counter; a sparse `group_id` index; `auto_keys` auto-joins new qualities at both index time and search time; `excluded` is a blacklist; `scan_all` is idempotent (safe to rerun) with a progress endpoint.
+* **One UI source**, `web/group_assets.py`: `GROUP_CSS`, `GROUP_CARD_TEMPLATE`, `GROUP_JS` (in `SITE_JS`) and the admin-only `GROUP_ADMIN_HTML`/`GROUP_ADMIN_JS`. Every variant inside a group is built by the same `window.cardHTML()` → `VCARD_TEMPLATE`, so cards/chips look alike on `/search`, Post and Actor; the filter dropdown (`FILTER_CSS`/`FILTER_JS`) and in-poster `.vadmin` overlay are unchanged.
+* **Group metadata:** `kind` (`qualities`/`episodes`), `episode_map` and `episode_label()`/`detect_episodes()`/`guess_kind()`/`episode_chips()` exist only in `database/group_db.py` — cards, `/api/group/*` and the admin modal read from that one source. The card payload has **no `size` key at all**; `duration` is filled only for qualities groups (the most common/shared duration) and is `""` for episode groups — the JS `!isEp && g.duration` guard also prevents a duration on series. Group-level chips read `N QUALITIES` / `N EPISODES` while each variant's `.vcard` stays unchanged. Episode numbers are extracted from names like `S01E02`, `2x03`, `Ep 4` or `4 of 12`, and an admin can override any label in the Edit modal. New groups guess their type from the names; a saved group always keeps the admin's choice in the DB.
+* Deleting a file in the file editor cleans up groups; renaming refreshes `files[].name` + auto_keys; `/stats` and `/api/db_stats` include a `groups` count; a custom master poster uses the same `CATALOG_STORAGE_CHANNEL` + `get_image_bytes()` path (no new channel).
+* Every write endpoint is **admin-only**, ids pass through the `file_edit_routes._file_id()` whitelist, field lengths are capped and DB errors are fail-soft; ungrouping never deletes files.
 
 ---
 
-## 🧠 Posts + Actors का restructuring
+## 🧠 Restructuring Posts + Actors
 
-`JoneySin/v5` में ये features `post_routes.py` (~790 lines) और `actor_routes.py`
-(~590 lines) में बंटे थे — directory CSS/JS/search/pagination दोनों में copy-paste,
-create/edit के लिए अलग-अलग full-page multipart wizards (हर save पर reload),
-server से raw HTML strings, और Cropper.js CDN पर निर्भरता। यहाँ **सिर्फ़ features
-समझे गए**, ढाँचा नया है:
+In `JoneySin/v5`, these features were split between `post_routes.py` (~790 lines) and `actor_routes.py` (~590 lines) — directory CSS/JS/search/pagination copy-pasted in both, separate full-page multipart wizards for create/edit (a reload on every save), raw HTML strings from the server and a Cropper.js CDN dependency. Here **only the features were studied**; the structure is new:
 
-* **एक** `CATALOGS` config + **एक** CSS/JS engine → दोनों pages; नया catalog जोड़ना
-  हो तो सिर्फ़ config में एक entry।
-* **JSON API + client-side render** (`textContent`-safe escaping) → server कभी HTML
-  string नहीं भेजता, markup एक जगह, XSS का रास्ता बंद।
-* **एक** `/save` endpoint create + edit + Undo-restore संभालता है (v5 में अलग API थे)।
-* **Tabs + multi-video**: v5 में सिर्फ़ actor detail के `Info / Linked Media / Gallery` tabs थे और posts में videos wizard के अंदर थे। यहाँ दोनों kinds पर tabs, पर Post का तीसरा tab **Screenshots** है, `videos[]` proper array है (50 तक), picker एक search में कई files जोड़ता है।
-* **🏷️ Tags → videos**: v5 `/api/actor/search` में `get_actor_search_results(actor_name, tags)` एक raw regex-OR `(tag1\|tag2\|…)` चलाता था (और name भूल जाता था)। यहाँ वही semantics, पर fsv1 की **अपनी** `get_search_results()` (`$text` index + regex fallback) को हर tag पर चलाकर merge/dedupe/paginate किया जाता है — index का फायदा, कोई नया query layer नहीं। Custom `q` आते ही tags ignore, बिल्कुल v5 जैसा।
-* **Gallery upload**: v5 `/api/actor/gallery_upload` form-submit + `window.location.reload()` करता था; यहाँ detail tab पर `multiple` input → JSON → in-place render, uploads serial (anti-flood)। v5 के `gallery_idx` deletion की जगह index-based in-place delete + Undo है।
-* **Inline modal** से edit → page reload नहीं; dirty guard, keyboard shortcuts, live
-  preview, upload, media picker — वो सब v5 के wizards में नहीं था।
-* **Validation**: URL/scheme sanitization, media `file_id` pattern check, field length
-  caps, short-hex ids, admin-only writes, `prefers-reduced-motion` support।
-* Images Telegram में `TG_ID:` के रूप में → DB में bytes नहीं; serving उसी
-  `web/thumb_engine.py` के rate-limit-safe download path से, तो कोई अलग burst नहीं।
+* **One** `CATALOGS` config + **one** CSS/JS engine for both pages; adding a catalog means adding one config entry.
+* **JSON API + client-side render** (`textContent`-safe escaping) → the server never returns an HTML string, markup lives in one place and XSS is closed off.
+* **One** `/save` endpoint handles create + edit + Undo-restore (v5 had separate APIs).
+* **Tabs + multi-video**: v5 had `Info / Linked Media / Gallery` tabs only on the actor detail page, with videos inside the post wizard. Here both kinds have tabs, but Post's third tab is **Screenshots**; `videos[]` is a proper array (up to 50) and the picker adds several files from one search.
+* **🏷️ Tags → videos**: v5's `/api/actor/search` ran `get_actor_search_results(actor_name, tags)` as one raw regex-OR `(tag1\|tag2\|…)` and forgot the name. Here the same semantics run fsv1's **own** `get_search_results()` (`$text` index + regex fallback) per tag, then merge/dedupe/paginate — the index is used, with no new query layer. A custom `q` ignores tags, exactly like v5.
+* **Gallery upload**: v5's `/api/actor/gallery_upload` submitted a form and called `window.location.reload()`; here a `multiple` input on the detail tab returns JSON that is rendered in place, with serial (anti-flood) uploads. v5's `gallery_idx` deletion is replaced by index-based in-place delete + Undo.
+* **Inline modal** editing needs no page reload and adds a dirty guard, keyboard shortcuts, live preview, upload and a media picker — none of which existed in the v5 wizards.
+* **Validation**: URL/scheme sanitization, media `file_id` pattern checks, field length caps, short-hex ids, admin-only writes and `prefers-reduced-motion` support.
+* Images go to Telegram as `TG_ID:` so no bytes enter the DB; serving uses the same rate-limit-safe download path in `web/thumb_engine.py`, with no separate burst.
 
 ---
 
-### ✅ Single-source guarantee का test
+### ✅ Single-source regression test
 
-Poster/Text का code दोबारा कई फाइलों में न बँट जाए, इसके लिए stdlib-only regression test है
-(कोई MongoDB / Telegram / aiohttp ज़रूरत नहीं):
+A stdlib-only regression test keeps Poster/Text code from splitting across files again (no MongoDB / Telegram / aiohttp required):
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-`tests/test_view_mode.py` चेक करता है कि mode options/CSS/JS सिर्फ़ `web/mode_assets.py` में हैं,
-दूसरी किसी फाइल में `.mode-text` CSS / अलग mode state / अलग storage key / Text-only HTML branch
-नहीं है, तीनों surfaces `vm-*` contract से opt-in करती हैं, और Text mode सिर्फ़ photo छिपाता है।
+`tests/test_view_mode.py` checks that mode options/CSS/JS live only in `web/mode_assets.py`, that no other file has `.mode-text` CSS, a separate mode state, a different storage key or a Text-only HTML branch, that all surfaces opt in through the `vm-*` contract, and that Text mode hides only the photo. `tests/test_listing_ui.py` guards the group toggle label, create-button placement, the single search box and the `All` category label.
 
-## 🗂️ कहाँ-क्या बदला
+## 🗂️ Where things changed
 
 ```
-stream_security.py               → HMAC sign/verify (नया)
-database/users_chats_db.py       → WebAuthDB: web_users + web_sessions + PBKDF2 + OTP (नया)
-database/ia_filterdb.py          → save_file में `thumb_url` (सिर्फ ID) + meta fields,
-                                    + WEB_EDITABLE_FIELDS / get_file_meta / update_file_fields / delete_file_by_id,
+stream_security.py               → HMAC sign/verify (new)
+database/users_chats_db.py       → WebAuthDB: web_users + web_sessions + PBKDF2 + OTP (new)
+database/ia_filterdb.py          → save_file stores `thumb_url` (just an id) + metadata fields,
+                                   + WEB_EDITABLE_FIELDS / get_file_meta / update_file_fields / delete_file_by_id,
                                    search projection, get_recent_files(),
-                                   update_file_meta() (सिर्फ ID backfill)
+                                   update_file_meta() (id-only backfill)
 utils.py                         → temp.USER_SESSIONS / REG_PENDING
-web/mode_assets.py               → 🖼️📄 Poster/Text का इकलौता source: VIEW_MODE_OPTIONS +
+web/mode_assets.py               → 🖼️📄 The only Poster/Text source: VIEW_MODE_OPTIONS +
                                    MODE_CSS + MODE_JS (window.ViewMode, DEFAULT='text'),
-                                   vm-* class contract (नया)
+                                   and the vm-* class contract (new)
 web/web_assets.py                → get_auth(), CSS, login shell, search UI; auto-search,
-                                   All/Group/UnGroup dropdowns (बिना labels); mode wiring
-                                   सिर्फ़ `ViewMode.init()` — कोई अपना mode logic नहीं;
+                                   All/Group/UnGroup dropdowns (without labels); mode wiring is
+                                   only `ViewMode.init()` — no local mode logic;
                                    VIDEO_CARD_CSS (shared video card/grid), PLAYER_MODAL_HTML +
-                                   PLAYER_JS (shared /search + catalog player); कोई #ID badge नहीं
-web/auth_routes.py               → login/register/OTP/logout routes (नया)
-web/thumb_engine.py              → Telegram fetch (बिना किसी cache के), DB में सिर्फ ID backfill
-web/search_routes.py             → /search, /api/search (group-first cards + Group/UnGroup), /api/thumb, /api/stream (नया)
-database/group_db.py             → 🗂️ permanent groups store + title_key/quality_label/scan helpers (नया)
-web/group_routes.py              → 🗂️ /api/group/* CRUD/merge/scan/thumb + group_cards() (नया)
-web/group_assets.py              → GROUP_CSS + GROUP_CARD_TEMPLATE/GROUP_JS + admin modal/Group Mode (नया)
-web/file_edit_routes.py          → ✏️ admin file editor JSON/multipart API (name, caption, poster, delete) (नया)
-web/utils/media_info.py          → media metadata cache (नया)
+                                   PLAYER_JS (shared /search + catalog player); no #ID badge
+web/auth_routes.py               → login/register/OTP/logout routes (new)
+web/thumb_engine.py              → Telegram fetch (no cache), id-only DB backfill
+web/search_routes.py             → /search, /api/search (group-first cards + Group/UnGroup), /api/thumb, /api/stream (new)
+database/group_db.py             → 🗂️ permanent group store + title_key/quality_label/scan helpers (new)
+web/group_routes.py              → 🗂️ /api/group/* CRUD/merge/scan/thumb + group_cards() (new)
+web/group_assets.py              → GROUP_CSS + GROUP_CARD_TEMPLATE/GROUP_JS + admin modal/Group Mode (new)
+web/file_edit_routes.py          → ✏️ admin file editor JSON/multipart API (name, caption, poster, delete) (new)
+web/utils/media_info.py          → media metadata cache (new)
 web/utils/render_template.py     → signed player page + poster
-web/utils/custom_dl.py           → FileId support + आख़िरी Range chunk fix
+web/utils/custom_dl.py           → FileId support + final Range chunk fix
 web/stream_routes.py             → landing, signed watch/download, hardened Range
-database/catalog_db.py           → एक CatalogStore: catalog_posts + catalog_actors,
-                                   short-hex ids, PyMongo→to_thread, in-memory fallback (नया)
-web/catalog.py                   → एक CATALOGS config + shared CSS/JS/detail/editor engine,
+database/catalog_db.py           → one CatalogStore: catalog_posts + catalog_actors,
+                                   short-hex ids, PyMongo→to_thread, in-memory fallback (new)
+web/catalog.py                   → one CATALOGS config + shared CSS/JS/detail/editor engine,
                                    video_card_html() + .vgrid (listing 2/5, videos 1/3), shared player modal
-web/catalog_routes.py            → pages + generic JSON API + upload/photo (नया)
-web/thumb_engine.py              → Telegram fetch (बिना किसी cache के), DB में सिर्फ ID backfill,
-                                   catalog images के लिए get_image_bytes()
-web/__init__.py                  → सभी route tables register
-web/web_assets.py                → + FILTER_CSS / FILTER_JS (सभी filter dropdowns का एकमात्र UI source),
+web/catalog_routes.py            → pages + generic JSON API + upload/photo (new)
+web/thumb_engine.py              → Telegram fetch (no cache), id-only DB backfill,
+                                   get_image_bytes() for catalog images
+web/__init__.py                  → registers every route table
+web/web_assets.py                → + FILTER_CSS / FILTER_JS (the only UI source for all filter dropdowns),
                                     + FILE_EDIT_HTML / FILE_EDIT_JS shared admin modal (canvas crop)
-plugins/callbacks.py             → bot के Watch/Download links अब signed
+plugins/callbacks.py             → the bot's Watch/Download links are now signed
 ```
 
 ### 🧹 Dead-code cleanup
 
-`info.py` अब सिर्फ़ वही config रखता है जो कोड में सच में पढ़ा जाता है (unused env vars,
-`import os`, purane link/collection/template constants हटाए)। इसके साथ `Script.py` के unused
-message templates, कभी न बुलाए गए DB helpers/methods (`run_sync`, `update_file_quality`,
-`database_health_check`, `delete_file_by_id`, ban/add-user API, `update_profile`,
-`download_as_bytesio`, `drop_media_info`, `last_online`), unused imports/locals और बेकार `f`-strings/`global`
-भी हटा दिए गए। `pyflakes` अब पूरे repo पर clean है; web/auth/stream/thumbnail behaviour
-जस का तस है।
+`info.py` now keeps only the config that is actually read by the code (unused env vars, `import os` and old link/collection/template constants were removed). Unused message templates in `Script.py`, DB helpers and methods that were never called (`run_sync`, `update_file_quality`, `database_health_check`, `delete_file_by_id`, ban/add-user API, `update_profile`, `download_as_bytesio`, `drop_media_info`, `last_online`), unused imports/locals and pointless `f`-strings/`global` statements were removed too. `pyflakes` is clean across the repo; web/auth/stream/thumbnail behaviour is unchanged.
 
 ---
 
 ## 🚢 Deploy
 
-`Procfile` / `Dockerfile` / `render.yaml` पहले जैसे ही `python bot.py` चलाते हैं; web app
-bot के start होते ही `0.0.0.0:PORT` पर up हो जाता है। कोई extra service या dependency
-नहीं जोड़नी पड़ी (सब stdlib + मौजूदा `aiohttp`/`pymongo`/`hydrogram`)।
+`Procfile` / `Dockerfile` / `render.yaml` still run `python bot.py`; the web app comes up on `0.0.0.0:PORT` as soon as the bot starts. No extra service or dependency was added (everything is stdlib plus the existing `aiohttp`/`pymongo`/`hydrogram`).
 
-> ⚠️ Purane unsigned watch/download links default में बंद हो जाएँगे (सुरक्षा के लिए)।
-> अगर ऐसे links अभी circulate हो रहे हैं तो temporarily `ALLOW_UNSIGNED_LINKS=True` रखें।
+> ⚠️ Old unsigned watch/download links are disabled by default for security. If such links are still in circulation, set `ALLOW_UNSIGNED_LINKS=True` temporarily.

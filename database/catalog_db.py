@@ -1,14 +1,14 @@
 """📚 Unified catalog store — Posts + Directory profiles.
 
-v5 में `web/post_routes.py` और `web/actor_routes.py` अलग-अलग collections,
-अलग CRUD और अलग-अलग ~700 लाइन के pages थे। यहाँ दोनों के लिए **एक** store:
+In v5, `web/post_routes.py` and `web/actor_routes.py` used separate collections,
+separate CRUD helpers and two ~700-line pages. Here both share **one** store:
 
-* `_id` = short random hex string (ObjectId नहीं) → invalid-id crash नहीं,
-  कोई bson dependency नहीं, URLs सीधे readable.
-* fsv1 का synchronous PyMongo → सभी DB calls `asyncio.to_thread()` से.
-* MongoDB उपलब्ध न हो (local / preview) → transparent **in-memory fallback**,
-  इसलिए feature बिना DB के भी चलता है (production में हमेशा Mongo).
-* `created_at` / `updated_at` अपने आप, writes idempotent.
+* `_id` is a short random hex string (not an ObjectId), so invalid ids cannot crash
+  the app, there is no bson dependency and URLs stay readable.
+* fsv1 uses synchronous PyMongo, so every DB call runs via `asyncio.to_thread()`.
+* When MongoDB is unavailable (local development / preview) a transparent
+  **in-memory fallback** keeps the feature working (production always uses Mongo).
+* `created_at` / `updated_at` are managed automatically; writes are idempotent.
 """
 
 import asyncio
@@ -39,7 +39,7 @@ def _public(doc: dict) -> dict:
 
 
 class _Memory:
-    """MongoDB न होने पर छोटा in-memory store (preview / unit tests)।"""
+    """Small in-memory store used when MongoDB is unavailable (preview / unit tests)."""
 
     def __init__(self):
         self.data = {k: {} for k in KINDS}
@@ -100,7 +100,7 @@ class CatalogStore:
         if self.cols:
             self._indexes()
         else:
-            logger.warning("⚠️ catalog: MongoDB नहीं मिला — in-memory fallback चालू")
+            logger.warning("⚠️ catalog: MongoDB unavailable — using the in-memory fallback")
 
     def _indexes(self):
         for kind, col in self.cols.items():
@@ -126,7 +126,7 @@ class CatalogStore:
         return query
 
     async def list_items(self, kind, q="", category="", offset=0, limit=20):
-        """(items, has_next) — `created_at` desc, limit+1 trick से pagination."""
+        """Return (items, has_next) — newest first, paginated with the limit+1 trick."""
         kind = self._kind(kind)
         rx = str(q or "").strip().lower()
         cat = str(category or "").strip()
@@ -165,10 +165,10 @@ class CatalogStore:
         return _public(dict(doc)) if doc else None
 
     async def save_item(self, kind, data: dict, item_id: str = "", allow_create: bool = False):
-        """Create / update — हमेशा पूरा public item return करता है।
+        """Create or update an item — always returns the complete public record.
 
-        `allow_create=True` सिर्फ़ Undo-delete के लिए: entry मिट चुकी हो तो उसी
-        id से वापस बना देता है, ताकि पुराने `/post/<id>` deep-links टूटें नहीं।
+        `allow_create=True` is used only by Undo-delete: when the entry is already gone,
+        it is recreated under the same id so existing `/post/<id>` links keep working.
         """
         kind = self._kind(kind)
         clean = {k: data.get(k) for k in _FIELDS if k in data}

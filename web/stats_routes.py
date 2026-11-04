@@ -1,11 +1,11 @@
-"""📊 Database Stats — JoneySin/v5 के `web/stats_routes.py` जैसा stats page.
+"""📊 Database Stats — a stats page modelled on JoneySin/v5's `web/stats_routes.py`.
 
-* v5 की तरह sidebar में "Database Stats" admin-only लिंक, cards में counters.
-* पहले `/search` की meta लाइन में "🆕 Recently Added — N files" जो गिनती
-  दिखती थी, अब यहीं "Database Stats" में दिखती है (वही `get_recent_files()`
-  वाला total — कोई नया/अलग count नहीं)।
-* fsv1 के PyMongo (sync) helpers `asyncio.to_thread()` से चलते हैं ताकि
-  bot का event loop block न हो।
+* Like v5, an admin-only "Database Stats" link in the sidebar and counters in cards.
+* The "🆕 Recently Added — N files" count that used to appear in the `/search`
+  meta line is now shown here on "Database Stats" (the same `get_recent_files()`
+  total — not a new or different count).
+* fsv1's PyMongo (sync) helpers run via `asyncio.to_thread()` so the bot's
+  event loop is never blocked.
 """
 
 import asyncio
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 stats_routes = web.RouteTableDef()
 
 
-# v5 के stats JS जैसा count-up animation
+# Count-up animation like v5's stats JS
 _STATS_JS = """<script>
 (function(){
   function countUp(el, target, duration){
@@ -50,7 +50,7 @@ _STATS_JS = """<script>
 
 
 async def _safe(awaitable, default):
-    """एक DB counter fail हो तो पूरा stats पेज न गिरे (v5 जैसा fail-safe)।"""
+    """A single failing DB counter must not take down the whole page (v5-style fail-safe)."""
     try:
         return await awaitable
     except Exception as e:
@@ -65,11 +65,11 @@ def _count(coll, query=None) -> int:
 
 
 async def _stats_numbers():
-    """ek hi jagah se saare counters — page aur /api/db_stats dono यहीं से।"""
+    """One place for every counter — used by both the page and /api/db_stats."""
     total_files = await _safe(asyncio.to_thread(db_count_documents), 0)
 
-    # 🆕 वही "Recently Added" count जो पहले search page की meta लाइन में था:
-    # get_recent_files() का `total` = Recently Added grid में कुल फाइलें।
+    # 🆕 The same "Recently Added" count that used to sit in the search meta line:
+    # `total` from get_recent_files() = all files in the Recently Added grid.
     _, _, recent_files = await _safe(get_recent_files(0, 1), ([], "", 0))
     recent_files = recent_files or total_files
 
@@ -79,12 +79,12 @@ async def _stats_numbers():
     thumbnails = await _safe(
         asyncio.to_thread(_count, collection, {"thumb_url": {"$exists": True}}), 0
     )
-    # 🖼️ v5-style serial warmup queue (पहली बार thumbnail एक-एक करके)
+    # 🖼️ v5-style serial warmup queue (first-time thumbnails, one at a time)
     queue = thumb_queue_state()
-    # 📚 Posts + Directory counts (v5 के "Content Posts / Universal Directory" cards)
+    # 📚 Posts + Directory counts (v5's "Content Posts / Universal Directory" cards)
     catalog = await _safe(catalog_store.counts(), {"posts": 0, "actors": 0})
     groups = await _safe(group_store.count(), 0)
-    # 🎞️ qualities ⇄ 📺 episodes — किस तरह के कितने groups, कुल कितने episodes
+    # 🎞️ qualities ⇄ 📺 episodes — how many groups of each kind, total episodes
     gkinds = await _safe(group_store.kind_counts(),
                          {"quality_groups": 0, "episode_groups": 0, "episodes_total": 0})
     return {
@@ -120,7 +120,7 @@ async def stats_page(req):
     role, tg_id = await get_auth(req)
     if not role:
         return web.HTTPFound("/login")
-    # v5 में "Database Stats" tab सिर्फ़ admin को दिखता है
+    # In v5 the "Database Stats" tab is visible only to admins
     if role != "admin":
         return web.HTTPFound("/search")
 
@@ -128,12 +128,12 @@ async def stats_page(req):
 
     body = f'''<div class="main" style="padding-top:36px;">
   <div class="stat-title anim-card">📊 Database Stats</div>
-  <div class="stat-lead anim-card">v5 जैसा database overview — "Recently Added" फाइलों की गिनती अब यहीं दिखती है, search पेज की meta लाइन में नहीं।</div>
+  <div class="stat-lead anim-card">A v5-style database overview. The "Recently Added" file count now lives here instead of the search page meta line.</div>
 
   <div class="stat-hero anim-card">
     <div class="stat-hero-label">🆕 Recently Added Files</div>
     <div class="stat-hero-num" data-count="{s['recent_files']}" data-delay="0">{s['recent_files']:,}</div>
-    <div class="stat-hero-sub">खाली search पर "Recently Added" grid में मौजूद कुल फाइलें · <a href="/search" style="color:var(--red)">Home / Search →</a></div>
+    <div class="stat-hero-sub">Total files in the "Recently Added" grid for an empty search · <a href="/search" style="color:var(--red)">Home / Search →</a></div>
   </div>
 
   <div class="stat-grid">
@@ -170,7 +170,7 @@ async def stats_page(req):
     <div class="st-card anim-card"><div class="st-bar" style="background:var(--red)"></div>
       <div class="st-label">⏳ Thumb Warmup Queue</div>
       <div class="st-val" style="color:var(--red)" data-count="{s['thumb_queue']['queued']}" data-delay="400">{s['thumb_queue']['queued']:,}</div>
-      <div class="st-sub">posters <b>एक-एक करके</b> · {s['thumb_queue'].get('ok', 0):,} verified · {s['thumb_queue'].get('meta', 0):,} meta saved · {s['thumb_queue'].get('rejected', 0):,} fake rejected · {s['thumb_queue'].get('no_thumb', 0):,} NO_THUMB</div></div>
+      <div class="st-sub">posters <b>one at a time</b> · {s['thumb_queue'].get('ok', 0):,} verified · {s['thumb_queue'].get('meta', 0):,} meta saved · {s['thumb_queue'].get('rejected', 0):,} fake rejected · {s['thumb_queue'].get('no_thumb', 0):,} NO_THUMB</div></div>
 
     <div class="st-card anim-card"><div class="st-bar" style="background:#e50914"></div>
       <div class="st-label">📝 Content Posts</div>
@@ -185,7 +185,7 @@ async def stats_page(req):
     <div class="st-card anim-card"><div class="st-bar" style="background:#7dd3fc"></div>
       <div class="st-label">🗂️ Permanent Groups</div>
       <div class="st-val" style="color:#7dd3fc" data-count="{s['groups']}" data-delay="520">{s['groups']:,}</div>
-      <div class="st-sub">🎞️ {s['quality_groups']:,} quality groups · 📺 {s['episode_groups']:,} series groups ({s['episodes_total']:,} episodes) — हर group का अपना id / #number</div></div>
+      <div class="st-sub">🎞️ {s['quality_groups']:,} quality groups · 📺 {s['episode_groups']:,} series groups ({s['episodes_total']:,} episodes) — every group has its own id / #number</div></div>
   </div>
 </div>{_STATS_JS}'''
 
@@ -197,7 +197,7 @@ async def stats_page(req):
 
 @stats_routes.get("/api/db_stats")
 async def api_db_stats(req):
-    """JSON counters — v5 के /api/db_stats जैसा हल्का endpoint."""
+    """JSON counters — a lightweight endpoint like v5's /api/db_stats."""
     role, _ = await get_auth(req)
     if not role:
         return web.json_response({"error": "Login required", "login": "/login"}, status=401)

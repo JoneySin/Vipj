@@ -231,7 +231,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     file_id=file_id
                 )
 
-                # 🔐 Signed stream links (web search वाले links जैसे ही)
+                # 🔐 Signed stream links (the same links the web search page creates)
                 signed = sign_params(msg.id, USER_LINK_TTL)
                 watch = f"{URL}watch/{msg.id}?{signed}"
                 download = f"{URL}download/{msg.id}?{signed}"

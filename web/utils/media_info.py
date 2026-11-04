@@ -1,11 +1,11 @@
-"""BIN_CHANNEL message ka metadata cache.
+"""Metadata cache for BIN_CHANNEL messages.
 
-Pehle har /download (Range) request par Telegram se `get_messages` hota tha
-(100-300 ms) — video seek karte waqt baar-baar. Ab file_id / size / naam /
-mime 5 मिनट तक cache me rehte hain, aur ek saath aayi kai Range requests
-ek hi Telegram call share karti hain.
+Every /download (Range) request used to call Telegram `get_messages` again
+(100–300 ms), repeatedly while seeking a video. Now file_id / size / name / mime
+stay cached for 5 minutes, and several simultaneous Range requests share
+a single Telegram call.
 
-* TTL छोटा (5 min) है ताकि file_reference पुराना न हो।
+* The TTL is short (5 min) so file_reference values never go stale.
 """
 
 import asyncio
@@ -59,7 +59,7 @@ async def _fetch(message_id):
 
 
 async def get_media_info(message_id):
-    """MediaInfo ya None (file nahi mili / media nahi hai)."""
+    """MediaInfo or None (file not found / no media)."""
     hit = _CACHE.get(message_id)
     if hit and time.monotonic() - hit[0] < _TTL:
         _CACHE.move_to_end(message_id)

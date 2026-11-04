@@ -7,17 +7,17 @@
 #   file_edit_routes → /api/file/{meta,edit,thumb,thumb_reset,delete} (admin)
 #   group_routes   → /api/group/* (permanent quality groups, admin CRUD/merge/scan)
 #   catalog_routes → /posts, /actors, /post/<id>, /actor/<id> + generic JSON API
-#   stats_routes   → /stats, /api/db_stats (v5 जैसा "Database Stats")
-#   profile_routes → /profile, /api/update_profile (v5 जैसा "Profile Settings")
+#   stats_routes   → /stats, /api/db_stats ("Database Stats", as in v5)
+#   profile_routes → /profile, /api/update_profile ("Profile Settings", as in v5)
 #
-# v5 जैसा web experience — sidebar (Home / Posts / Actors / Database Stats /
-# Profile Settings / Sign Out), पर fsv1 के पुराने bot links के अनुकूल।
-# Posts + Actors v5 की अलग-अलग 1400 lines की जगह एक shared catalog engine से।
+# The v5-style web experience — sidebar (Home / Posts / Actors / Database Stats /
+# Profile Settings / Sign Out) — adapted to fsv1's existing bot links.
+# Posts + Actors use one shared catalog engine instead of v5's two 1,400-line pages.
 
 from aiohttp import web
 
-# ⚠️ नाम `_`-prefixed रखे हैं: वरना `web.search_routes` पैकेज attribute
-# RouteTableDef से overwrite हो जाता है और `import web.search_routes` टूटता है।
+# ⚠️ Names are `_`-prefixed: otherwise `web.search_routes` would be overwritten
+# as a package attribute by RouteTableDef and `import web.search_routes` would break.
 from web.stream_routes import routes as _stream_routes
 from web.auth_routes import auth_routes as _auth_routes
 from web.search_routes import search_routes as _search_routes

@@ -371,7 +371,7 @@ async def duration_selected(client, query: CallbackQuery):
     unit_display = unit_map.get(unit, unit)
     plan_text = f"{num} {unit_display}"
     
-    # Calculate duration in days (price + plan दोनों यहीं से)
+    # Calculate the duration in days (price and plan both come from here)
     if unit == "hour":
         days = max(1, (num // 24) or 1)
     elif unit == "day":

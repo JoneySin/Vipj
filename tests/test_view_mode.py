@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""🖼️📄 Poster/Text mode — "एक जगह बदले तो सभी जगह" का regression test.
+"""🖼️📄 Poster/Text mode — regression test for "change one place, change every place".
 
-Stdlib-only, बिना MongoDB / Telegram / aiohttp के चलता है:
+Stdlib-only; runs without MongoDB / Telegram / aiohttp:
 
     python3 -m unittest discover -s tests -v
 
-पूरा Poster/Text व्यवहार `web/mode_assets.py` में रहना चाहिए। बाकी फाइलें
-सिर्फ़ semantic `vm-*` classes लगाती हैं और `window.ViewMode` इस्तेमाल करती हैं;
-किसी दूसरी फाइल में `.mode-text` CSS, अपना mode state, अलग storage key या
-Text mode के लिए अलग HTML branch आते ही ये test टूट जाएगा — यानी future में
-दोबारा तीन जगह code बँटने से बचाता है।
+All Poster/Text behaviour must live in `web/mode_assets.py`. Other files only
+add semantic `vm-*` classes and use `window.ViewMode`; this test fails as soon as
+another file gets `.mode-text` CSS, its own mode state, a different storage key or
+a separate HTML branch for Text mode — preventing the code from splitting into
+three places again in the future.
 """
 import re
 import unittest
@@ -35,13 +35,13 @@ def mode_src():
 
 def css_block():
     m = re.search(r'^MODE_CSS\s*=\s*r?"""(.*?)"""', mode_src(), re.S | re.M)
-    assert m, "MODE_CSS पढ़ा नहीं गया"
+    assert m, "MODE_CSS could not be read"
     return m.group(1)
 
 
 def js_block():
     m = re.search(r'^MODE_JS\s*=\s*r?"""(.*?)"""', mode_src(), re.S | re.M)
-    assert m, "MODE_JS पढ़ा नहीं गया"
+    assert m, "MODE_JS could not be read"
     return m.group(1)
 
 
@@ -52,16 +52,16 @@ class TestSingleSource(unittest.TestCase):
         for symbol in ("VIEW_MODE_OPTIONS", "MODE_CSS", "MODE_JS"):
             self.assertTrue(
                 re.search(rf"^{symbol}\s*=", src, re.M),
-                f"{symbol} मॉड्यूल में नहीं",
+                f"{symbol} is missing from the module",
             )
-        self.assertIn("window.ViewMode=", src, "engine उसी मॉड्यूल में होना चाहिए")
-        self.assertIn("function imgAttrs(url)", src, "src ⇄ data-src एक ही जगह")
-        self.assertIn("data-vm-select", src, "select auto-bind एक ही जगह")
+        self.assertIn("window.ViewMode=", src, "the engine must live in that same module")
+        self.assertIn("function imgAttrs(url)", src, "src ⇄ data-src in one place")
+        self.assertIn("data-vm-select", src, "select auto-binding in one place")
 
     def test_02_options_defined_exactly_once_in_all_web_files(self):
-        """Label बदलना हो तो mode_assets.py की एक लाइन बदलो — बाकी सब उसे import करें."""
+        """To change a label, edit one line in mode_assets.py — everything else imports it."""
         occurrences = sum(src.count("🖼️ Poster") for src in FILES.values())
-        self.assertEqual(occurrences, 1, "Poster label एक से ज़्यादा जगह लिखा है")
+        self.assertEqual(occurrences, 1, "the Poster label is written in more than one place")
         self.assertIn("🖼️ Poster", mode_src())
         self.assertEqual(
             len(re.findall(r"^VIEW_MODE_OPTIONS\s*=", mode_src(), re.M)), 1
@@ -72,24 +72,24 @@ class TestSingleSource(unittest.TestCase):
         self.assertRegex(
             wa, r"from web\.mode_assets import VIEW_MODE_OPTIONS, MODE_CSS, MODE_JS"
         )
-        self.assertIn("SITE_CSS += MODE_CSS", wa, "MODE_CSS हर page पर जाना चाहिए")
-        self.assertIn("SITE_JS += MODE_JS", wa, "MODE_JS हर page पर जाना चाहिए")
-        # cascade: MODE_CSS सबसे आख़िर में append हो
+        self.assertIn("SITE_CSS += MODE_CSS", wa, "MODE_CSS must be included on every page")
+        self.assertIn("SITE_JS += MODE_JS", wa, "MODE_JS must be included on every page")
+        # cascade: MODE_CSS must be appended last
         css_tail = wa[wa.index("SITE_CSS +="):]
         self.assertIn("GROUP_CSS", css_tail)
         self.assertGreater(
             css_tail.index("SITE_CSS += MODE_CSS"), css_tail.rindex("GROUP_CSS")
         )
         self.assertIn("SITE_JS += MODE_JS", wa[wa.index("SITE_JS += GROUP_JS"):])
-        # dropdown options का इकलौता source VIEW_MODE_OPTIONS
+        # VIEW_MODE_OPTIONS is the only source for dropdown options
         self.assertRegex(wa, r'"view":\s*VIEW_MODE_OPTIONS')
 
     def test_04_no_split_mode_logic_anywhere_else(self):
-        """पहले /search, group cards और catalog में अलग-अलग mode code था — वापस न आए।"""
+        """Mode code used to be duplicated in /search, group cards and catalog — it must not return."""
         forbidden = {
-            ".mode-text{": "mode-text CSS बँट गया",
-            "mode-text .": "mode-text CSS बँट गया",
-            "state.mode": "catalog में अलग mode state",
+            ".mode-text{": "mode-text CSS is split",
+            "mode-text .": "mode-text CSS is split",
+            "state.mode": "a separate mode state in catalog",
             "viewMode": "page-specific mode variable",
             "applyMode(": "page-specific apply function",
             "ff_view_mode'": "storage key hardcoded",
@@ -100,21 +100,21 @@ class TestSingleSource(unittest.TestCase):
                 self.assertNotIn(token, src, f"{name}: {why}")
 
     def test_05_no_text_only_markup_branch(self):
-        """catalog का cardHTML() दोनों modes को एक ही markup देता है।"""
+        """catalog's cardHTML() gives both modes exactly the same markup."""
         cat = FILES["catalog.py"]
-        self.assertNotIn("if(state.mode", cat, "Text mode का अलग HTML branch बचा है")
+        self.assertNotIn("if(state.mode", cat, "a separate HTML branch for Text mode remains")
         fn = re.search(r"function cardHTML\(it\)[\s\S]*?\n\}", cat)
-        self.assertIsNotNone(fn, "cardHTML मिला नहीं")
+        self.assertIsNotNone(fn, "cardHTML not found")
         self.assertEqual(
             fn.group(0).count("return `"), 1,
-            "cardHTML में एक से ज़्यादा markup branches हैं",
+            "cardHTML has more than one markup branch",
         )
         for call in ("ViewMode.imgAttrs(", "ViewMode.init(", "ViewMode.apply()"):
-            self.assertIn(call, cat, f"catalog का {call} अलग है")
+            self.assertIn(call, cat, f"catalog uses a different {call}")
         self.assertRegex(FILES["web_assets.py"], r"ViewMode\.init\(")
 
     def test_06_every_surface_opts_in_via_vm_classes(self):
-        """/search, group/variant cards, /posts, /actors — सब उसी contract से।"""
+        """/search, group/variant cards, /posts, /actors — all from the same contract."""
         wa, gr, cat = (FILES[k] for k in ("web_assets.py", "group_assets.py", "catalog.py"))
         self.assertIn('class="vgrid vm-grid" id="grid"', wa)
         self.assertIn('vm-grid', cat)
@@ -132,7 +132,7 @@ class TestSingleSource(unittest.TestCase):
         ):
             for cls in required:
                 self.assertIn(cls, src, f"{name}: {cls} contract missing")
-        # दोनों mode selects auto-bound हैं — किसी का अपना onchange handler नहीं
+        # both mode selects are auto-bound — neither has its own onchange handler
         self.assertEqual(wa.count('"vm": True'), 2)
         self.assertEqual(wa.count('data-vm-select="1"'), 1)
         mode_spec = re.search(r'\{"id": "modeSel"[^\n]*', wa).group(0)
@@ -142,67 +142,67 @@ class TestSingleSource(unittest.TestCase):
         self.assertNotIn('onchange="setMode', wa)
 
     def test_07_text_mode_hides_only_the_photo(self):
-        """CSS सिर्फ़ image/placeholder/play-overlay छिपाता है, details नहीं।"""
+        """CSS hides only the image/placeholder/play-overlay, never the details."""
         block = css_block()
         for cls in (".vm-img", ".vm-ph", ".vm-overlay"):
             self.assertIn(cls, block, f"{cls} hide rule missing")
         for cls in (".vm-details", ".vm-size", ".vm-chip", ".vm-actions", ".vm-body"):
-            self.assertIn(cls, block, f"{cls} को text mode में बनाए रखना ज़रूरी है")
+            self.assertIn(cls, block, f"{cls} must remain visible in Text mode")
         hide = re.search(
             r"\.vm-grid\.mode-text\s+\.vm-img,[^{]*\{([^}]*)\}", block, re.S
         )
-        self.assertIsNotNone(hide, "image hide rule नहीं मिला")
+        self.assertIsNotNone(hide, "the image hide rule was not found")
         self.assertIn("display:none", hide.group(1))
-        # image/placeholder/overlay और image-only pseudo decoration के अलावा
-        # किसी element को display:none न मिले
+        # apart from the image/placeholder/overlay and image-only pseudo decoration,
+        # no element may receive display:none
         for m in re.finditer(r"([^{}]*)\{([^}]*display:none[^}]*)\}", block):
             selector = m.group(1)
             if any(c in selector for c in (".vm-img", ".vm-ph", ".vm-overlay", "::after", "::before")):
                 continue
-            self.fail("image के अलावा कुछ और छिपाया जा रहा है: " + selector.strip()[:80])
+            self.fail("something other than the image is being hidden: " + selector.strip()[:80])
 
     def test_08_poster_mode_restores_src_without_network_in_text(self):
         js = js_block()
         for token in ("data-src", "data-thumb", "data-retry",
                       "function storageFor(kind)", "window.setMode=",
                       "window.ddSet", "img.dataset.src"):
-            self.assertIn(token, js, f"MODE_JS में {token} missing")
+            self.assertIn(token, js, f"{token} is missing from MODE_JS")
         self.assertIn("'ff_cat_mode_'", js)
         self.assertIn("'ff_view_mode'", js)
 
     def test_09_text_is_the_default_everywhere(self):
-        """खाली localStorage ⇒ हर page Text; डिफ़ॉल्ट एक ही लाइन में बदलने योग्य।"""
+        """An empty localStorage ⇒ Text on every page; the default is one editable line."""
         js = js_block()
         self.assertIn("var DEFAULT='text'", js)
         self.assertIn("cur=DEFAULT", js)
         self.assertIn("function norm(v){return VALID.indexOf(v)>=0?v:DEFAULT;}", js)
         self.assertIn("cur=norm(v||DEFAULT)", js)
         self.assertIn("defaultMode:DEFAULT", js)
-        self.assertNotIn("cur='poster'", js, "पुराना poster default बचा है")
-        self.assertNotIn("v||'poster'", js, "पुराना poster fallback बचा है")
-        # पुरानी saved 'poster' preference एक बार reset, फिर user की पसंद याद
+        self.assertNotIn("cur='poster'", js, "the old poster default remains")
+        self.assertNotIn("v||'poster'", js, "the old poster fallback remains")
+        # the old saved 'poster' preference is reset once, then the user's choice is remembered
         self.assertIn("function resetOnce()", js)
         self.assertIn("RESET_FLAG", js)
         self.assertIn("localStorage.removeItem(n)", js)
-        # किसी दूसरी फाइल में अपना default/initial mode न हो
+        # no other file may define its own default / initial mode
         for name, src in OTHER_FILES.items():
             self.assertNotIn("modeSel').value", src)
             self.assertNotIn("catMode').value", src)
 
     def test_10_no_video_type_chip_on_any_thumbnail(self):
-        """thumbnail पर 'VIDEO'/'FILE' टाइप chip नहीं; quality/res/duration रहें।"""
+        """No 'VIDEO'/'FILE' type chip on thumbnails; quality/res/duration stay."""
         wa = FILES["web_assets.py"]
         spec = re.search(r"^VCARD_CHIP_SPEC\s*=\s*\((.*?)\n\)", wa, re.S | re.M)
-        self.assertIsNotNone(spec, "VCARD_CHIP_SPEC नहीं मिला")
+        self.assertIsNotNone(spec, "VCARD_CHIP_SPEC not found")
         fields = re.findall(r'^\s*\(\s*"([a-z_]+)"\s*,', spec.group(1), re.M)
         self.assertEqual(fields, ["quality", "res", "duration"])
         self.assertNotIn("type", fields)
         gr = FILES["group_assets.py"]
-        self.assertNotIn("g.type", gr, "group thumbnail पर VIDEO chip बची है")
-        self.assertNotIn("type:'VIDEO'", gr, "group demo payload में type बचा है")
+        self.assertNotIn("g.type", gr, "a VIDEO chip remains on group thumbnails")
+        self.assertNotIn("type:'VIDEO'", gr, "type remains in the group demo payload")
         routes = (WEB / "group_routes.py").read_text(encoding="utf-8")
         self.assertNotIn('"type": rep.get("type", "VIDEO")', routes,
-                         "group payload में VIDEO chip का data बचा है")
+                         "VIDEO chip data remains in the group payload")
 
 
     def test_11_text_mode_is_a_responsive_grid(self):
@@ -210,7 +210,7 @@ class TestSingleSource(unittest.TestCase):
         css = css_block()
         self.assertIn(".vm-grid.mode-text{display:grid;", css)
         self.assertNotIn(".vm-grid.mode-text{display:block}", css,
-                         "Text mode अब भी full-width single-column list है")
+                         "Text mode is still a full-width single-column list")
         self.assertIn("grid-template-columns:minmax(0,1fr)", css)
         self.assertIn(
             "@media(min-width:620px){.vm-grid.mode-text{"
@@ -219,7 +219,7 @@ class TestSingleSource(unittest.TestCase):
             "@media(min-width:1024px){.vm-grid.mode-text{"
             "grid-template-columns:repeat(3,minmax(0,1fr))", css)
         self.assertIn("flex-direction:column", css,
-                      "3-col cards में details vertically stack होने चाहिए")
+                      "details must stack vertically in 3-column cards")
 
     def test_12_expanded_group_has_no_giant_master_thumbnail(self):
         """v5 `.grp-card.open .grp-master{display:none}` → fsv1 compact head."""
@@ -231,11 +231,11 @@ class TestSingleSource(unittest.TestCase):
             ".gcard.open .gmaster{display:flex", ".gcard.open .gbody{order:-1",
         ):
             self.assertIn(token, gr, f"compact open-group rule missing: {token}")
-        # variants की 1/2/3 grid बिल्कुल unchanged
+        # the variants' 1/2/3 grid stays completely unchanged
         self.assertIn(
             "@media(min-width:1024px){.gcard.open .gvariants{"
             "grid-template-columns:repeat(3,minmax(0,1fr))}}", gr)
-        # group card खुलने पर भी पूरी चौड़ाई ले (variants 3/row)
+        # an open group card still spans the full width (variants 3/row)
         self.assertIn(".gcard.open{grid-column:1/-1", gr)
 
 

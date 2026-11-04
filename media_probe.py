@@ -1,27 +1,27 @@
-"""🎯 TRUE MEDIA PROBE — `/warmup_thumbs` के लिए **असली** metadata.
+"""🎯 TRUE MEDIA PROBE — **real** metadata for `/warmup_thumbs`.
 
-GitHub reference (`JoneySin/v5` → `media_probe.py` + `web/search_api.py`) से सीखा:
-Telegram के `width` / `height` / `duration` attributes **uploader** लिखता है
-(DocumentAttributeVideo) और अक्सर बिना probe किए default `1280×720` भर दिए जाते
-हैं। यानी DB में वो values झूठी हो सकती हैं। इसलिए fsv1 अब MP4 / MKV / AVI के
-**असली bytes** (container header) से resolution + duration निकालता है और वही
-`quality` derive करके DB में save करता है।
+Learned from the GitHub reference (`JoneySin/v5` → `media_probe.py` + `web/search_api.py`):
+Telegram's `width` / `height` / `duration` attributes are supplied by the
+**uploader** (DocumentAttributeVideo) and are often left at the default `1280×720`
+without any probing, so those values in the DB can be wrong. fsv1 now reads the
+**real bytes** (the container header) of MP4 / MKV / AVI files to get resolution
+and duration, then derives `quality` from it and saves that to the DB.
 
-fsv1 का अपना रूप (v5 की verbatim copy नहीं):
-  * सिर्फ़ **एक** `collection`, string `_id` — कोई `COLLECTIONS` / `ObjectId` /
-    `META_SCHEMA_VERSION` migration नहीं।
-  * pure-Python parsers → कोई binary dependency नहीं (Koyeb 512 MB पर हल्का)।
-    `ffprobe` सिर्फ़ optional, fail-soft fallback है।
-  * पूरी file download नहीं — सिर्फ़ शुरू के ~2 MB (और ज़रूरत पर आख़िरी ~4 MB,
-    `moov`-at-end वाले MP4 के लिए) Telegram range से आते हैं।
-  * हर चीज़ fail-soft: probe fail → Telegram attributes (पुराना behaviour)।
-    Probe की वजह से thumbnail / warmup कभी रुकता नहीं।
+fsv1's own implementation (not a verbatim copy of v5):
+  * only **one** `collection` with string `_id` — no `COLLECTIONS` / `ObjectId` /
+    `META_SCHEMA_VERSION` migrations.
+  * pure-Python parsers → no binary dependency (light enough for Koyeb's 512 MB).
+    `ffprobe` is optional and used only as a fail-soft fallback.
+  * no full download — only the first ~2 MB (and, when needed, the last ~4 MB
+    for MP4 files with `moov` at the end) via Telegram range requests.
+  * everything is fail-soft: if the probe fails, use Telegram's attributes (old behaviour).
+    A probe must never stall thumbnail generation or warmup.
 
 Public API:
-  `should_probe(media, file_name)`        → video-ish है या नहीं
+  `should_probe(media, file_name)`        → whether the file looks like a video
   `probe_bytes(head, tail, file_name)`    → {'w','h','duration'} (pure, testable)
   `probe_telegram_media(bot, media, ...)` → async version (range fetch)
-  `build_media_meta(media, probed, ...)`  → DB में `$set` करने लायक dict
+  `build_media_meta(media, probed, ...)`  → dict ready for a DB `$set`
 """
 
 import asyncio
@@ -40,12 +40,12 @@ HEAD_MB = 2
 TAIL_MB = 4
 FETCH_TIMEOUT = 30
 FFPROBE_TIMEOUT = 12
-META_V = 1                       # बढ़ाने पर warmup metadata दोबारा probe करेगा
+META_V = 1                       # bumping this re-probes metadata during warmup
 
-# sanity bounds — corrupt header DB में ज़हर न घोले
-_MIN_W, _MAX_W = 16, 7680        # 8K तक
+# sanity bounds — a corrupt header must not poison the database
+_MIN_W, _MAX_W = 16, 7680        # up to 8K
 _MIN_H, _MAX_H = 16, 4320
-_MAX_DURATION_SEC = 2 * 86400    # 2 दिन से लंबी "movie" झूठ है
+_MAX_DURATION_SEC = 2 * 86400    # a "movie" longer than 2 days is bogus
 
 VIDEO_EXTS = frozenset({
     ".mkv", ".mp4", ".m4v", ".mov", ".avi", ".webm",
@@ -55,10 +55,10 @@ VIDEO_EXTS = frozenset({
 
 # ── Gating ─────────────────────────────────────────────────────────────────
 def file_ext(file_name) -> str:
-    """`Movie.mkv` और cleaned `Movie mkv` दोनों से extension (lowercase)।
+    """Return the lowercase extension from both `Movie.mkv` and cleaned `Movie mkv`.
 
-    fsv1 का `clean_text()` file name में `.` को space कर देता है, इसलिए सिर्फ़
-    `rsplit('.')` पर भरोसा करना गलत है।
+    fsv1's `clean_text()` turns `.` in a file name into a space, so relying on
+    `rsplit('.')` alone would be wrong.
     """
     name = str(file_name or "").strip().lower()
     if not name:
@@ -72,11 +72,11 @@ def file_ext(file_name) -> str:
 
 
 def should_probe(media, file_name="") -> bool:
-    """सिर्फ़ video-ish media पर probe (PDF/MP3 पर bandwidth बर्बाद नहीं)।
+    """Probe only video-like media (no wasted bandwidth on PDF / MP3 files).
 
-    Class name पर अकेले भरोसा नहीं — Telegram `Document` में छिपी video का
-    `mime_type` और cleaned file name का extension भी देखते हैं (stub/plain
-    objects पर भी यही काम करता है)।
+    We do not rely on the class name alone: for a video hidden inside a Telegram
+    `Document` we also check `mime_type` and the cleaned file name's extension
+    (this works on stub / plain objects too).
     """
     if media is None:
         return False
@@ -115,7 +115,7 @@ def sane_duration(value):
 
 
 def quality_from_dimensions(w, h) -> str:
-    """असली height से standard quality bucket — fsv1 के filter keys जैसे।"""
+    """Standard quality bucket from the real height — matches fsv1 filter keys."""
     try:
         h = int(h or 0)
     except (TypeError, ValueError):
@@ -172,7 +172,7 @@ def _mvhd_duration(payload):
 
 
 def _tkhd_dimensions(payload):
-    """trak header से display width/height; 90°/270° rotation पर swap।"""
+    """Display width/height from the trak header; swapped for 90°/270° rotation."""
     if len(payload) < 84:
         return 0, 0
     off = 88 if payload[0] == 1 else 76
@@ -216,7 +216,7 @@ def _parse_moov_payload(buf, start, end, out):
 
 def _probe_mp4(head, tail):
     out = {}
-    # `moov` head में (faststart) या tail में (moov-at-end) कहीं भी हो सकता है
+    # `moov` can sit in the head (faststart) or in the tail (moov-at-end)
     for buf in (head, tail):
         if not buf:
             continue
@@ -338,7 +338,7 @@ def _probe_avi(head):
     return {k: v for k, v in out.items() if v}
 
 
-# ── Optional ffprobe fallback (rare containers / टेढ़े headers) ──────────────
+# ── Optional ffprobe fallback (rare containers / malformed headers) ──────────
 def ffprobe_head(head):
     if not head or len(head) < 1024 or not shutil.which("ffprobe"):
         return {}
@@ -377,7 +377,7 @@ def ffprobe_head(head):
 
 
 def probe_bytes(head, tail=None, file_name="") -> dict:
-    """Head/tail bytes → {'w','h','duration'} (सिर्फ़ sane values)।"""
+    """Head/tail bytes → {'w','h','duration'} (sane values only)."""
     head, tail = head or b"", tail or b""
     if not head:
         return {}
@@ -405,12 +405,12 @@ def probe_bytes(head, tail=None, file_name="") -> dict:
     return {k: v for k, v in out.items() if v}
 
 
-# ── Telegram range fetch (पूरी file कभी download नहीं) ───────────────────────
+# ── Telegram range fetch (never downloads the whole file) ───────────────────
 async def fetch_range(bot, file_ref, file_size, offset_mb, chunks_mb, timeout=FETCH_TIMEOUT):
-    """`client.get_file()` से [offset_mb, offset_mb+chunks_mb) MB slice।
+    """Fetch the [offset_mb, offset_mb+chunks_mb) MB slice via `client.get_file()`.
 
-    hydrogram lazy-import है (sandbox / tests में न हो तो चुपचाप b'' लौटता है)।
-    FloodWait caller तक जाता है; बाकी सब fail-soft — जो bytes मिले वही काफ़ी हैं।
+    hydrogram is lazily imported (returns b'' quietly when unavailable in the sandbox
+    or tests). FloodWait reaches the caller; everything else is fail-soft, so whatever
     """
     if not bot or not file_ref or chunks_mb <= 0:
         return b""
@@ -450,9 +450,9 @@ def _merge(base, extra):
 
 async def probe_telegram_media(bot, media, file_name="", file_size=0,
                                head_mb=HEAD_MB, tail_mb=TAIL_MB) -> dict:
-    """पूरा pipeline: head → pure parsers → (MP4: tail) → ffprobe fallback।
+    """Full pipeline: head → pure parsers → (MP4: tail) → ffprobe fallback.
 
-    Fail होने पर `{}` = "पता नहीं चला, Telegram attributes use करो"।
+    On failure `{}` means "could not determine it, use Telegram's attributes".
     """
     if not should_probe(media, file_name):
         return {}
@@ -483,13 +483,13 @@ async def probe_telegram_media(bot, media, file_name="", file_size=0,
     return out
 
 
-# ── DB payload (fsv1 का single-collection `$set` dict) ───────────────────────
+# ── DB payload (fsv1's single-collection `$set` dict) ───────────────────────
 def build_media_meta(media, probed=None, file_name="", doc=None) -> dict:
     """Telegram attributes + probed ground truth → DB fields.
 
-    Probed width/height/duration हमेशा attribute से **ज़्यादा भरोसेमंद** हैं,
-    इसलिए mile तो वही लिखते हैं। `quality` असली height से derive होती है —
-    filename वाला guess सिर्फ़ fallback है।
+    Probed width/height/duration are always **more trustworthy** than the attributes,
+    so we write those when available. `quality` comes from the real height —
+    a guess from the file name is only a fallback.
     """
     doc = doc or {}
     media = media or {}
@@ -508,9 +508,9 @@ def build_media_meta(media, probed=None, file_name="", doc=None) -> dict:
     w, h = sane_wh(w, h)
     duration = sane_duration(duration)
 
-    # ⚠️ quality सिर्फ़ **probed** (असली bytes) dimensions से derive करते हैं।
-    # Telegram attributes भी uploader के लिखे हो सकते हैं, इसलिए probe fail होने
-    # पर DB में पहले से saved / filename वाला quality label बरकरार रखते हैं।
+    # ⚠️ Derive `quality` only from **probed** (real-byte) dimensions.
+    # Telegram attributes can also be uploader-supplied, so when the probe fails
+    # we keep the quality label already saved in the DB / derived from the file name.
     quality = quality_from_dimensions(w, h) if (pw and ph) else ""
     if not quality:
         saved = str(doc.get("quality") or "")

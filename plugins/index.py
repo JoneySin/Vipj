@@ -15,7 +15,7 @@ from utils import get_readable_time
 # =====================================================
 LOCK = asyncio.Lock()
 CANCEL = False
-# WAITING_SKIP हटा दिया गया है क्योंकि अब इसकी जरूरत नहीं है
+# WAITING_SKIP was removed because it is no longer needed
 
 # =====================================================
 # RESUME DB
@@ -86,7 +86,7 @@ async def start_index(bot, message):
         return await message.reply(f"❌ Error: `{e}`")
 
     # ---- DIRECT BUTTON (NO SKIP ASK) ----
-    # यहाँ Skip को डिफ़ॉल्ट 0 सेट कर दिया है
+    # Skip is set to 0 by default here
     skip = 0 
     
     btn = InlineKeyboardMarkup([
@@ -104,7 +104,7 @@ async def start_index(bot, message):
         reply_markup=btn
     )
 
-# Note: handle_skip फंक्शन पूरी तरह हटा दिया गया है
+# Note: the handle_skip function has been removed entirely
 
 # =====================================================
 # CALLBACK

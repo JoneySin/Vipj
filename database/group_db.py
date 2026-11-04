@@ -1,19 +1,19 @@
-"""🗂️ PERMANENT QUALITY GROUPS — fsv1 का अपना group store.
+"""🗂️ PERMANENT QUALITY GROUPS — fsv1's own group store.
 
-GitHub reference (`JoneySin/v5`) से **समझा**: `QualityGroups` collection में हर
-group का अपना `_id`/`num`, `members` (file_ids), `auto_keys`, `excluded`, master
-thumbnail; `QualityGroupSeq` से sequential number; हर file doc पर `group_id` mark;
-नई quality (same title) `auto_keys` से अपने-आप उसी group में जुड़ती है; files और
-groups merge / ungroup / remove / scan_all होते हैं।
+Adapted from the GitHub reference (`JoneySin/v5`): each group in the `QualityGroups`
+collection has its own `_id`/`num`, `members` (file ids), `auto_keys`, `excluded` and
+a master thumbnail; `QualityGroupSeq` supplies sequential numbers; each file document
+is marked with `group_id`; a new quality of the same title joins the group automatically
+via `auto_keys`; files and groups support merge / ungroup / remove / scan_all.
 
-fsv1 का अपना रूप (verbatim copy नहीं):
-  * **एक ही** `collection` (fsv1 में primary/cloud/archive जैसा कोई section नहीं) —
-    इसलिए `thumb_col`/`COLLECTIONS`/`source_col` जैसी चीज़ें यहाँ नहीं हैं।
-  * fsv1 का **synchronous PyMongo** + `asyncio.to_thread`; MongoDB न हो तो
-    transparent **in-memory fallback** (जैसे `catalog_db.py`) — preview/unit tests
-    बिना DB चलते हैं।
-  * store सिर्फ़ high-level methods देता है (`get`, `by_members`, `add_members`,
-    `merge`, …), कोई raw `$addToSet`/`$pull` query routes में नहीं लिखी जाती।
+fsv1 has its own implementation (not a verbatim copy):
+  * **One** `collection` (fsv1 has no primary/cloud/archive `section`), so there is
+    no `thumb_col`, `COLLECTIONS` or `source_col` here.
+  * fsv1's **synchronous PyMongo** plus `asyncio.to_thread`; when MongoDB is missing
+    a transparent **in-memory fallback** (like `catalog_db.py`) keeps the preview and
+    unit tests running without a database.
+  * The store exposes only high-level methods (`get`, `by_members`, `add_members`,
+    `merge`, …); no raw `$addToSet`/`$pull` queries are written in the routes.
   * Group doc:
     `{_id:"12", num:12, name, members:[fid], files:[{id,name}], auto_keys:[key],
       excluded:[fid], thumb_fid:"", thumb_url:"", auto_created, scan_created,
@@ -32,7 +32,7 @@ except Exception:                                      # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-# ── Title normalization (एक ही जगह — search, scan, auto-join सब यही) ──────
+# ── Title normalization (single source for search, scan and auto-join) ──────
 NOISE = frozenset("""
 144p 240p 360p 480p 576p 720p 1080p 1440p 2160p 4k 8k uhd hd sd
 hdr hdr10 hdr10plus dv sdr 10bit 8bit hevc x264 x265 h264 h265 avc xvid divx
@@ -56,10 +56,10 @@ _EXT_TAIL_RE = re.compile(
 
 
 def title_key(name) -> str:
-    """File name → normalized group key (quality/भाषा/codec/extension हटाकर)।
+    """Normalize a file name into a group key (drops quality/language/codec/extension).
 
-    v5 के `_group_key` से प्रेरणा, पर fsv1 का अपना token-based rule — पहले से
-    मौजूद Group/UnGroup फ़िल्टर की ही key है, इसलिए पुराना behaviour बरकरार।
+    Inspired by v5's `_group_key`, but fsv1 uses its own token-based rule — it is the
+    same key the existing Group/UnGroup filter uses, so the old behaviour is preserved.
     """
     text = re.sub(r"[\[(][^\])]*[\])]", " ", str(name or "").lower())
     clean = []
@@ -75,7 +75,7 @@ def title_key(name) -> str:
 
 
 def group_title(name) -> str:
-    """दिखाने लायक साफ़ टाइटल (original case, quality + extension हटाकर)।"""
+    """A clean, display-ready title (original case, without quality and extension)."""
     s = _EXT_TAIL_RE.sub("", str(name or ""))
     s = _RES_TOKEN_RE.sub(" ", s)
     s = re.sub(r"\s+", " ", s)
@@ -83,7 +83,7 @@ def group_title(name) -> str:
 
 
 def quality_height(res, name=""):
-    """`1920×1080` / `1080p` → sortable height (chips के लिए)।"""
+    """`1920×1080` / `1080p` → sortable height (used by the chips)."""
     m = re.search(r"(\d{3,5})\D+(\d{3,5})", str(res or ""))
     if m:
         w, h = int(m.group(1)), int(m.group(2))
@@ -93,10 +93,10 @@ def quality_height(res, name=""):
 
 
 def quality_label(res, name="", quality=None):
-    """`('1080p', 1080)` जैसा chip label — group card की quality chips।
+    """Return a chip label like `('1080p', 1080)` for the group card's quality chips.
 
-    पहले वही `quality` value जो shared `.vcard` chip दिखाता है (`vcard_meta()`),
-    ताकि group के अंदर और बाहर label एक जैसा रहे; न हो तो `res`/नाम से अनुमान।
+    It reuses the exact `quality` value shown by the shared `.vcard` chip (`vcard_meta()`)
+    so labels stay identical inside and outside the group; falls back to `res`/name.
     """
     q = str(quality or "").strip()
     m = re.fullmatch(r"(\d{3,4})[pP]", q)
@@ -116,9 +116,9 @@ def quality_label(res, name="", quality=None):
 
 
 # ── 📺 EPISODE DETECTION + GROUP KIND ────────────────────────────────
-# कुछ groups एक ही फाइल की अलग-अलग qualities हैं, कुछ एक सीरीज के अलग-अलग
-# episodes. दोनों को अलग पहचान देनी है ताकि group card "3 QUALITIES" या
-# "12 EPISODES" सही दिखाए (और एक फाइल का size/duration न दिखाए)।
+# Some groups hold different qualities of one file, others hold different episodes of
+# a series. They need separate identities so the card can show "3 QUALITIES" or
+# "12 EPISODES" correctly (and never show the size/duration of a single file).
 KIND_QUALITIES = "qualities"
 KIND_EPISODES = "episodes"
 KINDS = (KIND_QUALITIES, KIND_EPISODES)
@@ -133,9 +133,9 @@ _NUM_OF_RE = re.compile(r"\b(\d{1,3})\s*(?:of|/)\s*\d{1,3}\b", re.I)
 def episode_label(name, fallback=0):
     """File name → `('S01E03'|'E03'|'EP 3', episode_number)`.
 
-    Admin चाहे तो `episode_map` से कोई भी label override कर सकता है।
-    कोई marker न मिले तो क्रम से `E01/E02/…` (fallback index) देता है,
-    ताकि हर episode की अपनी chip बने और गिनती सही रहे।
+    An admin can override any label through `episode_map`.
+    When no marker is found, labels fall back to `E01/E02/…` in order,
+    so every episode gets its own chip and the count stays correct.
     """
     text = str(name or "")
     m = _S_E_RE.search(text)
@@ -153,7 +153,7 @@ def episode_label(name, fallback=0):
 
 
 def detect_episodes(items):
-    """`[(fid, name), …]` → `{fid: label}` — सिर्फ़ वही जहाँ नाम में episode मिला।"""
+    """`[(fid, name), …]` → `{fid: label}` — only names containing an episode marker."""
     out = {}
     for i, (fid, name) in enumerate(items or []):
         text = str(name or "")
@@ -164,7 +164,7 @@ def detect_episodes(items):
 
 
 def guess_kind(names):
-    """नामों से अंदाज़ा: 2+ अलग episode numbers → सीरीज, वरना qualities।"""
+    """Guess from the names: 2+ distinct episode numbers → series, otherwise qualities."""
     nums = set()
     for i, n in enumerate(names or []):
         text = str(n or "")
@@ -180,7 +180,7 @@ def normal_kind(value, default=KIND_QUALITIES):
 
 
 def clean_episode_map(value):
-    """User-दिया `{fid: 'E05'}` — सिर्फ़ safe ids/लंबाई, कोई markup नहीं।"""
+    """Validate a user-supplied `{fid: 'E05'}` map — safe ids and lengths only, no markup."""
     if not isinstance(value, dict):
         return {}
     out = {}
@@ -196,9 +196,9 @@ def clean_episode_map(value):
 
 
 def group_kind_meta(doc):
-    """Group doc → `{kind, qualities, episodes, episode_map}` — एक ही हिसाब।
+    """Group document → `{kind, qualities, episodes, episode_map}` — one calculation.
 
-    `qualities` = group में कितनी files/qualities, `episodes` = कितने अलग episode labels।
+    `qualities` = number of files/qualities in the group, `episodes` = distinct episode labels.
     """
     d = doc or {}
     members = [str(m) for m in (d.get("members") or [])]
@@ -215,9 +215,9 @@ def group_kind_meta(doc):
 
 
 def episode_chips(variants, episode_map=None):
-    """Episode-kind group के chips: `E01, E02, …` + हर label की गिनती।
+    """Chips for an episode-kind group: `E01, E02, …` plus the count of each label.
 
-    Returns `(chips, episodes_count)` — `episodes_count` = कितने अलग episodes हैं।
+    Returns `(chips, episodes_count)` — `episodes_count` is the number of distinct episodes.
     """
     emap = clean_episode_map(episode_map)
     rows = []
@@ -241,7 +241,7 @@ def episode_chips(variants, episode_map=None):
 
 
 def file_collection():
-    """fsv1 की एकमात्र file collection — lazy import (Mongo न हो तो None)।"""
+    """fsv1's only file collection — lazy import (None when MongoDB is unavailable)."""
     try:
         from database.ia_filterdb import collection
         return collection
@@ -251,7 +251,7 @@ def file_collection():
 
 # ── In-memory fallback ────────────────────────────────────────────────────
 class _MemoryGroups:
-    """PyMongo-जैसा छोटा store (बिना DB वाले preview/tests के लिए)।"""
+    """A small PyMongo-like store for the DB-less preview and unit tests."""
 
     def __init__(self):
         self.data = {}
@@ -281,7 +281,7 @@ class _MemoryGroups:
 
 
 class GroupStore:
-    """Permanent groups का एकमात्र store — MongoDB या in-memory, API एक ही।"""
+    """The single store for permanent groups — MongoDB or in-memory, same API."""
 
     def __init__(self, database):
         self.col = database["quality_groups"] if database is not None else None
@@ -302,7 +302,7 @@ class GroupStore:
     def _save(self, doc):
         if self.mem:
             return self.mem.save(doc)
-        # ⚠️ MongoDB में `_id` immutable है — उसे $set में भेजना error देता है
+        # ⚠️ MongoDB treats `_id` as immutable — including it in `$set` raises an error
         fields = {k: v for k, v in doc.items() if k != "_id"}
         self.col.update_one({"_id": doc["_id"]}, {"$set": fields}, upsert=True)
         return doc
@@ -323,7 +323,7 @@ class GroupStore:
     def _next_num(self):
         if self.mem:
             return self.mem.next_num()
-        # default = document BEFORE update; upsert पर None → 1
+        # default = the document BEFORE the update; on upsert None → 1
         d = self.seq.find_one_and_update(
             {"_id": "seq"}, {"$inc": {"n": 1}}, upsert=True
         )
@@ -337,7 +337,7 @@ class GroupStore:
         return await asyncio.to_thread(self._all)
 
     async def list(self, q="", limit=25):
-        """Group search — नाम या number (`#12`) से, नये पहले।"""
+        """Group search — by name or number (`#12`), newest first."""
         def _run():
             needle = str(q or "").strip().lstrip("#")
             docs = self._all()
@@ -359,7 +359,7 @@ class GroupStore:
         return await asyncio.to_thread(_run)
 
     async def by_members(self, ids):
-        """दिये file_ids जिन-जिन saved groups के members हैं, वो groups।"""
+        """Return the saved groups that contain any of the given file ids."""
         def _run():
             s = {str(i) for i in ids if i}
             if not s:
@@ -371,7 +371,7 @@ class GroupStore:
         return await asyncio.to_thread(_run)
 
     async def by_keys(self, keys):
-        """`auto_keys` से groups — नई quality का auto-join यहीं से।"""
+        """Groups matched by `auto_keys` — this is where new qualities auto-join."""
         def _run():
             s = {str(k) for k in keys if k}
             if not s:
@@ -387,7 +387,7 @@ class GroupStore:
 
     async def create(self, *, name, items, auto_keys=(), auto_created=False,
                      scan_created=False, kind=KIND_QUALITIES, episode_map=None):
-        """नया PERMANENT group — अपना number, members, files, auto_keys।"""
+        """Create a PERMANENT group with its own number, members, files and auto_keys."""
         now = int(time.time())
         num = await self.next_num()
         gid = str(num)
@@ -406,7 +406,7 @@ class GroupStore:
         return doc
 
     async def update(self, gid, fields):
-        """Naam / master thumbnail / timestamps — सिर्फ़ whitelisted keys।"""
+        """Update name / master thumbnail / timestamps — only whitelisted keys."""
         allowed = {"name", "thumb_fid", "thumb_url", "auto_keys", "excluded",
                    "kind", "episode_map", "updated_at", "scanned_at", "scan_created"}
 
@@ -423,7 +423,7 @@ class GroupStore:
 
     async def add_members(self, gid, items, auto_keys=(), unexclude=True,
                           scanned_at=0):
-        """Group में files जोड़ो (idempotent) — `$addToSet` जैसा, पर Python में।"""
+        """Add files to a group (idempotent) — like `$addToSet`, but in Python."""
         def _run():
             g = self._get(gid)
             if not g:
@@ -451,7 +451,7 @@ class GroupStore:
         return await asyncio.to_thread(_run)
 
     async def rename_member(self, gid, fid, name):
-        """File editor में नाम बदले तो group की `files[].name` भी ताज़ा रहे।"""
+        """Keep `files[].name` in sync when the file editor renames a file."""
         def _run():
             g = self._get(gid)
             if not g:
@@ -466,7 +466,7 @@ class GroupStore:
         return await asyncio.to_thread(_run)
 
     async def remove_member(self, gid, fid, exclude=True):
-        """Group से file निकालो + blacklist ताकि auto-key उसे वापस न जोड़े।"""
+        """Remove a file from a group and blacklist it so auto-key cannot re-add it."""
         def _run():
             g = self._get(gid)
             if not g:
@@ -487,14 +487,14 @@ class GroupStore:
         return await asyncio.to_thread(_run)
 
     async def delete(self, gid):
-        """Group हटाओ — files नहीं हटतीं, बस ungroup हो जाती हैं।"""
+        """Delete a group — files are only ungrouped, never removed."""
         def _run():
             old = self._delete(gid)
             return list((old or {}).get("members") or [])
         return await asyncio.to_thread(_run)
 
     async def pull_files(self, ids, exclude=False):
-        """Deleted files को सब groups से हटाओ (file editor delete पर)।"""
+        """Remove deleted files from every group (used by the file editor delete)."""
         def _run():
             s = {str(i) for i in ids if i}
             changed = []
@@ -513,7 +513,7 @@ class GroupStore:
         return await asyncio.to_thread(_run)
 
     async def cleanup_empty(self):
-        """2 से कम members वाले groups मिटाओ (ek file ka group बेकार है)।"""
+        """Drop groups with fewer than 2 members (a one-file group is useless)."""
         def _run():
             gone = []
             for g in self._all():
@@ -524,7 +524,7 @@ class GroupStore:
         return await asyncio.to_thread(_run)
 
     async def merge(self, source, target):
-        """Source group की सारी files/auto_keys target में; source हट जाता है।"""
+        """Move all files/auto_keys from the source group into the target; drop the source."""
         src = await self.get(source)
         tgt = await self.get(target)
         if not src or not tgt:
@@ -536,9 +536,9 @@ class GroupStore:
         await self.delete(str(src["_id"]))
         return await self.get(target)
 
-    # ── file collection helpers (fsv1 में सिर्फ़ एक collection) ────────────
+    # ── file collection helpers (fsv1 has just one collection) ────────────
     async def mark_files(self, ids, gid):
-        """हर file doc पर `group_id` mark / unset — v5 का `_mark_files`।"""
+        """Mark / unset `group_id` on every file document — v5's `_mark_files`."""
         ids = [str(i) for i in ids if i]
         if not ids:
             return 0
@@ -556,7 +556,7 @@ class GroupStore:
         return await asyncio.to_thread(_run)
 
     async def files_by_ids(self, ids):
-        """Group के सारे members के पूरे docs — चाहे search page पर हों या न हों।"""
+        """Full documents for all group members, even those not on the current page."""
         ids = [str(i) for i in ids if i]
         if not ids:
             return []
@@ -572,7 +572,7 @@ class GroupStore:
         return await asyncio.to_thread(_run)
 
     async def scan_files(self, limit=20000):
-        """Scan-all के लिए हल्का `{_id, file_name, group_id}` list।"""
+        """Lightweight `{_id, file_name, group_id}` list used by scan-all."""
         def _run():
             col = file_collection()
             if col is None:
@@ -590,7 +590,7 @@ class GroupStore:
         return await asyncio.to_thread(_run)
 
     async def kind_counts(self):
-        # /stats: कितने quality groups, कितने series groups, कुल कितने episodes
+        # /stats: number of quality groups, series groups and episodes in total
         def _run():
             out = {"quality_groups": 0, "episode_groups": 0, "episodes_total": 0}
             for d in self._all():

@@ -1,18 +1,18 @@
 """🗂️ PERMANENT GROUP APIs + group-first search cards.
 
-v5 (`JoneySin/v5` → `web/search_api.py` + `web/dashboard_routes.py`) से **समझकर**
-fsv1 के लिए दोबारा बनाया — verbatim copy नहीं, कोई `COLLECTIONS`/primary/cloud/
-archive/section नहीं, fsv1 की एक ही collection + sync PyMongo + shared
-`.vcard`/filter components बरकरार।
+Rebuilt for fsv1 after **studying** v5 (`JoneySin/v5` → `web/search_api.py` +
+`web/dashboard_routes.py`) — not a verbatim copy, no `COLLECTIONS`/primary/cloud/
+archive/section, and fsv1 keeps its single collection, sync PyMongo and shared
+`.vcard`/filter components.
 
-Endpoints (सब admin-only, सिवाय group poster पढ़ने के):
-  GET  /api/group/list?q=                group search (नाम / #number)
-  POST /api/group/save                   नया permanent group YA मौजूदा में files जोड़ो
-  POST /api/group/update                 नाम / master thumbnail बदलो
-  POST /api/group/remove_file            group से file निकालो (+ blacklist)
-  POST /api/group/delete                 ungroup (files नहीं हटतीं)
+Endpoints (all admin-only except reading a group poster):
+  GET  /api/group/list?q=                group search (name / #number)
+  POST /api/group/save                   new permanent group OR add files to an existing one
+  POST /api/group/update                 change name / master thumbnail
+  POST /api/group/remove_file            remove a file from a group (+ blacklist)
+  POST /api/group/delete                 ungroup (files are not deleted)
   POST /api/group/merge                  source group → target group number
-  POST /api/group/scan_all               पूरी library scan → permanent groups
+  POST /api/group/scan_all               scan the whole library → permanent groups
   GET  /api/group/scan_status            scan progress
   POST /api/group/upload_thumb           custom group poster (multipart)
   GET  /api/group/thumb?gid=             custom group poster bytes
@@ -43,7 +43,7 @@ group_routes = web.RouteTableDef()
 
 _STORAGE_CHANNEL = getattr(_info, "CATALOG_STORAGE_CHANNEL", BIN_CHANNEL)
 _MAX_UPLOAD = 5 * 1024 * 1024
-SCAN_MAX_GROUP = 30          # इससे बड़ा bucket = बहुत आम नाम, group मत बनाओ
+SCAN_MAX_GROUP = 30          # a larger bucket is a very common name — do not group it
 SCAN_STATE = {"running": False}
 
 
@@ -71,14 +71,14 @@ async def _body(req):
 
 
 def _fid(value) -> str:
-    """User input → safe id. `file_edit_routes._file_id()` वाला ही whitelist —
+    """User input → safe id. Same whitelist as `file_edit_routes._file_id()` —
     Telegram file_ids + fsv1 short ids; URL/control/markup chars reject."""
     fid = str(value or "").strip()
     return fid[:512] if re.fullmatch(r"[A-Za-z0-9_\-=]{1,512}", fid) else ""
 
 
 def _items(data):
-    """`items:[{id,name}]` → unique `(fid, name)` pairs. कभी raw dict DB में नहीं।"""
+    """`items:[{id,name}]` → unique `(fid, name)` pairs. Raw dicts never reach the DB."""
     out, seen = [], set()
     for x in data.get("items") or []:
         if not isinstance(x, dict):
@@ -105,14 +105,14 @@ def _group_public(g):
         "thumb_fid": str(g.get("thumb_fid") or ""),
         "thumb_url": str(g.get("thumb_url") or ""),
         "auto_created": bool(g.get("auto_created")),
-        # 🧮 type/episode गिनती का एक ही source `database/group_db.py`
+        # 🧮 `database/group_db.py` is the single source for type/episode counts
         **group_kind_meta(g),
         "updated_at": int(g.get("updated_at") or 0),
     }
 
 
 def _group_thumb_url(g, variants):
-    """Master thumbnail: custom upload > चुना हुआ member > सबसे बड़ी quality।"""
+    """Master thumbnail: custom upload > selected member > highest quality."""
     gid = str(g.get("_id") or "")
     ts = int(g.get("updated_at") or 0)
     custom = str(g.get("thumb_url") or "")
@@ -128,18 +128,18 @@ def _group_thumb_url(g, variants):
 
 
 # ─────────────────────────────────────────────────────────────
-# 🎴 GROUP-FIRST SEARCH — page के cards को groups में बदलो
+# 🎴 GROUP-FIRST SEARCH — turn the page's cards into groups
 # ─────────────────────────────────────────────────────────────
 async def group_cards(cards, normalize=None, auto_join=True):
-    """Normalized card dicts → वही list, पर 2+ वाले buckets एक group card बनते हैं।
+    """Normalized card dicts → the same list, but buckets of 2+ become one group card.
 
     * Saved group (`members`/`auto_keys`) → **permanent** group card, `gid` + `num`,
-      और group के **सारे** members variants में (चाहे वो इस page पर न हों)।
-    * Same-title unsaved bucket → auto group card (`manual:false`), admin के लिए
-      "Save as Group" action — click करते ही permanent हो जाता है।
-    * `auto_join`: किसी saved group की `auto_keys` से मिलती नई file तुरंत DB में
-      जुड़ जाती है (v5 का `_persist_joins`) — `excluded` file वापस नहीं आती।
-    * Input dicts mutate नहीं होते; ranking बरकरार (group पहली file की जगह)।
+      and **every** group member appears as a variant (even off-page ones).
+    * Same-title unsaved bucket → auto group card (`manual:false`) with a
+      "Save as Group" action for admins — clicking makes it permanent.
+    * `auto_join`: a new file matching a saved group's `auto_keys` is joined in
+      the DB immediately (v5's `_persist_joins`) — an `excluded` file stays out.
+    * Input dicts are not mutated; ranking is preserved (the group takes the first file's slot).
     """
     cards = list(cards or [])
     if not cards:
@@ -162,7 +162,7 @@ async def group_cards(cards, normalize=None, auto_join=True):
         for k in (g.get("auto_keys") or []):
             key2g.setdefault(str(k), g)
 
-    # 🆕 नई quality (same title) → saved group में auto-join
+    # 🆕 New quality (same title) → auto-join the saved group
     joins = defaultdict(list)
     if auto_join:
         for c in cards:
@@ -179,7 +179,7 @@ async def group_cards(cards, normalize=None, auto_join=True):
             await store.add_members(gid, items)
             await store.mark_files([i for i, _ in items], gid)
         if joins:
-            # ताज़ा group docs दोबारा लें ताकि variants नये members सहित दिखें
+            # Re-read the group docs so variants include the newly added members
             fresh = await store.by_members(ids)
             fresh += await store.by_keys(sorted(keys))
             groups = list({str(g.get("_id")): g for g in fresh}.values())
@@ -188,7 +188,7 @@ async def group_cards(cards, normalize=None, auto_join=True):
                 for m in (g.get("members") or []):
                     owner[str(m)] = g
 
-    # Saved group के बाकी members (जो इस page पर नहीं मिले) DB से लाओ
+    # Load the remaining members of saved groups (not found on this page) from the DB
     needed = []
     have = set(ids)
     for g in groups:
@@ -249,8 +249,8 @@ async def group_cards(cards, normalize=None, auto_join=True):
             v["qh"] = h
             v["gid"] = str(g["_id"]) if g else ""
             v["gnum"] = g.get("num", "") if g else ""
-        # 🎞️ एक ही फाइल की qualities ⇄ 📺 सीरीज के अलग episodes
-        # Saved group पर admin की चुनी `kind`; auto bucket पर नामों से अंदाज़ा।
+        # 🎞️ qualities of one file ⇄ 📺 separate episodes of a series
+        # For a saved group use the admin's chosen `kind`; guess from names for auto buckets.
         if g:
             gkind = normal_kind(g.get("kind"))
             emap = clean_episode_map(g.get("episode_map"))
@@ -261,8 +261,8 @@ async def group_cards(cards, normalize=None, auto_join=True):
             chips, episodes = episode_chips(variants, emap)
             variants.sort(key=lambda v: episode_label(v.get("el"), 0)[1])
             qualities = 0
-            # 📺 हर episode का अपना अलग duration होता है → group पर एक
-            #    duration दिखाना गलत है। Individual `.vcard` पर दिखेगा।
+            # 📺 Every episode has its own duration → showing one duration
+            #    on the group would be wrong. It appears on each individual `.vcard`.
             duration = ""
         else:
             variants.sort(key=lambda v: v["qh"])
@@ -279,9 +279,9 @@ async def group_cards(cards, normalize=None, auto_join=True):
                     chips.append(seen[lab])
             episodes = 0
             qualities = len(variants)
-            # 🎞️ एक ही फाइल की अलग-अलग qualities ⇒ duration सबका एक जैसा।
-            #    अगर कभी अलग पड़ जाएँ तो सबसे आम (mode) duration चुनें,
-            #    किसी एक random file का नहीं।
+            # 🎞️ Different qualities of one file ⇒ all durations are the same.
+            #    If they ever differ, pick the most common (mode) duration,
+            #    never a random file's value.
             durs = [str(v.get("duration") or "").strip() for v in variants]
             durs = [x for x in durs if x]
             duration = max(set(durs), key=durs.count) if durs else ""
@@ -302,12 +302,12 @@ async def group_cards(cards, normalize=None, auto_join=True):
             "nkey": "" if g else value[2:],
             "name": title,
             "count": len(variants),
-            # ⚠️ कोई "VIDEO"/"FILE" टाइप chip नहीं — shared `.vcard` की तरह
-            #    group thumbnail पर भी सिर्फ़ quality/res/duration/group meta।
-            # ⚠️ group card पर किसी एक फाइल का SIZE कभी नहीं — members के
-            #    अलग-अलग size होते हैं (expand पर हर `.vcard` पर अपना size)।
-            #    DURATION सिर्फ़ qualities-group पर: एक ही फाइल है तो साझा
-            #    duration सही है; series/episode group पर खाली रहता है।
+            # ⚠️ No "VIDEO"/"FILE" type chip — just like the shared `.vcard`,
+            #    group thumbnails show only quality/res/duration/group meta.
+            # ⚠️ A single file's SIZE never appears on a group card — members have
+            #    different sizes (each `.vcard` shows its own on expand).
+            #    DURATION only on qualities groups: one file ⇒ a shared duration
+            #    is correct; series/episode groups leave it empty.
             "duration": duration,
             "kind": gkind,
             "qualities": qualities,
@@ -322,7 +322,7 @@ async def group_cards(cards, normalize=None, auto_join=True):
 
 
 def filter_group_cards(cards, mode):
-    """`group` = सिर्फ़ group cards, `ungroup` = सिर्फ़ अकेली files, `all` = सब।"""
+    """`group` = group cards only, `ungroup` = single files only, `all` = everything."""
     if mode == "group":
         return [c for c in cards if c.get("group")]
     if mode == "ungroup":
@@ -347,10 +347,10 @@ async def api_group_list(req):
 
 @group_routes.post("/api/group/save")
 async def api_group_save(req):
-    """नया group (नया number) YA मौजूदा `group_id` में files जोड़ो।
+    """Create a new group (new number) OR add files to an existing `group_id`.
 
-    Jo file किसी और group में थी, वहाँ से निकलकर **blacklist** (`excluded`)
-    हो जाती है ताकि auto-key उसे वापस न ले जाए — v5 का यही नियम है।
+    A file that belonged to another group is removed from it and **blacklisted**
+    (`excluded`) so auto-key cannot bring it back — the same rule as v5.
     """
     if not await _admin(req):
         return _denied()
@@ -359,34 +359,34 @@ async def api_group_save(req):
         return err
     items = _items(data)
     if not items:
-        return _json({"ok": False, "error": "कोई file select नहीं हुई"}, 400)
+        return _json({"ok": False, "error": "No files selected"}, 400)
     gid = _fid(data.get("group_id") or "")
     name = str(data.get("name") or "").strip()[:200]
     auto_keys = sorted({title_key(n) for _, n in items if title_key(n)})
     raw_kind = data.get("kind")
     kind = normal_kind(raw_kind) if raw_kind else guess_kind([n for _, n in items])
     raw_emap = data.get("episode_map")
-    # ⚠️ Side-effect (बाकी groups से निकालना) से पहले target मौजूद है या नहीं देखो
+    # ⚠️ Check that the target exists before any side effect (removing from other groups)
     if gid and not await store.get(gid):
-        return _json({"ok": False, "error": "Group नहीं मिला"}, 404)
+        return _json({"ok": False, "error": "Group not found"}, 404)
     if not gid and not name:
-        return _json({"ok": False, "error": "Group का नाम लिखिए"}, 400)
+        return _json({"ok": False, "error": "Enter a group name"}, 400)
 
-    # पहले इन files को बाकी सब groups से निकालो (excluded = वापस न जुड़ें)
+    # First remove these files from all other groups (excluded = never rejoin)
     fids = [i for i, _ in items]
     await store.pull_files(fids, exclude=True)
     if gid:
         g = await store.add_members(gid, items, auto_keys=auto_keys)
-        # ✏️ Edit modal से मौजूदा group में files जोड़ते वक्त नया नाम भी आता है।
-        #    पहले इसे ignore कर दिया जाता था → rename कभी DB में नहीं पहुँचता था।
-        #    खाली नाम = कोई rename नहीं (किसी दूसरे group में सिर्फ़ files जोड़ना)।
+        # ✏️ Adding files to an existing group from the Edit modal also sends a new name.
+        #    It used to be ignored, so a rename never reached the database.
+        #    An empty name = no rename (just adding files to another group).
         upd = {}
         if name and name != str(g.get("name") or ""):
             upd["name"] = name
-        # Type न भेजा हो तो group की मौजूदा पसंद बरकरार रखें।
+        # If no type is sent, keep the group's existing choice.
         if raw_kind is None:
             kind = normal_kind(g.get("kind"))
-        # Edit modal से group type भी बदल सकता है (qualities ⇄ episodes)
+        # The Edit modal can also change the group type (qualities ⇄ episodes)
         if raw_kind is not None or "episode_map" in data:
             upd["kind"] = kind
             if "episode_map" in data:
@@ -407,7 +407,7 @@ async def api_group_save(req):
 
 @group_routes.post("/api/group/update")
 async def api_group_update(req):
-    """नाम / master thumbnail बदलो। `thumb_file_id:''` = AUTO (highest quality)।"""
+    """Change the name / master thumbnail. `thumb_file_id:''` = AUTO (highest quality)."""
     if not await _admin(req):
         return _denied()
     data, err = await _body(req)
@@ -416,21 +416,21 @@ async def api_group_update(req):
     gid = _fid(data.get("group_id"))
     g = await store.get(gid)
     if not g:
-        return _json({"ok": False, "error": "Group नहीं मिला"}, 404)
+        return _json({"ok": False, "error": "Group not found"}, 404)
     fields = {}
     if "name" in data:
         name = str(data.get("name") or "").strip()[:200]
         if not name:
-            return _json({"ok": False, "error": "नाम खाली नहीं हो सकता"}, 400)
+            return _json({"ok": False, "error": "Name cannot be empty"}, 400)
         fields["name"] = name
     if "thumb_file_id" in data:
         tf = _fid(data.get("thumb_file_id"))
-        # सिर्फ़ उसी group का member master thumbnail बन सकता है
+        # Only a member of this group can become its master thumbnail
         if tf and tf not in {str(m) for m in (g.get("members") or [])}:
-            return _json({"ok": False, "error": "ये file इस group में नहीं है"}, 400)
+            return _json({"ok": False, "error": "This file is not in the group"}, 400)
         fields["thumb_fid"] = tf
         if tf:
-            fields["thumb_url"] = ""       # custom upload हटाकर member चुन लिया
+            fields["thumb_url"] = ""       # remove the custom upload, use the selected member
     if data.get("auto_keys"):
         fields["auto_keys"] = sorted({title_key(k) for k in data["auto_keys"] if title_key(k)})
     if data.get("clear_custom"):
@@ -438,7 +438,7 @@ async def api_group_update(req):
     if "kind" in data:
         k = str(data.get("kind") or "").strip().lower()
         if k not in (KIND_QUALITIES, KIND_EPISODES):
-            return _json({"ok": False, "error": "Group type गलत है"}, 400)
+            return _json({"ok": False, "error": "Invalid group type"}, 400)
         fields["kind"] = k
     if "episode_map" in data:
         fields["episode_map"] = clean_episode_map(data.get("episode_map"))
@@ -458,7 +458,7 @@ async def api_group_remove_file(req):
         return _json({"ok": False, "error": "Missing inputs"}, 400)
     g = await store.remove_member(gid, fid)
     if not g:
-        return _json({"ok": False, "error": "Group नहीं मिला"}, 404)
+        return _json({"ok": False, "error": "Group not found"}, 404)
     await store.mark_files([fid], "")
     await store.cleanup_empty()
     return _json({"ok": True, "group": _group_public(g)})
@@ -466,7 +466,7 @@ async def api_group_remove_file(req):
 
 @group_routes.post("/api/group/delete")
 async def api_group_delete(req):
-    """Ungroup — सिर्फ़ group मिटता है, files नहीं (वो फिर auto-group में जा सकती हैं)।"""
+    """Ungroup — only the group is deleted, not the files (they can auto-group again)."""
     if not await _admin(req):
         return _denied()
     data, err = await _body(req)
@@ -474,7 +474,7 @@ async def api_group_delete(req):
         return err
     gid = _fid(data.get("group_id"))
     if not await store.get(gid):
-        return _json({"ok": False, "error": "Group नहीं मिला"}, 404)
+        return _json({"ok": False, "error": "Group not found"}, 404)
     members = await store.delete(gid)
     await store.mark_files(members, "")
     return _json({"ok": True, "removed": len(members)})
@@ -482,7 +482,7 @@ async def api_group_delete(req):
 
 @group_routes.post("/api/group/merge")
 async def api_group_merge(req):
-    """Source group की सारी files + auto_keys → target group number; source हटता है।"""
+    """Move all files + auto_keys of the source group into the target number; drop the source."""
     if not await _admin(req):
         return _denied()
     data, err = await _body(req)
@@ -491,11 +491,11 @@ async def api_group_merge(req):
     src = _fid(data.get("source"))
     tgt = _fid(str(data.get("target") or "").strip().lstrip("#"))
     if not src or not tgt:
-        return _json({"ok": False, "error": "Group number लिखिए"}, 400)
+        return _json({"ok": False, "error": "Enter a group number"}, 400)
     if src == tgt:
-        return _json({"ok": False, "error": "उसी group में merge नहीं हो सकता"}, 400)
+        return _json({"ok": False, "error": "Cannot merge a group into itself"}, 400)
     if not await store.get(src) or not await store.get(tgt):
-        return _json({"ok": False, "error": "Source/target group नहीं मिला"}, 404)
+        return _json({"ok": False, "error": "Source or target group not found"}, 404)
     merged = await store.merge(src, tgt)
     await store.mark_files([str(m) for m in (merged.get("members") or [])], tgt)
     await store.cleanup_empty()
@@ -505,11 +505,11 @@ async def api_group_merge(req):
 
 
 # ─────────────────────────────────────────────────────────────
-# ⚙️ SCAN ALL — पूरी library से permanent groups बनाओ (idempotent)
+# ⚙️ SCAN ALL — build permanent groups from the whole library (idempotent)
 # ─────────────────────────────────────────────────────────────
 async def _scan_all_groups():
     st = SCAN_STATE
-    st.update(running=True, phase="groups load ho rahe hain", scanned=0, total=0,
+    st.update(running=True, phase="Loading groups", scanned=0, total=0,
               created=0, added=0, skipped_big=0, skipped_keys=[], fixed_marks=0,
               existing_groups=0, multi_buckets=0, error="", started=time.time(),
               finished=0)
@@ -526,7 +526,7 @@ async def _scan_all_groups():
 
         docs = await store.scan_files()
         st["total"] = len(docs)
-        st["phase"] = "files scan ho rahe hain"
+        st["phase"] = "Scanning files"
         buckets = defaultdict(list)
         fix_set, fix_unset = defaultdict(list), []
         for d in docs:
@@ -543,7 +543,7 @@ async def _scan_all_groups():
             if st["scanned"] % 2000 == 0:
                 await asyncio.sleep(0)
 
-        st["phase"] = "groups tay ho rahe hain"
+        st["phase"] = "Building groups"
         now = int(time.time())
         for k, items in buckets.items():
             g = key2g.get(k)
@@ -576,7 +576,7 @@ async def _scan_all_groups():
             fix_set[str(g["_id"])].extend(i for i, _ in cand)
             st["created"] += 1
 
-        st["phase"] = "files par group_id mark ho raha hai"
+        st["phase"] = "Marking files with group_id"
         for gid, ids in fix_set.items():
             if ids:
                 await store.mark_files(ids, gid)
@@ -616,7 +616,7 @@ async def api_group_scan_status(req):
 
 
 # ─────────────────────────────────────────────────────────────
-# 🖼️ MASTER THUMBNAIL — custom upload / member चुनना / serve
+# 🖼️ MASTER THUMBNAIL — custom upload / pick a member / serve
 # ─────────────────────────────────────────────────────────────
 @group_routes.post("/api/group/upload_thumb")
 async def api_group_upload_thumb(req):
@@ -636,12 +636,12 @@ async def api_group_upload_thumb(req):
     except Exception as e:
         return _json({"ok": False, "error": f"Bad upload: {e}"}, 400)
     if not gid or not await store.get(gid):
-        return _json({"ok": False, "error": "Group नहीं मिला"}, 404)
+        return _json({"ok": False, "error": "Group not found"}, 404)
     if not raw or len(raw) > _MAX_UPLOAD or not is_image_magic(raw):
-        return _json({"ok": False, "error": "सिर्फ़ JPG/PNG/WEBP, अधिकतम 5 MB"}, 400)
+        return _json({"ok": False, "error": "JPG/PNG/WEBP only, up to 5 MB"}, 400)
     bot = getattr(temp, "BOT", None)
     if bot is None:
-        return _json({"ok": False, "error": "Bot अभी ready नहीं"}, 503)
+        return _json({"ok": False, "error": "The bot is not ready yet"}, 503)
     try:
         import io
         buf = io.BytesIO(raw)
@@ -652,9 +652,9 @@ async def api_group_upload_thumb(req):
         tid = sizes[-1].file_id if sizes else getattr(photo, "file_id", "")
     except Exception as e:
         logger.warning(f"group thumb upload failed: {e}")
-        return _json({"ok": False, "error": "Telegram upload fail हुआ"}, 502)
+        return _json({"ok": False, "error": "Telegram upload failed"}, 502)
     if not tid:
-        return _json({"ok": False, "error": "Thumbnail file_id नहीं मिला"}, 502)
+        return _json({"ok": False, "error": "No thumbnail file_id returned"}, 502)
     g = await store.update(gid, {"thumb_url": "TG_ID:" + str(tid), "thumb_fid": ""})
     return _json({"ok": True, "group": _group_public(g),
                   "thumb": f"/api/group/thumb?gid={gid}&v={thumb_version(gid, 'TG_ID:' + str(tid))}"})

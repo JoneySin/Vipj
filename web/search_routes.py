@@ -1,9 +1,9 @@
 """🔍 Web file search + 📸 real thumbnails + ▶ signed streaming links.
 
-Login के बाद `/search` पर:
-  * `/api/search`  → DB (text + regex) search, "Recently Added" भी
-  * `/api/thumb`   → असली Telegram thumbnail (cache + backfill)
-  * `/api/stream`  → BIN_CHANNEL में cached media → signed /watch + /download link
+After login, `/search` provides:
+  * `/api/search`  → DB (text + regex) search, including "Recently Added"
+  * `/api/thumb`   → real Telegram thumbnails (cache + backfill)
+  * `/api/stream`  → cached media in BIN_CHANNEL → signed /watch + /download links
 """
 
 import html
@@ -33,32 +33,32 @@ from web.thumb_engine import get_thumb, image_content_type, thumb_version, thumb
 logger = logging.getLogger(__name__)
 search_routes = web.RouteTableDef()
 
-# file_id -> (BIN_CHANNEL message_id, expiry). Ek hi file par baar-baar
-# click karne par nayi message na bhej kar purani signed link re-sign होती है।
+# file_id -> (BIN_CHANNEL message_id, expiry). Repeated clicks on the same file
+# Clicking re-signs the existing link instead of sending a new message.
 _STREAM_CACHE = {}
 
 # ── Group / UnGroup filter ─────────────────────────────────────────
-# अब groups **permanent** हैं (`database/group_db.py`): DB में group_id/num,
-# members, auto_keys, excluded. Title key भी उसी module में एक जगह से आती है,
-# इसलिए search filter, scan-all और नई-quality auto-join एक ही नियम चलाते हैं।
-# बड़े DB पर पूरा scan न हो इसलिए Group/UnGroup पेज पर अधिकतम इतने docs.
+# Groups are now **permanent** (`database/group_db.py`): group_id/num,
+# members, auto_keys and excluded live in the DB. The title key also comes from
+# that one module, so the search filter, scan-all and new-quality auto-join all
+# follow the same rule. Cap the Group/UnGroup page to this many docs on large DBs.
 _GROUP_SCAN_LIMIT = 500
 
 
 async def _group_page(q: str, offset: int, limit: int, mode: str):
-    """Group / UnGroup — पेज = **cards**, group membership पूरे query set पर।
+    """Group / UnGroup — pages are **cards**, membership covers the whole query set.
 
-    सिर्फ़ file_name/_id/quality जैसा हल्का metadata पढ़ता है — कोई image
-    bytes, कोई server-side thumbnail/RAM cache नहीं. Saved groups के सारे
-    members `group_cards()` DB से लाता है, चाहे वे scan में न हों।
+    Reads only lightweight metadata such as file_name/_id/quality — no image
+    bytes and no server-side thumbnail/RAM cache. `group_cards()` loads every
+    member of saved groups from the DB, even when it is outside the scan.
     """
     if q:
         scan, _, _ = await get_search_results(q, 0, _GROUP_SCAN_LIMIT)
     else:
         scan, _, _ = await get_recent_files(0, _GROUP_SCAN_LIMIT)
     cards = await group_cards([_result(d) for d in scan], normalize=_result)
-    # Permanent group में अलग-अलग नाम की files हो सकती हैं → title-count से
-    # नहीं, बल्कि तैयार group/single card से फ़िल्टर करो.
+    # A permanent group can contain files with different names → filter using the
+    # prepared group/single cards rather than a title count.
     matched = filter_group_cards(cards, mode)
     total = len(matched)
     page = matched[offset:offset + limit]
@@ -68,14 +68,14 @@ async def _group_page(q: str, offset: int, limit: int, mode: str):
 
 def _thumb_url(doc) -> str:
     fid = str(doc.get("_id") or "")
-    # v5 की तरह पूरे thumb_url ("TG_ID:...") का hash — ID बदले तो URL भी बदले
+    # Like v5, hash the whole thumb_url ("TG_ID:...") — changing the id changes the URL
     thumb_ref = str(doc.get("thumb_url") or doc.get("thumb_file_id") or "")
     v = thumb_version(fid, thumb_ref)
     return f"/api/thumb?file_id={quote(fid, safe='')}&v={v}"
 
 
 def _result(doc) -> dict:
-    """🎴 card payload = shared `vcard_meta()` + इस page के extra fields."""
+    """🎴 card payload = shared `vcard_meta()` + this page's extra fields."""
     out = vcard_meta(doc)
     out["thumb"] = _thumb_url(doc)
     out["caption"] = str(doc.get("caption") or "")[:300]
@@ -119,7 +119,7 @@ async def api_search(req):
         group_mode = "all"
     try:
         if group_mode != "all":
-            # पहले से grouped cards (offset = card index)
+            # Already grouped cards (offset = card index)
             results, next_offset, total = await _group_page(q, offset, limit, group_mode)
         else:
             if q:
@@ -127,7 +127,7 @@ async def api_search(req):
             else:
                 docs, next_offset, total = await get_recent_files(offset, limit)
             # 🎴 Permanent groups + same-title buckets → group-first cards.
-            # Saved group के सारे members DB से आते हैं, offset raw-file रहता है.
+            # Every member of a saved group comes from the DB; offset stays raw-file based.
             results = await group_cards([_result(d) for d in docs], normalize=_result)
     except Exception as e:
         logger.error(f"Web search failed (q={q!r}, group={group_mode}): {e}")
@@ -155,8 +155,8 @@ async def api_thumb(req):
         return web.Response(status=400)
     retry = req.query.get("retry", "false").lower() == "true"
 
-    # 🧠 Browser cache: server पर कोई RAM/DB cache नहीं। Poster ब्राउज़र की
-    # अपनी memory/disk में रहेगा; `v` (thumb_url का hash) बदले तो ETag बदलेगा।
+    # 🧠 Browser cache: there is no RAM/DB cache on the server. The poster lives
+    # in the browser's own memory/disk cache; changing `v` changes the ETag.
     etag = f'"{req.query.get("v") or thumb_version(fid)}"'
     cache_headers = {
         "Cache-Control": f"private, max-age={THUMB_BROWSER_CACHE}",
@@ -167,8 +167,8 @@ async def api_thumb(req):
 
     data = await get_thumb(fid, retry=retry)
     if not data:
-        # 🆕 v5 जैसा serial warmup: पहली बार ID अभी निकल रही है (एक-एक करके)।
-        # 404 cache न हो, browser को पता चले कि थोड़ी देर बाद retry करना है।
+        # 🆕 v5-style serial warmup: a first-time id is being fetched (one at a time).
+        # Do not cache the 404 — the browser should know to retry shortly.
         state = await thumb_state(fid)
         headers = {"Cache-Control": "no-store", "X-Thumb-State": state}
         if state in ("queued", "missing"):
@@ -197,7 +197,7 @@ def _prune_stream_cache():
 
 
 async def _tunnel_stream(fid: str, doc: dict) -> dict:
-    """BIN_CHANNEL में file भेजकर signed watch/download URLs बनाओ।"""
+    """Send the file to BIN_CHANNEL and build signed watch/download URLs."""
     now = time.time()
     hit = _STREAM_CACHE.get(fid)
     if hit and hit[1] > now + 60:
@@ -222,7 +222,7 @@ async def _tunnel_stream(fid: str, doc: dict) -> dict:
         "name": str(doc.get("file_name") or "Untitled"),
         "watch": watch,
         "download": download,
-        "stream": download,          # <video src> के लिए यही Range-enabled URL
+        "stream": download,          # this is the Range-enabled URL for <video src>
         "poster": poster,
         "expires_in": ttl,
     }
@@ -250,7 +250,7 @@ async def api_stream(req):
     except Exception as e:
         logger.error(f"Stream setup failed for {fid[:16]}: {e}")
         return web.json_response(
-            {"error": "Stream link नहीं बन सकी। थोड़ी देर बाद फिर ट्राय करें।"},
+            {"error": "Could not create a stream link. Please try again shortly."},
             status=503,
         )
 

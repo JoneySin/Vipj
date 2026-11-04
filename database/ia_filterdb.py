@@ -70,7 +70,7 @@ def ensure_indexes(col) -> None:
             col.create_index([("updated_at", ASCENDING)], name="updated_at_idx")
             logger.info("✅ Updated_at index created")
 
-        # 🗂️ Permanent groups: sparse group_id — सिर्फ़ grouped files पर index
+        # 🗂️ Permanent groups: sparse group_id — indexed only for grouped files
         if "group_id_idx" not in indexes:
             try:
                 from pymongo import ASCENDING as _ASC
@@ -84,18 +84,18 @@ def ensure_indexes(col) -> None:
 
 ensure_indexes(collection)
 
-# Web UI के लिए extra fields (thumbnail, duration, dimensions) — search projection
-# में इन्हें शामिल करने से हर result के लिए अलग DB query नहीं लगती।
+# Extra fields for the web UI (thumbnail, duration, dimensions) — including them in
+# the search projection avoids a separate DB query for every result.
 WEB_EXTRA_FIELDS = {
     "thumb_url": 1,        # v5 format: "TG_ID:<telegram_thumb_file_id>"
-    "thumb_file_id": 1,    # पुराने indexed docs के लिए read-compat alias
-    "thumb_source": 1,     # "web" = admin ने custom poster upload किया
+    "thumb_file_id": 1,    # read-compatibility alias for older indexed documents
+    "thumb_source": 1,     # "web" = an admin uploaded a custom poster
     "duration": 1,
     "file_type": 1,
     "mime_type": 1,
     "width": 1,
     "height": 1,
-    "group_id": 1,      # 🗂️ permanent group का id (sparse; सब files पर नहीं)
+    "group_id": 1,      # 🗂️ permanent group id (sparse; not present on every file)
 }
 
 # =====================================================
@@ -184,7 +184,7 @@ async def get_search_results(
     
     q_lower = q.lower()
     
-    # Check cache (limit भी key में — web pagination अलग limit माँग सकती है)
+    # Check the cache (the limit is part of the key — web pagination may ask for a different one)
     cache_key = f"{q_lower}:{offset}:{max_results}"
     cached = cache_get(cache_key)
     if cached:
@@ -262,10 +262,10 @@ async def get_search_results(
     return result
 
 # =====================================================
-# 🆕 RECENT FILES (खाली query पर web का "Recently Added" grid)
+# 🆕 RECENT FILES (the "Recently Added" grid shown for an empty web query)
 # =====================================================
 async def get_recent_files(offset: int = 0, max_results: int = 30):
-    """Returns: (files, next_offset, total) — get_search_results() जैसा contract."""
+    """Returns (files, next_offset, total) — the same contract as get_search_results()."""
     try:
         docs = await asyncio.to_thread(
             lambda: list(
@@ -288,14 +288,14 @@ async def get_recent_files(offset: int = 0, max_results: int = 30):
 
 
 async def update_file_meta(file_id: str, meta: dict) -> bool:
-    """Thumbnail engine द्वारा मिली real meta (thumb id/duration/dims) backfill."""
+    """Backfill real metadata (thumb id/duration/dimensions) found by the thumbnail engine."""
     if not file_id or not meta:
         return False
     try:
         await asyncio.to_thread(
             collection.update_one, {"_id": file_id}, {"$set": meta}
         )
-        cache_clear()          # search cache me purana doc na rahe
+        cache_clear()          # no stale document in the search cache
         return True
     except Exception as e:
         logger.debug(f"update_file_meta skipped: {e}")
@@ -304,12 +304,12 @@ async def update_file_meta(file_id: str, meta: dict) -> bool:
 
 
 # =====================================================
-# ✏️ WEB FILE EDITOR — v5 के /api/edit_name + /api/delete का fsv1 रूप
+# ✏️ WEB FILE EDITOR — fsv1's take on v5's /api/edit_name + /api/delete
 # =====================================================
-# v5 में 3 अलग collections (primary/cloud/archive) थीं और edit modal file को
-# दूसरी collection में move करता था। fsv1 में ऐसा कोई concept नहीं है, इसलिए
-# collection-move port नहीं किया गया। Raw user dict कभी `$set` में नहीं जाता:
-# सिर्फ़ यही keys allow हैं।
+# v5 had 3 separate collections (primary/cloud/archive) and the edit modal moved a
+# file between them. fsv1 has no such concept, so collection-move was not ported.
+# A raw user dict is never passed to `$set`:
+# only these keys are allowed.
 WEB_EDITABLE_FIELDS = frozenset({
     "file_name", "caption", "quality", "duration", "width", "height",
     "thumb_url", "thumb_file_id", "thumb_source", "is_thumb_permanent",
@@ -318,7 +318,7 @@ WEB_EDITABLE_FIELDS = frozenset({
 
 
 async def get_file_meta(file_id: str) -> Optional[Dict]:
-    """Edit modal prefill के लिए पूरा doc (sync PyMongo को thread में)।"""
+    """Full document for the edit modal prefill (sync PyMongo runs in a thread)."""
     if not file_id:
         return None
     try:
@@ -329,10 +329,10 @@ async def get_file_meta(file_id: str) -> Optional[Dict]:
 
 
 async def update_file_fields(file_id: str, fields: dict) -> Optional[Dict]:
-    """सिर्फ़ whitelisted keys `$set` करो, cache clear करो, ताज़ा doc लौटाओ।
+    """`$set` only whitelisted keys, clear the cache and return the updated document.
 
-    `update_file_meta()` thumbnail engine के लिए है; यह admin editor के लिए है
-    और unknown keys को चुपचाप drop कर देता है (mass-assignment से बचाव)।
+    `update_file_meta()` belongs to the thumbnail engine; this one serves the admin editor
+    and silently drops unknown keys (protection against mass assignment).
     """
     if not file_id:
         return None
@@ -352,7 +352,7 @@ async def update_file_fields(file_id: str, fields: dict) -> Optional[Dict]:
 
 
 async def delete_file_by_id(file_id: str) -> bool:
-    """v5 के /api/delete जैसा — पर exact `_id` से (`delete_many` regex नहीं)।"""
+    """Like v5's /api/delete — but by exact `_id` (no regex `delete_many`)."""
     if not file_id:
         return False
     try:
@@ -473,12 +473,12 @@ def clean_text(text: str) -> str:
 # 💾 SAVE / UPDATE FILE
 # =====================================================
 async def _auto_join_group(file_id: str, file_name: str) -> None:
-    """🗂️ नई quality (same title) → saved PERMANENT group में अपने-आप जुड़े।
+    """🗂️ A new quality (same title) automatically joins the saved PERMANENT group.
 
-    v5 search pipeline में `_persist_joins()` करता था; fsv1 में index-time पर
-    ही कर देते हैं ताकि group Telegram search में भी तुरंत सही रहे। `excluded`
-    (admin ने निकाली हुई file) वापस नहीं आती. Fail-soft: group DB न हो तो
-    indexing रुकनी नहीं चाहिए।
+    v5 called `_persist_joins()` in its search pipeline; fsv1 does it at index time
+    so groups are correct immediately in Telegram search too. Files an admin removed
+    (`excluded`) are not brought back. Fail-soft: indexing must not stop if the group
+    database is unavailable.
     """
     try:
         from database.group_db import title_key, store
@@ -520,19 +520,19 @@ async def save_file(media) -> str:
         # Detect quality
         quality = detect_quality(file_name)
 
-        # 🖼️ REAL THUMBNAIL (v5 जैसा logic): DB में सिर्फ Telegram का thumbnail
-        # **file_id string** save होता है ("TG_ID:...")। Image bytes कभी DB में
-        # नहीं जातीं और न server RAM में cache होती हैं — ब्राउज़र अपने HTTP cache
-        # में रखता है, वरना DB/RAM जल्दी भर जाते हैं।
+            # 🖼️ REAL THUMBNAIL (v5-style logic): only the Telegram thumbnail
+            # **file_id string** is stored in the DB ("TG_ID:..."). Image bytes never
+            # go into the DB or a server RAM cache — the browser caches them over HTTP,
+            # otherwise DB/RAM fills up quickly.
         thumbs = getattr(media, "thumbs", None) or []
         thumb_file_id = thumbs[0].file_id if thumbs else None
         media_meta = {
             "thumb_url": f"TG_ID:{thumb_file_id}" if thumb_file_id else "",
-            "thumb_file_id": thumb_file_id,   # legacy alias (सिर्फ ID, कोई bytes नहीं)
-            # ⚠️ Index-time ID अभी UNVERIFIED है — bytes कभी download/validate नहीं
-            # हुए। `/warmup_thumbs` (या पहली /api/thumb probe) इसे verify करके
-            # `thumb_verified: True` लिखेगा। तब तक fake "NO IMAGE" poster को
-            # final मानकर web पर serve नहीं किया जाता।
+            "thumb_file_id": thumb_file_id,   # legacy alias (just an id, no bytes)
+            # ⚠️ An index-time id is still UNVERIFIED — its bytes have never been
+            # downloaded or validated. `/warmup_thumbs` (or the first /api/thumb probe)
+            # validates it and writes `thumb_verified: True`. Until then a fake
+            # "NO IMAGE" poster is never treated as final or served on the web.
             "thumb_verified": False,
             "duration": int(getattr(media, "duration", 0) or 0),
             "file_type": "video" if type(media).__name__.lower() == "video" else "document",
@@ -560,8 +560,8 @@ async def save_file(media) -> str:
 
         except DuplicateKeyError:
             # File exists, update caption and quality
-            # ⚠️ अगर दोबारा index होने वाले message में thumbnail न हो तो पहले से
-            # save की हुई thumb_url/thumb_file_id को खाली से मिटाएँ नहीं।
+            # ⚠️ If a re-indexed message has no thumbnail, do not wipe the previously
+            # saved thumb_url/thumb_file_id with an empty value.
             fresh_meta = {
                 k: v for k, v in media_meta.items()
                 if v not in (None, "", 0)

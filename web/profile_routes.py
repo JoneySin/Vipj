@@ -1,11 +1,11 @@
-"""⚙️ Profile Settings — JoneySin/v5 के `web/profile_routes.py` जैसा पेज.
+"""⚙️ Profile Settings — a page modelled on JoneySin/v5's `web/profile_routes.py`.
 
-* sidebar में "Profile Settings" लिंक (v5 के NAV_MENU जैसा)।
-* "#5292444428 · ADMIN" identity यहीं Account Status card में दिखती है —
-  v5 में Telegram ID / Admin status प्रोफाइल पर ही होते हैं।
-* Account Info (Telegram ID, email) + Security (नया password), tabs,
-  password show/hide और strength meter — बिल्कुल v5 की तरह।
-* Email / password बदलने का backend fsv1 के WebAuthDB + hash_password पर।
+* a "Profile Settings" link in the sidebar (like v5's NAV_MENU).
+* the "#5292444428 · ADMIN" identity appears here in the Account Status card —
+  in v5 the Telegram ID / admin status also live on the profile only.
+* Account Info (Telegram ID, email) + Security (new password), tabs,
+  password show/hide and a strength meter — just like v5.
+* Email / password changes use fsv1's WebAuthDB + hash_password backend.
 """
 
 import html
@@ -34,7 +34,7 @@ _SVG_EYE_HIDE = ('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" '
                  '<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>'
                  '<line x1="1" y1="1" x2="23" y2="23"/></svg>')
 
-# v5 वाला tab / password-toggle / strength JS (brace-escaping से बचने के लिए अलग string)
+# v5-style tab / password-toggle / strength JS (separate string to avoid brace escaping)
 _PROFILE_JS = f"""<script>
 (function(){{
   var tabs=document.querySelectorAll('.prof-tab'), panels=document.querySelectorAll('.prof-panel');
@@ -82,7 +82,7 @@ async def profile_page(req):
     prof = await web_db.get_profile(tg_id)
     email = str(prof.get("email") or "")
 
-    # v5 जैसा status: admin / premium / free (plan असली DB से)
+    # v5-style status: admin / premium / free (the plan comes from the real DB)
     try:
         mp = await user_db.get_plan(tg_id)
     except Exception:
@@ -145,7 +145,7 @@ async def profile_page(req):
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--mut)" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           <div><div class="info-row-lbl">Password protection</div><div class="info-row-val">Active</div></div>
         </div>
-        <div class="st-sub" style="margin-top:12px">Password बदलने पर सभी पुराने login sessions बंद हो जाएँगे, दोबारा sign in करना होगा।</div>
+        <div class="st-sub" style="margin-top:12px">Changing your password signs you out of all existing sessions. You will need to sign in again.</div>
       </div>
 
       <div class="prof-save-row"><button class="prof-save" type="submit">💾 Save Changes</button></div>
@@ -181,7 +181,7 @@ async def api_update_profile(req):
     except Exception as e:
         return _redirect("/profile", err=f"Update failed: {e}")
 
-    # Password बदला → RAM + DB के सारे sessions बंद (fsv1 के reset flow जैसा)
+    # Password changed → close every session in RAM + DB (fsv1's reset flow)
     if new_pass:
         for key in [k for k, v in temp.USER_SESSIONS.items() if v.get("tg_id") == tg_id]:
             temp.USER_SESSIONS.pop(key, None)

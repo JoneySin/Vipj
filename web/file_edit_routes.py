@@ -1,25 +1,25 @@
-"""✏️ Web **File Editor** — `JoneySin/v5` के "Edit Title Metadata" का fsv1 रूप.
+"""✏️ Web **File Editor** — fsv1's take on `JoneySin/v5`'s "Edit Title Metadata".
 
-v5 `/api/edit_name` + `/api/upload_thumb` + `/api/delete` में ये editable थे:
+v5's `/api/edit_name` + `/api/upload_thumb` + `/api/delete` made these editable:
 
-* `file_name` — टाइटल
-* `caption` — Search Tags (text index में जाता है)
-* `target_collection` — v5 की 3 अलग collections (fsv1 में नहीं है, इसलिए port नहीं किया)
-* Poster thumbnail — Cropper.js से 16:9 crop → Telegram storage channel → `TG_ID:`
+* `file_name` — the title
+* `caption` — Search Tags (feeds the text index)
+* `target_collection` — v5's 3 separate collections (absent in fsv1, so not ported)
+* Poster thumbnail — 16:9 crop via Cropper.js → Telegram storage channel → `TG_ID:`
 * Delete file
 
-fsv1 में एक ही MongoDB collection है और primary/cloud/archive जैसा कोई
-section/concept नहीं है, इसलिए **verbatim copy नहीं** किया — और v5 का
-"Move to collection" control भी **जानबूझकर port नहीं किया**:
+fsv1 has a single MongoDB collection and no primary/cloud/archive `section`
+concept, so this is **not a verbatim copy** — and v5's
+"Move to collection" control was **deliberately not ported**:
 
-* कोई `section` field, कोई collection-move dropdown, कोई `/api/search?section=` नहीं।
-* Cropper.js CDN → **बिल्कुल dependency-free** built-in 16:9 canvas crop (UI में)।
-* Upload `CATALOG_STORAGE_CHANNEL` पर, bytes DB/RAM में कभी नहीं — सिर्फ़ `TG_ID:`
-  string, और `thumb_version()` का hash browser cache bust करता है।
-* Extra fsv1 chips भी editable: `quality`, `duration`, `width`×`height`.
-* कोई `window.location.reload()` — JSON response से card in-place update.
+* no `section` field, no collection-move dropdown, no `/api/search?section=`.
+* Cropper.js CDN → a **fully dependency-free** built-in 16:9 canvas crop (in the UI).
+* Uploads go to `CATALOG_STORAGE_CHANNEL`; bytes never enter the DB/RAM — only a `TG_ID:`
+  string, and `thumb_version()` hashes it to bust the browser cache.
+* Extra fsv1 chips are editable too: `quality`, `duration`, `width`×`height`.
+* No `window.location.reload()` — the card updates in place from the JSON response.
 
-सारे endpoints **admin-only** हैं और हर `$set` key whitelist से होकर जाती है।
+Every endpoint is **admin-only** and each `$set` key passes through a whitelist.
 """
 
 import io
@@ -51,7 +51,7 @@ def _json(data, status=200):
 
 
 def _clean(value, limit=300) -> str:
-    """Control chars / NUL हटाओ — UI `textContent` और DB दोनों के लिए सुरक्षित।"""
+    """Strip control chars / NUL — safe for both UI `textContent` and the DB."""
     text = str(value or "").strip()
     text = "".join(c for c in text if c in "\n\t" or ord(c) >= 32)
     return text[:limit]
@@ -70,7 +70,7 @@ def _fmt_duration(seconds) -> str:
 
 
 def _parse_duration(value):
-    """`1:36:22`, `14:48`, `600` (seconds) → int; गलत input → None."""
+    """`1:36:22`, `14:48`, `600` (seconds) → int; invalid input → None."""
     t = str(value or "").strip()
     if not t:
         return 0
@@ -85,7 +85,7 @@ def _parse_duration(value):
 
 
 def _parse_res(value):
-    """`1920×1080` / `1280x720` → (w, h); खाली → (0, 0); गलत → None."""
+    """`1920×1080` / `1280x720` → (w, h); empty → (0, 0); invalid → None."""
     t = str(value or "").strip().replace(" ", "")
     if not t:
         return 0, 0
@@ -105,7 +105,7 @@ def _is_image(raw: bytes) -> bool:
 
 
 def _public_file(doc) -> dict:
-    """`/search` के `_result()` जैसा safe projection + editor-only fields."""
+    """Safe projection like `/search`'s `_result()` plus editor-only fields."""
     doc = doc or {}
     fid = str(doc.get("_id") or "")
     w = int(doc.get("width") or 0)
@@ -162,10 +162,10 @@ async def api_file_meta(req):
     return _json({"ok": True, "file": _public_file(doc)})
 
 
-# ── 🗂️ Permanent groups के साथ sync (file delete / rename) ───────────
+# ── 🗂️ Sync with permanent groups (file delete / rename) ───────────────
 
 async def _group_cleanup(fid):
-    """Deleted file सब groups से हटाओ; खाली group मिटाओ (v5 `_group_cleanup`)।"""
+    """Remove a deleted file from all groups; drop empty groups (v5 `_group_cleanup`)."""
     try:
         await group_store.pull_files([fid])
         await group_store.cleanup_empty()
@@ -174,7 +174,7 @@ async def _group_cleanup(fid):
 
 
 async def _sync_group_name(fid, name):
-    """Edit में नया नाम → group की member list + auto_keys ताज़ा।"""
+    """A new name from the editor refreshes the group's member list + auto_keys."""
     try:
         key = title_key(name)
         for g in await group_store.by_members([fid]):
@@ -201,16 +201,16 @@ async def api_file_edit(req):
 
     name = _clean(data.get("name"), 300)
     if not name:
-        return _json({"ok": False, "error": "File name खाली नहीं हो सकता"}, 400)
+        return _json({"ok": False, "error": "File name cannot be empty"}, 400)
     quality = _clean(data.get("quality"), 16)
     if quality and not _QUALITY_RE.match(quality):
-        return _json({"ok": False, "error": "Quality value गलत है"}, 400)
+        return _json({"ok": False, "error": "Invalid quality value"}, 400)
     duration = _parse_duration(data.get("duration"))
     if duration is None:
-        return _json({"ok": False, "error": "Duration `H:MM:SS` में लिखें"}, 400)
+        return _json({"ok": False, "error": "Enter duration as H:MM:SS"}, 400)
     res = _parse_res(data.get("res"))
     if res is None:
-        return _json({"ok": False, "error": "Resolution `1920×1080` में लिखें"}, 400)
+        return _json({"ok": False, "error": "Enter resolution as 1920×1080"}, 400)
 
     existing = await ia.get_file_meta(fid)
     if not existing:
@@ -226,7 +226,7 @@ async def api_file_edit(req):
     }
     doc = await ia.update_file_fields(fid, fields)
     if not doc:
-        return _json({"ok": False, "error": "Save नहीं हुआ"}, 500)
+        return _json({"ok": False, "error": "Could not save changes"}, 500)
     await _sync_group_name(fid, name)
     return _json({"ok": True, "file": _public_file(doc)})
 
@@ -244,16 +244,16 @@ async def api_file_thumb(req):
     except Exception as e:
         return _json({"ok": False, "error": f"Bad upload: {e}"}, 400)
     if not fid or not raw:
-        return _json({"ok": False, "error": "file_id या image नहीं मिली"}, 400)
+        return _json({"ok": False, "error": "Missing file_id or image"}, 400)
     if len(raw) > _MAX_UPLOAD or not _is_image(raw):
-        return _json({"ok": False, "error": "सिर्फ़ JPG/PNG/WEBP, अधिकतम 5 MB"}, 400)
+        return _json({"ok": False, "error": "JPG/PNG/WEBP only, up to 5 MB"}, 400)
 
     doc = await ia.get_file_meta(fid)
     if not doc:
         return _json({"ok": False, "error": "File not found"}, 404)
     bot = getattr(temp, "BOT", None)
     if bot is None:
-        return _json({"ok": False, "error": "Bot अभी ready नहीं"}, 503)
+        return _json({"ok": False, "error": "The bot is not ready yet"}, 503)
 
     try:
         buf = io.BytesIO(raw)
@@ -264,9 +264,9 @@ async def api_file_thumb(req):
         thumb_fid = sizes[-1].file_id if sizes else getattr(photo, "file_id", "")
     except Exception as e:
         logger.warning(f"file thumb upload failed: {e}")
-        return _json({"ok": False, "error": "Telegram upload fail हुआ"}, 502)
+        return _json({"ok": False, "error": "Telegram upload failed"}, 502)
     if not thumb_fid:
-        return _json({"ok": False, "error": "Thumbnail file_id नहीं मिला"}, 502)
+        return _json({"ok": False, "error": "No thumbnail file_id returned"}, 502)
 
     thumb_ref = "TG_ID:" + str(thumb_fid)
     updated = await ia.update_file_fields(fid, {
@@ -274,19 +274,19 @@ async def api_file_thumb(req):
         "thumb_file_id": str(thumb_fid),
         "thumb_source": "web",
         "is_thumb_permanent": True,
-        # Admin ने असली image upload की है ⇒ warmup इसे overwrite/verify न करे
+        # An admin uploaded a real image ⇒ warmup must not overwrite / re-verify it
         "thumb_verified": True,
     })
     if not updated:
-        return _json({"ok": False, "error": "Save नहीं हुआ"}, 500)
-    invalidate_thumb(fid)     # पुराना in-flight download न लौटे
+        return _json({"ok": False, "error": "Could not save changes"}, 500)
+    invalidate_thumb(fid)     # an old in-flight download must not restore it
     out = _public_file(updated)
     return _json({"ok": True, "file": out, "thumb": out["thumb"], "v": out["v"]})
 
 
 @file_edit_routes.post("/api/file/thumb_reset")
 async def api_file_thumb_reset(req):
-    """🔄 Custom poster हटाकर Telegram की original thumbnail दोबारा निकालो।"""
+    """🔄 Remove the custom poster and fetch Telegram's original thumbnail again."""
     if not await _admin(req):
         return _denied()
     try:
@@ -299,12 +299,12 @@ async def api_file_thumb_reset(req):
     updated = await ia.update_file_fields(fid, {
         "thumb_url": "", "thumb_file_id": "", "thumb_source": "",
         "is_thumb_permanent": False,
-        "thumb_verified": False,     # serial probe से दोबारा असली thumbnail निकलेगी
+        "thumb_verified": False,     # the serial probe will fetch a real thumbnail again
     })
     if not updated:
-        return _json({"ok": False, "error": "Reset नहीं हुआ"}, 500)
+        return _json({"ok": False, "error": "Could not reset the thumbnail"}, 500)
     invalidate_thumb(fid)
-    enqueue_probe(fid, force=True)     # serial queue — एक-एक करके, rate-limit safe
+    enqueue_probe(fid, force=True)     # serial queue — one at a time, rate-limit safe
     out = _public_file(updated)
     return _json({"ok": True, "file": out, "thumb": out["thumb"],
                   "v": out["v"], "queued": True})

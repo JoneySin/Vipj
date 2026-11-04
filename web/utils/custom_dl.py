@@ -53,8 +53,8 @@ class TGCustomYield:
     # --------------------------------------------------
     @staticmethod
     async def generate_file_properties(msg) -> FileId:
-        # media_info cache से सीधा decoded FileId भी आ सकता है (हर Range
-        # request पर Telegram get_messages() दोबारा न करने के लिए)।
+        # media_info cache may already hold a decoded FileId (so we do not call
+        # Telegram get_messages() again on every Range request).
         if isinstance(msg, FileId):
             return msg
         media = getattr(msg, msg.media.value, None)
@@ -198,9 +198,9 @@ class TGCustomYield:
             if not chunk:
                 break
 
-            # ⚠️ FIX: पहले आख़िरी chunk पूरा (last_part_cut तक नहीं काटा) भेजा
-            # जाता था — इससे Range response declared Content-Length से बड़ा हो
-            # जाता था और player seek पर अटक जाता था। अब आख़िरी part भी कटता है।
+            # ⚠️ FIX: the final chunk used to be sent in full (not trimmed to
+            # last_part_cut), making the Range response larger than the declared
+            # Content-Length and stalling player seeks. The last part is now trimmed too.
             if part_count == 1:
                 yield chunk[first_part_cut:last_part_cut]
                 break
@@ -212,7 +212,7 @@ class TGCustomYield:
             else:
                 yield chunk
 
-            if len(chunk) < chunk_size:        # file यहीं खत्म (EOF)
+            if len(chunk) < chunk_size:        # EOF: the file ends here
                 break
 
             offset += chunk_size

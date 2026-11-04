@@ -19,8 +19,8 @@ from utils import (
 )
 
 # Configuration
-RESULTS_PER_PAGE_PM = 12      # PM में 12 results
-RESULTS_PER_PAGE_GROUP = 10   # Group में 10 results
+RESULTS_PER_PAGE_PM = 12      # 12 results in private messages
+RESULTS_PER_PAGE_GROUP = 10   # 10 results in groups
 RESULT_EXPIRE_TIME = 300      # 5 minutes
 EXPIRE_DELETE_DELAY = 60      # delete after 1 min
 RATE_LIMIT = 5                # searches per minute

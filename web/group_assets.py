@@ -1,16 +1,16 @@
 """🗂️ PERMANENT GROUP UI — group card, master thumbnail, admin modal, Group Mode.
 
-`web/web_assets.py` की तरह ही **एकमात्र source**: CSS, `GROUP_CARD_TEMPLATE`,
-`GROUP_JS` (renderer — सभी pages पर `SITE_JS` में) और admin-only
-`GROUP_ADMIN_HTML` / `GROUP_ADMIN_JS` (सिर्फ़ `/search` पर admin को)।
+Like `web/web_assets.py`, this is the **single source** for CSS, `GROUP_CARD_TEMPLATE`,
+`GROUP_JS` (the renderer, included in `SITE_JS` on every page) and the admin-only
+`GROUP_ADMIN_HTML` / `GROUP_ADMIN_JS` (only for admins on `/search`).
 
-Standing constraints बरकरार:
-  * `.vcard`/`.vgrid`/`vcardHTML()` shared video-card single-source — group के
-    अंदर की हर variant बिल्कुल वही card है (`window.cardHTML(v)` से)।
-  * Filter dropdown `FILTER_CSS`/`FILTER_JS` unchanged; Group Mode अपना FAB है।
-  * Thumbnail के अंदर Edit/Delete overlay (`.vadmin`) file cards पर वैसा ही;
-    group card की अपनी `.gadmin` overlay उसी poster के अंदर रहती है।
-  * कोई primary/cloud/archive/section pill, कोई नया player tab।
+Standing constraints stay in force:
+  * `.vcard`/`.vgrid`/`vcardHTML()` is the shared single-source video card — every
+    variant inside a group is exactly that card (via `window.cardHTML(v)`).
+  * The `FILTER_CSS`/`FILTER_JS` dropdown is unchanged; Group Mode has its own FAB.
+  * The Edit/Delete overlay inside the thumbnail (`.vadmin`) stays the same on file cards;
+    a group card has its own `.gadmin` overlay inside that same poster.
+  * No primary/cloud/archive/section pill and no new player tab.
 """
 
 import json
@@ -32,12 +32,12 @@ background-size:200% 100%;animation:sh 1.5s infinite linear}
 .gposter.no-thumb{animation:none;background:none}
 .gposter.no-thumb .vph{display:flex}
 .gcard:hover .gposter .vimg.on{transform:scale(1.05)}
-/* 🗂️ GitHub reference (v5 `.grp-card.open .grp-master{display:none}`) जैसा:
-   `.gcard.open` पूरी grid चौड़ाई लेता है, इसलिए 16:9 master thumbnail desktop पर
-   बहुत बड़ा लगता था। Expand होते ही thumbnail गायब, सिर्फ़ compact header रहता है —
-   नाम + #N GROUP / QUALITIES|EPISODES / duration / kind / quality-episode chips
-   + Edit/Delete. Chips DOM में ही रहते हैं ⇒ Text mode की सारी details बची रहती हैं,
-   collapse करते ही वही master poster लौट आता है। */
+/* 🗂️ Like the GitHub reference (v5 `.grp-card.open .grp-master{display:none}`):
+   `.gcard.open` used to span the full grid width, so its 16:9 master thumbnail looked
+   huge on desktop. On expand the thumbnail is hidden and only a compact header remains —
+   name + #N GROUP / QUALITIES|EPISODES / duration / kind / quality-episode chips
+   + Edit/Delete. The chips stay in the DOM ⇒ Text mode keeps every detail,
+   and collapsing restores the same master poster. */
 .gcard.open .gmaster{display:flex;flex-direction:column;align-items:stretch}
 .gcard.open .gbody{order:-1;padding:8px 11px 0}
 .gcard.open .gbody .gopenbtn{align-self:flex-start}
@@ -60,7 +60,7 @@ background:linear-gradient(transparent,rgba(0,0,0,.88));pointer-events:none}
 font-size:10px;font-weight:800;padding:2px 8px;line-height:1.5}
 .gqchip i{font-style:normal;color:#e0f2fe;margin-left:2px}
 .gqchip.more{background:#3f3f46;color:#e4e4e7;border-color:#71717a}
-/* 🎞️ एक फाइल की qualities  ⇄  📺 सीरीज के episodes */
+/* 🎞️ qualities of one file  ⇄  📺 episodes of a series */
 .vtag.gdur{background:rgba(20,83,45,.85);color:#bbf7d0;border-color:rgba(187,247,208,.4)}
 .gkind{background:rgba(0,0,0,.78);backdrop-filter:blur(6px);border-radius:5px;
 padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255,.14)}
@@ -88,8 +88,8 @@ line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:ver
 color:var(--mut);border-radius:6px;padding:4px 8px;font-size:11px;font-weight:800;
 cursor:pointer;font-family:inherit}
 .gopenbtn:hover{border-color:var(--red);color:var(--txt)}
-/* नाम के सामने अब सिर्फ़ ▾ chevron — "Files" लिखा हुआ label हटा दिया गया;
-   खुलने पर arrow घूम जाता है, toggle/expand वैसा ही काम करता है। */
+/* The name now has only a ▾ chevron — the "Files" label was removed;
+   the arrow rotates when open and the toggle/expand behaves exactly as before. */
 .gcard.open .gopenbtn{transform:rotate(180deg);border-color:var(--red);color:var(--txt)}
 .gvariants{display:none;border-top:1px solid var(--line);gap:12px;padding:10px;
 grid-template-columns:1fr}
@@ -181,7 +181,7 @@ transition:opacity .2s;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .gfab{right:10px;bottom:76px}.gadmin button{flex:1 1 100%}}
 """
 
-# Group card का markup — JS `GROUP_CARD_TEMPLATE` से, ठीक VCARD_TEMPLATE की तरह।
+# Group card markup — from the JS `GROUP_CARD_TEMPLATE`, just like VCARD_TEMPLATE.
 GROUP_CARD_TEMPLATE = (
     '<div class="gcard vm-card{CARD_CLASS}" role="button" tabindex="0" '
     'data-gkey="{GKEY}" data-gid="{GID}" aria-label="{NAME} — {COUNT} files">'
@@ -200,12 +200,12 @@ GROUP_CARD_TEMPLATE = (
     '<div class="gvariants">{VARIANTS}</div></div>'
 )
 
-_GROUP_JS_TPL = r"""/* 🗂️ SHARED GROUP CARD — template web/group_assets.py से (Python → JS) */
+_GROUP_JS_TPL = r"""/* 🗂️ SHARED GROUP CARD — template from web/group_assets.py (Python → JS) */
 (function(){
   var TPL=__GROUP_CARD_TEMPLATE__, GD={};
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-  /* inline onclick="...'VALUE'..." के लिए: HTML entity + JS quote/backslash escape */
+  /* For inline onclick="...'VALUE'...": escape HTML entities + JS quotes/backslashes */
   function js1(s){return String(s==null?'':s)
     .replace(/\\/g,'\\\\').replace(/'/g,"\\'")
     .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
@@ -223,19 +223,19 @@ _GROUP_JS_TPL = r"""/* 🗂️ SHARED GROUP CARD — template web/group_assets.p
         (c.count>1?' <i>x'+c.count+'</i>':'')+'</span>';
     }).join('');
     if(list.length>MAX)chips+='<span class="gqchip more">+'+esc(list.length-MAX)+'</span>';
-    /* 🎞️ एक ही फाइल की qualities → साझा DURATION दिखाना सही है।
-       📺 series/episode-mark वाले group → हर episode का अलग duration, इसलिए
-       group पर duration बिल्कुल नहीं (चाहे payload में कोई पुराना value हो)।
-       SIZE किसी भी group पर नहीं — members के अलग-अलग size होते हैं;
-       expand पर हर variant के अपने shared `.vcard` पर size/duration मिलता है। */
+    /* 🎞️ Qualities of one file → showing a shared DURATION is correct.
+       📺 For a series/episode-marked group every episode has its own duration, so
+       the group shows no duration at all (even if the payload has a stale value).
+       SIZE is never shown on a group — members have different sizes;
+       on expand each variant gets size/duration from its own shared `.vcard`. */
     var showDur=!isEp&&g.duration;
     var top='<span class="vtag blue">'+(g.manual?'#'+esc(g.num)+' GROUP':'GROUP')+'</span>'+
             '<span class="vtag gold">'+esc(n)+(isEp?' EPISODES':' QUALITIES')+'</span>'+
             (showDur?'<span class="vtag gdur">⏱ '+esc(g.duration)+'</span>':'')+
             '<span class="gkind '+(isEp?'series':'quality')+'">'+
               (isEp?'📺 SERIES':'🎞️ SINGLE TITLE')+'</span>';
-    /* ⚠️ कोई "VIDEO"/"FILE" टाइप chip नहीं — shared `.vcard` की तरह group
-       thumbnail पर भी सिर्फ़ quality / res / duration / group meta chips। */
+    /* ⚠️ No "VIDEO"/"FILE" type chip — like the shared `.vcard`, group
+       thumbnails only show quality / res / duration / group-meta chips. */
     var adm='';
     if(window.IS_GROUP_ADMIN){
       var k=js1(g.key), gd=js1(g.gid||'');
@@ -335,31 +335,31 @@ GROUP_ADMIN_JS = r"""<script>
   function membersHtml(items,gid){
     return items.map(function(it){
       return '<div class="gmmem"><span>'+esc(it.name||it.id)+'</span>'+
-        (gid?'<button title="Group से हटाओ" onclick="gRemove(\''+jse(gid)+'\',\''+jse(it.id)+'\')">✕</button>':'')+
+        (gid?'<button title="Remove from group" onclick="gRemove(\''+jse(gid)+'\',\''+jse(it.id)+'\')">✕</button>':'')+
         '</div>';
     }).join('');
   }
   function kindHtml(g){
     var isQ=currentKind!=='episodes';
-    return '<div class="gmlabel">GROUP TYPE — क्या इस group में qualities हैं या episodes?</div>'+
+    return '<div class="gmlabel">GROUP TYPE — does this group hold qualities or episodes?</div>'+
       '<div class="gmkind">'+
         '<button type="button" data-kind="qualities" class="'+(isQ?'on':'')+'" '+
           'onclick="gPickKind(\'qualities\')">🎞️ Qualities'+
-          '<small>एक ही फाइल / मूवी के अलग-अलग quality</small></button>'+
+          '<small>Different qualities of one file / movie</small></button>'+
         '<button type="button" data-kind="episodes" class="'+(isQ?'':'on')+'" '+
           'onclick="gPickKind(\'episodes\')">📺 Episodes'+
-          '<small>एक सीरीज के अलग-अलग एपिसोड</small></button>'+
+          '<small>Different episodes of a series</small></button>'+
       '</div>';
   }
   function episodesHtml(g){
     var rows=(g.variants||[]).map(function(v){
       return '<div class="gmeprow"><span>'+esc(v.name||v.file_id)+'</span>'+
         '<input class="gmep" data-fid="'+esc(v.file_id)+'" maxlength="24" '+
-        'value="'+esc(v.el||'')+'" aria-label="Episode label" title="Episode label बदलें"></div>';
+        'value="'+esc(v.el||'')+'" aria-label="Episode label" title="Change episode label"></div>';
     }).join('');
     return '<div id="gmEpisodes" style="display:'+(currentKind==='episodes'?'block':'none')+'">'+
-      '<div class="gmlabel">📺 EPISODE LABELS — चाहें तो हर file का episode नंबर बदलें</div>'+
-      rows+'<div class="gmcount">इस group में '+(g.episodes||(g.variants||[]).length)+
+      '<div class="gmlabel">📺 EPISODE LABELS — optionally change the episode number of any file</div>'+
+      rows+'<div class="gmcount">This group has '+(g.episodes||(g.variants||[]).length)+
       ' episodes / '+(g.variants||[]).length+' files</div></div>';
   }
   window.gPickKind=function(k){
@@ -374,8 +374,8 @@ GROUP_ADMIN_JS = r"""<script>
     return (x.qualities||x.count||0)+' qualities';
   }
   function collectEpisodes(){
-    /* Type बदलकर वापस आने पर custom labels न मिटें — इसलिए inputs हमेशा
-       पढ़ते हैं, चाहे episode editor इस वक्त hidden ही क्यों न हो। */
+    /* Custom labels must survive switching the type and coming back — so inputs are
+       always read, even when the episode editor is currently hidden. */
     var out={};
     Array.prototype.forEach.call(document.querySelectorAll('#gmEpisodes .gmep'),function(inp){
       var v=String(inp.value||'').trim();
@@ -403,25 +403,25 @@ GROUP_ADMIN_JS = r"""<script>
     var items=itemsFrom(g);
     open(g.manual?'✏️ Edit Group #'+g.num:'💾 Save as Permanent Group',
       '<div class="gmlabel">GROUP NAME</div>'+
-      '<input class="gminput" id="gmName" value="'+esc(g.name)+'" placeholder="Movie / series का नाम">'+
-      '<div class="gmlabel">मौजूदा GROUP में जोड़ो (नाम या #number)</div>'+
-      '<input class="gminput" id="gmFind" placeholder="खोजें… जैसे #12 या naam" oninput="gFind(this.value)">'+
+      '<input class="gminput" id="gmName" value="'+esc(g.name)+'" placeholder="Movie / series name">'+
+      '<div class="gmlabel">ADD TO AN EXISTING GROUP (name or #number)</div>'+
+      '<input class="gminput" id="gmFind" placeholder="Search… e.g. #12 or a name" oninput="gFind(this.value)">'+
       '<div class="gmresults" id="gmResults"></div>'+
       '<div class="gmchosen" id="gmChosen">'+(targetGid?'✓ Group #'+esc(targetGid):'')+'</div>'+
       kindHtml(g)+episodesHtml(g)+
       '<div class="gmlabel">MASTER THUMBNAIL</div><div class="gmthumbs" id="gmThumbs">'+thumbsHtml(g)+'</div>'+
       '<div class="gmrow"><label class="gmbtn alt" style="cursor:pointer">📸 Custom upload'+
       '<input type="file" accept="image/*" id="gmFile" style="display:none" onchange="gUpload(this)"></label>'+
-      (g.manual?'<button class="gmbtn alt" onclick="gClearCustom()">↩️ Custom हटाओ</button>':'')+'</div>'+
+      (g.manual?'<button class="gmbtn alt" onclick="gClearCustom()">↩️ Remove custom</button>':'')+'</div>'+
       '<div class="gmlabel">FILES ('+items.length+')</div>'+membersHtml(items,g.manual?String(g.gid):'')+
       '<div class="gmrow"><button class="gmbtn" id="gmSave" onclick="gSave()">'+
-        (g.manual?'💾 Save Changes (नाम / type / thumbnail / files)':'💾 Save Group')+'</button>'+
+        (g.manual?'💾 Save Changes (name / type / thumbnail / files)':'💾 Save Group')+'</button>'+
       (g.manual?'<button class="gmbtn danger" onclick="gUngroup(\''+jse(g.gid)+'\')">🗑️ Ungroup</button>':'')+
       '<button class="gmbtn alt" onclick="gClose()">Cancel</button></div>'+
-      '<div class="gmnote"><b>GROUP NAME</b> बदलकर Save करने पर उसी group का नाम DB में update होता है '+
-      '(#number वही रहता है)। <b>GROUP TYPE</b> से तय करें कि इसमें एक फाइल की qualities हैं या सीरीज के '+
-      'episodes — card पर <i>3 QUALITIES</i> या <i>12 EPISODES</i> उसी हिसाब से दिखेगा, और किसी एक फाइल का '+
-      'size/duration group पर नहीं दिखेगा। Same-title की नई quality auto_keys से अपने-आप जुड़ जाएगी।</div>');
+      '<div class="gmnote">Saving a changed <b>GROUP NAME</b> updates the group name in the database '+
+      '(its #number stays the same). Use <b>GROUP TYPE</b> to say whether it holds qualities of one file or '+
+      'episodes of a series — the card shows <i>3 QUALITIES</i> or <i>12 EPISODES</i> accordingly, and no individual '+
+      'size or duration appears on the group. A new quality with the same title joins automatically via auto_keys.</div>');
     if(targetGid)gFind('#'+targetGid);
   };
   window.gFind=function(v){
@@ -432,27 +432,27 @@ GROUP_ADMIN_JS = r"""<script>
         box.innerHTML=LIST.map(function(x){
           return '<div class="gmres'+(String(x.id)===targetGid?' on':'')+'" onclick="gChoose(\''+jse(x.id)+'\')">'+
             '<b>#'+esc(x.num)+'</b><span>'+esc(x.name)+' · '+groupMetric(x)+'</span></div>';
-        }).join('')||'<div class="gmres" style="color:var(--mut)">कोई group नहीं मिला</div>';
+        }).join('')||'<div class="gmres" style="color:var(--mut)">No groups found</div>';
       }).catch(function(){});
   };
   window.gChoose=function(gid){
     targetGid=String(gid);
     var item=LIST.filter(function(x){return String(x.id)===targetGid;})[0]||{};
-    var c=q('#gmChosen');if(c)c.textContent='✓ Group #'+(item.num||gid)+' — '+(item.name||'')+' में files जुड़ेंगी';
-    var n=q('#gmName');if(n&&item.name)n.value=item.name;   /* .value = safe, कोई HTML नहीं */
+    var c=q('#gmChosen');if(c)c.textContent='✓ Group #'+(item.num||gid)+' — '+(item.name||'')+' will receive the files';
+    var n=q('#gmName');if(n&&item.name)n.value=item.name;   /* .value is safe, no HTML involved */
     gFind('#'+gid);
   };
   window.gPickThumb=function(fid){thumbFid=String(fid||'');
     var g=current;if(!g)return;var box=q('#gmThumbs');if(box)box.innerHTML=thumbsHtml(g);};
   window.gClearCustom=function(){
-    if(!current||!current.gid){toast('पहले group save करें',true);return;}
+    if(!current||!current.gid){toast('Save the group first',true);return;}
     post('/api/group/update',{group_id:current.gid,clear_custom:true})
-      .then(function(){toast('↩️ Custom thumbnail हटाया');window.gClose();refresh();})
+      .then(function(){toast('↩️ Custom thumbnail removed');window.gClose();refresh();})
       .catch(function(e){toast(e.message,true);});
   };
   window.gUpload=function(input){
     var f=input.files&&input.files[0];if(!f)return;
-    if(!current||!current.gid){toast('पहले group save करें',true);return;}
+    if(!current||!current.gid){toast('Save the group first',true);return;}
     var fd=new FormData();fd.append('group_id',current.gid);fd.append('image',f);
     fetch('/api/group/upload_thumb',{method:'POST',body:fd,credentials:'same-origin'})
       .then(function(r){return r.json();}).then(function(d){
@@ -463,24 +463,24 @@ GROUP_ADMIN_JS = r"""<script>
   window.gSave=function(){
     var g=current;if(!g)return;
     var name=String((q('#gmName')||{}).value||'').trim();
-    if(!targetGid&&!name){toast('Group का नाम लिखिए',true);return;}
+    if(!targetGid&&!name){toast('Enter a group name',true);return;}
     var btn=q('#gmSave');if(btn)btn.disabled=true;
     var emap=collectEpisodes();
     var body={items:itemsFrom(g),name:name,kind:currentKind,episode_map:emap};
     if(targetGid)body.group_id=targetGid;
     post('/api/group/save',body).then(function(d){
       var gid=d.group_id||targetGid||'';
-      /* ✏️ नाम बदलना save-members से अलग काम है — `/api/group/update` पर
-         साफ़ तौर पर भेजो (और master thumbnail भी उसी call में)। */
+      /* ✏️ Renaming is separate from saving members — send it explicitly to
+         `/api/group/update` (along with the master thumbnail in the same call). */
       var upd={group_id:gid,kind:currentKind,episode_map:emap};
       if(name)upd.name=name;
       if(thumbFid)upd.thumb_file_id=thumbFid;
       if(!gid)return d;
       return post('/api/group/update',upd).then(function(){return d;});
     }).then(function(d){
-      /* तुरंत card का नाम बदलो — reload आने का इंतज़ार नहीं, और अगर fetch
-         fail हो जाए तब भी UI में नया नाम दिखे। अगर कोई दूसरा target group
-         चुना है तो यहाँ rename न दिखाएँ; refresh सही state लाएगा। */
+      /* Rename the card immediately — do not wait for a reload, and show the new
+         name even if the fetch fails. If another target group was selected, do not
+         rename here; refresh will bring the correct state. */
       var sameGroup=!targetGid||String(targetGid)===String(g.gid||'');
       if(name&&sameGroup){
         Array.prototype.forEach.call(document.querySelectorAll('.gcard'),function(c){
@@ -491,24 +491,24 @@ GROUP_ADMIN_JS = r"""<script>
         });
         var gd=window.groupGet(g.key);if(gd)gd.name=name;
       }
-      /* group type/episode labels तुरंत card पर भी दिखें (refresh से पहले) */
+      /* Show the group type / episode labels on the card immediately (before refresh) */
       var gd2=window.groupGet(g.key);
       if(gd2&&sameGroup){gd2.kind=currentKind;gd2.episode_map=emap;}
-      toast('🗂️ Group #'+d.num+' save हो गया · '+
+      toast('🗂️ Group #'+d.num+' saved · '+
         (currentKind==='episodes'?'📺 episodes':'🎞️ qualities'));
       window.gClose();refresh();
     }).catch(function(e){toast(e.message,true);if(btn)btn.disabled=false;});
   };
   window.gRemove=function(gid,fid){
-    if(!confirm('इस file को group से हटाएँ?'))return;
+    if(!confirm('Remove this file from the group?'))return;
     post('/api/group/remove_file',{group_id:gid,file_id:fid})
-      .then(function(){toast('File group से हटी');window.gClose();refresh();})
+      .then(function(){toast('File removed from group');window.gClose();refresh();})
       .catch(function(e){toast(e.message,true);});
   };
   window.gUngroup=function(gid){
-    if(!gid||!confirm('Group हटाएँ? Files DELETE नहीं होंगी, बस ungroup होंगी।'))return;
+    if(!gid||!confirm('Delete this group? Files are NOT deleted — they are only ungrouped.'))return;
     post('/api/group/delete',{group_id:gid})
-      .then(function(){toast('🗑️ Ungroup हो गया');window.gClose();refresh();})
+      .then(function(){toast('🗑️ Group removed');window.gClose();refresh();})
       .catch(function(e){toast(e.message,true);});
   };
 
@@ -518,9 +518,9 @@ GROUP_ADMIN_JS = r"""<script>
     current=g;
     open('🔀 Merge Group #'+g.num,
       '<div class="gmlabel">TARGET GROUP NUMBER</div>'+
-      '<input class="gminput" id="gmTarget" placeholder="जैसे 12 या #12" oninput="gFindMerge(this.value)">'+
-      '<div class="gmnote">Source group #'+esc(g.num)+' की सारी files + auto_keys target group में '+
-      'चली जाएँगी, source हट जाएगा। Files delete नहीं होतीं।</div>'+
+      '<input class="gminput" id="gmTarget" placeholder="e.g. 12 or #12" oninput="gFindMerge(this.value)">'+
+      '<div class="gmnote">Source group #'+esc(g.num)+'  — all its files and auto_keys will move into the target '+
+      'group, and the source group will be deleted. No files are deleted.</div>'+
       '<div class="gmresults" id="gmMergeResults"></div>'+
       '<div class="gmlabel">FILES ('+(g.variants||[]).length+')</div>'+membersHtml(itemsFrom(g),'')+
       '<div class="gmrow"><button class="gmbtn" onclick="gDoMerge()">🔀 Merge</button>'+
@@ -534,19 +534,19 @@ GROUP_ADMIN_JS = r"""<script>
         box.innerHTML=(d.groups||[]).filter(function(x){return String(x.id)!==String(current.gid);})
           .map(function(x){return '<div class="gmres" onclick="gPickMerge(\''+jse(x.id)+'\')">'+
             '<b>#'+esc(x.num)+'</b><span>'+esc(x.name)+' · '+groupMetric(x)+'</span></div>';}).join('')||
-          '<div class="gmres" style="color:var(--mut)">कोई दूसरा group नहीं मिला</div>';
+          '<div class="gmres" style="color:var(--mut)">No other groups found</div>';
       }).catch(function(){});
   };
   window.gPickMerge=function(gid){var t=q('#gmTarget');if(t)t.value=String(gid);};
   window.gDoMerge=function(){
     var t=(q('#gmTarget')||{}).value||'';
-    if(!t.trim()){toast('Target group number लिखिए',true);return;}
+    if(!t.trim()){toast('Enter the target group number',true);return;}
     post('/api/group/merge',{source:String(current.gid),target:t.trim()})
-      .then(function(d){toast('🔀 Group #'+d.num+' में merge हो गया');window.gClose();refresh();})
+      .then(function(d){toast('🔀 Group #'+d.num+' — merged');window.gClose();refresh();})
       .catch(function(e){toast(e.message,true);});
   };
 
-  /* ── ☑️ Group Mode — अलग-अलग cards चुनकर group बनाओ ─────────── */
+  /* ── ☑️ Group Mode — select individual cards to build a group ─────────── */
   function renderBar(){
     var fab=q('#gFab');if(fab)fab.style.display=selMode?'none':'block';
     var bar=q('#gSelBar');
@@ -580,25 +580,25 @@ GROUP_ADMIN_JS = r"""<script>
     var g=window.groupGet(k);if(!g)return;
     SEL={};(g.variants||[]).forEach(function(v){SEL[v.file_id]={id:v.file_id,name:v.name};});
     selMode=true;var grid=q('#grid');if(grid)grid.classList.add('gsel-mode');
-    renderBar();toast('☑️ '+Object.keys(SEL).length+' files select — और जोड़ने के लिए cards पर click करें');
+    renderBar();toast('☑️ '+Object.keys(SEL).length+' files selected — click cards to add more');
   };
   window.gOpenSelected=function(){
     var items=Object.keys(SEL).map(function(k){return SEL[k];});
-    if(items.length<2){toast('कम-से-कम 2 files चुनिए',true);return;}
+    if(items.length<2){toast('Select at least 2 files',true);return;}
     var fake={group:true,manual:false,gid:'',num:'',name:'',count:items.length,
       key:'sel:'+Date.now(),variants:items.map(function(it){
         return {file_id:it.id,name:it.name,thumb:'',size:'',quality:'',duration:''};
       }),chips:[],duration:'',size:''};
-    window.groupHTML(fake,'');                 /* GD में register करो */
+    window.groupHTML(fake,'');                 /* register it in GD */
     selMode=false;SEL={};var grid=q('#grid');if(grid)grid.classList.remove('gsel-mode');renderBar();
     window.gEdit(fake.key);
   };
 
   /* ── ⚙️ Scan all + progress ────────────────────────────────── */
   window.gScanAll=function(){
-    if(!confirm('पूरी library scan करके permanent groups बनाएँ? (बड़ी library में कुछ मिनट लग सकते हैं)'))return;
+    if(!confirm('Scan the whole library and build permanent groups? This can take a few minutes on a large library.'))return;
     post('/api/group/scan_all',{}).then(function(d){
-      toast(d.started?'⚙️ Scan शुरू हो गया…':'⚙️ Scan पहले से चल रहा है');
+      toast(d.started?'⚙️ Scan started…':'⚙️ A scan is already running');
       clearInterval(scanTimer);
       scanTimer=setInterval(function(){
         fetch('/api/group/scan_status',{credentials:'same-origin'}).then(function(r){return r.json();})
@@ -606,7 +606,7 @@ GROUP_ADMIN_JS = r"""<script>
             if(s.running){toast('⚙️ '+s.phase+' ('+s.scanned+'/'+s.total+')');}
             else{clearInterval(scanTimer);
               if(s.error)toast('Scan error: '+s.error,true);
-              else{toast('✅ Scan complete: '+s.created+' नये groups, '+s.added+' files जुड़ीं');refresh();}}
+              else{toast('✅ Scan complete: '+s.created+' new groups, '+s.added+' files added');refresh();}}
           }).catch(function(){});
       },3000);
     }).catch(function(e){toast(e.message,true);});

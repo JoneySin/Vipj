@@ -1,8 +1,8 @@
 """🎬 Watch page template.
 
-`/watch/<message_id>?e=..&s=..` पर signed player page. <video> का src
-उसी signed token के साथ `/download/<id>` जाता है, इसलिए seek/Range भी
-उसी लिंक से काम करता है। Thumbnail poster के रूप में भी दिखता है।
+`/watch/<message_id>?e=..&s=..` serves the signed player page. The <video> src
+points at `/download/<id>` with the same signed token, so seeking and Range
+requests work through that link too. The thumbnail is also shown as the poster.
 """
 
 import html
@@ -48,7 +48,7 @@ padding:11px 20px;border-radius:8px;text-decoration:none}}
     <a class="btn" href="{src}" download>⬇ Download</a>
     <a class="btn ghost" href="/search">🔎 Back to Search</a>
   </div>
-  <div class="note">यह लिंक सीमित समय के लिए वैध है। Seek / fast-forward HTTP Range से काम करता है।</div>
+  <div class="note">This link is valid for a limited time. Seeking uses HTTP Range requests.</div>
 </div>
 <script>
 const v=document.querySelector('video');
@@ -65,7 +65,7 @@ align-items:center;justify-content:center;min-height:100vh;text-align:center}}
 a{{display:inline-block;margin-top:18px;background:#e50914;color:#fff;padding:12px 24px;
 border-radius:8px;text-decoration:none;font-weight:800}}</style></head>
 <body><div class="box"><h2>📦 {file_name}</h2>
-<p style="color:#9a9aad;margin-top:10px">यह फाइल browser में play नहीं हो सकती, डाउनलोड करें।</p>
+<p style="color:#9a9aad;margin-top:10px">This file cannot be played in the browser. Download it instead.</p>
 <a href="{src}" download>⬇ Direct Download</a></div></body></html>"""
 
 
@@ -80,15 +80,15 @@ async def media_watch(message_id: int, query: str = "", poster: str = ""):
 
     raw_name = str(info.file_name or "Fast Finder Media")
     name = html.escape(raw_name)
-    # Telegram पर कई वीडियो "document" के रूप में index होते हैं (mime None
-    # या octet-stream)। Extension भी देख लें, वरना MKV पर player न दिखता।
+    # Many Telegram videos are indexed as "document" (mime is None or
+    # octet-stream), so also check the extension — otherwise MKV files get no player.
     looks_video = raw_name.lower().endswith(
         (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts", ".wmv", ".flv", ".mpeg", ".mpg")
     )
     is_video = info.is_video or str(info.mime_type or "").startswith("video/") or looks_video
     mime = html.escape(info.mime_type or ("video/mp4" if is_video else "application/octet-stream"))
 
-    # सिर्फ़ अपने ही /api/thumb URL को poster बनने दें (open redirect/XSS से बचाव)
+    # Only allow our own /api/thumb URL as the poster (prevents open redirect / XSS)
     safe_poster = poster if poster.startswith("/api/thumb") else ""
     safe_poster = html.escape(safe_poster, quote=True)
 

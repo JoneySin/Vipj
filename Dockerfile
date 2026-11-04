@@ -1,25 +1,25 @@
-# 1. सबसे लेटेस्ट और स्टेबल बेस इमेज का उपयोग
+# 1. Use the latest stable base image
 FROM python:3.11-slim-bookworm
 
-# 2. सिस्टम डिपेंडेंसीज इंस्टॉल करना (जरूरी टूल्स)
+# 2. Install the system dependencies (required tools)
 RUN apt-get update && apt-get install -y \
     git \
     gcc \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. वर्किंग डायरेक्टरी सेट करना
+# 3. Set the working directory
 WORKDIR /app
 
-# 4. पहले requirements.txt कॉपी करें (कैश का फायदा लेने के लिए)
+# 4. Copy requirements.txt first (to benefit from the layer cache)
 COPY requirements.txt .
 
-# 5. बिना कैश के डिपेंडेंसीज इंस्टॉल करें और pip को अपडेट करें
+# 5. Install dependencies without caching and upgrade pip
 RUN pip install --no-cache-dir -U pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# 6. अब बाकी का पूरा कोड कॉपी करें
+# 6. Copy the rest of the application code
 COPY . .
 
-# 7. बॉट स्टार्ट करने की कमांड
+# 7. Start the bot
 CMD ["python3", "bot.py"]

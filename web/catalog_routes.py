@@ -1,26 +1,26 @@
 """🌐 Routes for the unified Catalog (Posts + Directory profiles).
 
-v5 में इसके लिए अलग `post_routes.py` (publish/update/delete/photo/search/single)
-और `actor_routes.py` (create/avatar/gallery/social/delete/search/profile) थे —
-कुल ~18 endpoints, हर एक अपना auth check और अपना response format।
+In v5 this took a separate `post_routes.py` (publish/update/delete/photo/search/single)
+and `actor_routes.py` (create/avatar/gallery/social/delete/search/profile) —
+~18 endpoints in total, each with its own auth check and response format.
 
-यहाँ **एक** generic JSON API है:
+Here there is **one** generic JSON API:
 
-| Method | Path | काम |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/posts`, `/actors` | catalog pages (sidebar से) |
+| GET | `/posts`, `/actors` | catalog pages (from the sidebar) |
 | GET | `/post/{id}`, `/actor/{id}` | detail page |
-| GET | `/api/catalog/{kind}` | list (`q`, `category`, `offset`, `limit`) या `?id=` single |
-| POST | `/api/catalog/{kind}/save` | create + edit — **एक ही endpoint** (admin) |
+| GET | `/api/catalog/{kind}` | list (`q`, `category`, `offset`, `limit`) or `?id=` single |
+| POST | `/api/catalog/{kind}/save` | create + edit — **one endpoint** (admin) |
 | POST | `/api/catalog/{kind}/delete` | delete (admin) |
-| GET | `/api/catalog/{kind}/media` | **सिर्फ़ Actor**: **Search Tags** से Library videos (`q` override, `offset`/`limit`) — v5 actor Linked Media. Post पर `source: disabled` (सिर्फ़ attached videos) |
-| POST | `/api/catalog/{kind}/gallery_upload` | Tab से सीधे multiple photos/screenshots (admin, serial Telegram upload) |
-| POST | `/api/catalog/{kind}/gallery_delete` | एक image बिना reload हटाएँ (admin) |
+| GET | `/api/catalog/{kind}/media` | **Actors only**: Library videos from **Search Tags** (`q` override, `offset`/`limit`) — v5 actor Linked Media. Posts return `source: disabled` (attached videos only) |
+| POST | `/api/catalog/{kind}/gallery_upload` | Multiple photos/screenshots straight from the tab (admin, serial Telegram upload) |
+| POST | `/api/catalog/{kind}/gallery_delete` | Remove one image without a reload (admin) |
 | POST | `/api/catalog/upload` | image → Telegram → `TG_ID:` (admin) |
-| GET | `/api/catalog/photo` | `TG_ID:` image bytes (वही serial-safe download engine) |
+| GET | `/api/catalog/photo` | `TG_ID:` image bytes (the same serial-safe download engine) |
 
-सभी writes admin-only, सभी input `catalog.normalize()` से sanitize, और कोई
-server-generated HTML string नहीं (client render करता है)।
+All writes are admin-only, every input is sanitized by `catalog.normalize()`, and no
+server-generated HTML strings are returned (the client renders everything).
 """
 
 import inspect
@@ -37,7 +37,7 @@ from info import BIN_CHANNEL
 from utils import temp
 from database.ia_filterdb import get_search_results
 
-# Optional dedicated channel (info.py में default = BIN_CHANNEL)।
+# Optional dedicated channel (defaults to BIN_CHANNEL in info.py).
 _STORAGE_CHANNEL = getattr(_info, "CATALOG_STORAGE_CHANNEL", BIN_CHANNEL)
 from web.web_assets import get_auth, vcard_meta
 from web.catalog import (
@@ -65,12 +65,12 @@ def _kind(req):
 
 
 def _clean_id(value) -> str:
-    """Ids सिर्फ़ short hex-ish — URLs और Mongo `_id` दोनों के लिए सुरक्षित।"""
+    """Ids are short hex-ish only — safe for both URLs and Mongo `_id`."""
     return re.sub(r"[^A-Za-z0-9_-]", "", str(value or ""))[:32]
 
 
 def _media_row(doc: dict) -> dict:
-    """🎴 Library doc → Videos tab card payload — वही shared `vcard_meta()`."""
+    """🎴 Library doc → Videos tab card payload — the same shared `vcard_meta()`."""
     out = vcard_meta(doc)
     fid = out["file_id"]
     out["thumb"] = "/api/thumb?file_id=" + quote(fid, safe="") + "&v=1"
@@ -79,8 +79,8 @@ def _media_row(doc: dict) -> dict:
 
 
 async def _file_details(fid: str):
-    """Attached video का Library doc — stub/demo में `get_file_details` न हो
-    तो `collection.find_one` fallback (page कभी भी टूटता नहीं)।"""
+    """Library doc of an attached video — falls back to `collection.find_one` when
+    `get_file_details` is missing in a stub/demo (the page never breaks)."""
     ia = _sys.modules.get("database.ia_filterdb")
     if ia is None:
         return None
@@ -97,8 +97,8 @@ async def _file_details(fid: str):
 
 
 async def _enrich_attached_videos(item: dict):
-    """📌 Post/Actor attached videos को भी वही size/duration/quality/res/type
-    chips दो जो `/search` और tag-results पर हैं — सब `vcard_meta()` से।"""
+    """📌 Give Post/Actor attached videos the same size/duration/quality/res/type
+    chips as `/search` and tag-results — all from `vcard_meta()`."""
     for v in (item.get("videos") or [])[:50]:
         fid = str(v.get("file_id") or "")
         if not fid or str(v.get("quality") or ""):
@@ -113,12 +113,12 @@ async def _enrich_attached_videos(item: dict):
 
 
 async def _tag_media(item: dict, custom_q: str, offset: int, limit: int):
-    """🏷️ v5 का `get_actor_search_results(name|tags)` — tags से Library videos।
+    """🏷️ v5's `get_actor_search_results(name|tags)` — Library videos from tags.
 
-    v5 एक raw regex-OR (`(tag1|tag2|...)`) चलाता था और actor name को भूल जाता था।
-    यहाँ fsv1 के **अपने** search pipeline (`$text` + regex fallback) को हर term पर
-    चलाकर results merge/dedupe करते हैं — index का फायदा मिलता है, कोई नया query
-    layer नहीं। Custom `q` टाइप करते ही tags ignore (बिल्कुल v5 जैसा)।
+    v5 ran one raw regex-OR (`(tag1|tag2|...)`) and forgot the actor name.
+    Here fsv1's **own** search pipeline (`$text` + regex fallback) runs for each
+    term and the results are merged/deduped — the index is used, with no new query
+    layer. Typing a custom `q` ignores tags (exactly like v5).
     """
     tags = [str(t).strip() for t in (item.get("tags") or []) if str(t).strip()][:12]
     custom = str(custom_q or "").strip()
@@ -152,7 +152,7 @@ async def _tag_media(item: dict, custom_q: str, offset: int, limit: int):
 
 
 def _safe_item(kind, item):
-    """DB में पुराना/raw doc हो तो भी output हमेशा sanitized schema का हो।"""
+    """Even a stale/raw DB document is returned in the sanitized schema."""
     clean = normalize(kind, item)
     clean.update({
         "id": item.get("id", ""),
@@ -163,11 +163,11 @@ def _safe_item(kind, item):
 
 
 # ─────────────────────────────────────────────────────────────
-# 🖼️ Specific endpoints पहले register (/{kind} से पहले, वरना वो खा जाएगा)
+# 🖼️ Register the specific endpoints first (before /{kind}, which would swallow them)
 # ─────────────────────────────────────────────────────────────
 @catalog_routes.get("/api/catalog/photo")
 async def api_photo(req):
-    """`TG_ID:<file_id>` → image bytes. उसी throttle/FloodWait-safe engine से।"""
+    """`TG_ID:<file_id>` → image bytes, via the same throttle/FloodWait-safe engine."""
     role, _ = await get_auth(req)
     if not role:
         return web.Response(status=401)
@@ -186,9 +186,9 @@ async def api_photo(req):
 
 @catalog_routes.post("/api/catalog/upload")
 async def api_upload(req):
-    """Cover/avatar upload → Telegram → permanent `TG_ID:` (v5 जैसा, पर बिना reload)।
+    """Cover/avatar upload → Telegram → permanent `TG_ID:` (like v5, without a reload).
 
-    Bot ready न हो तो client साफ़ error दिखाकर URL paste का option देता है।
+    If the bot is not ready the client shows a clear error and offers a URL paste option.
     """
     role, _ = await get_auth(req)
     if role != "admin":
@@ -202,22 +202,22 @@ async def api_upload(req):
     except Exception as e:
         return _json({"ok": False, "error": f"Bad upload: {e}"}, 400)
     if not raw or len(raw) > _MAX_UPLOAD:
-        return _json({"ok": False, "error": "Image खाली है या 5 MB से बड़ी है"}, 400)
+        return _json({"ok": False, "error": "Image is empty or larger than 5 MB"}, 400)
 
     bot = getattr(temp, "BOT", None)
     if bot is None:
-        return _json({"ok": False, "error": "Bot अभी ready नहीं — image URL paste करें"}, 503)
+        return _json({"ok": False, "error": "The bot is not ready yet — paste an image URL instead"}, 503)
     try:
         buf = io.BytesIO(raw)
         buf.name = "cover.jpg"
         msg = await bot.send_photo(chat_id=_STORAGE_CHANNEL, photo=buf)
         photo = getattr(msg, "photo", None)
         if not photo:
-            raise RuntimeError("Telegram ने photo नहीं लौटाई")
+            raise RuntimeError("Telegram did not return a photo")
         sizes = getattr(photo, "sizes", None)
         fid = sizes[-1].file_id if sizes else photo.file_id
         if not fid:
-            raise RuntimeError("file_id नहीं मिला")
+            raise RuntimeError("No file_id returned")
         return _json({"ok": True, "value": f"TG_ID:{fid}"})
     except Exception as e:
         logger.warning(f"catalog upload failed: {e}")
@@ -242,7 +242,7 @@ async def _detail(req, kind, item_id):
     if not item:
         return web.Response(text="❌ Entry not found", status=404)
     item = _safe_item(kind, item)
-    await _enrich_attached_videos(item)   # 🎴 सभी video cards एक जैसे chips
+    await _enrich_attached_videos(item)   # 🎴 every video card gets the same chips
     return build_detail_page(kind, role, tg_id, item)
 
 
@@ -278,7 +278,7 @@ async def api_list(req):
     if not kind:
         return _json({"error": "Unknown catalog"}, 404)
 
-    # ?id= → deep-link edit के लिए single item
+    # ?id= → a single item for deep-link editing
     single = _clean_id(req.query.get("id"))
     if single:
         item = await store.get_item(kind, single)
@@ -319,7 +319,7 @@ async def _read_payload(req):
 
 @catalog_routes.post("/api/catalog/{kind}/save")
 async def api_save(req):
-    """✨ Create + Edit एक ही endpoint (v5 में 2 अलग wizard + 2 API थे)।"""
+    """✨ Create + Edit in one endpoint (v5 had 2 wizards + 2 APIs)."""
     role, _ = await get_auth(req)
     if role != "admin":
         return _json({"ok": False, "error": "Admins only"}, 403)
@@ -330,22 +330,22 @@ async def api_save(req):
     payload = await _read_payload(req)
     clean = normalize(kind, payload)
     if not clean["title"]:
-        return _json({"ok": False, "error": "Title ज़रूरी है"}, 400)
+        return _json({"ok": False, "error": "A title is required"}, 400)
     item = await store.save_item(
         kind, clean, _clean_id(payload.get("id")),
         allow_create=bool(payload.get("restore")),
     )
     if not item:
-        return _json({"ok": False, "error": "Entry नहीं मिली"}, 404)
+        return _json({"ok": False, "error": "Entry not found"}, 404)
     return _json({"ok": True, "item": _safe_item(kind, item)})
 
 
 @catalog_routes.get("/api/catalog/{kind}/media")
 async def api_media(req):
-    """🎬 Videos tab — **Search Tags** से Library की videos (v5 actor जैसा)।
+    """🎬 Videos tab — Library videos from **Search Tags** (like v5's actor page).
 
-    `q=` देने पर वही query चलेगी (tags ignore); खाली रहने पर item के tags,
-    tags न हों तो title. `offset` / `limit` से pagination।
+    Passing `q=` runs that query (tags ignored); when empty it uses the item's tags,
+    or the title when there are no tags. `offset` / `limit` provide pagination.
     """
     role, _ = await get_auth(req)
     if not role:
@@ -353,7 +353,7 @@ async def api_media(req):
     kind = _kind(req)
     if not kind:
         return _json({"results": [], "terms": [], "total": 0}, 404)
-    # 📝 Post पर search-text results नहीं चाहिए — सिर्फ़ attached videos।
+    # 📝 Posts must not show search-text results — attached videos only.
     if not CATALOGS[kind].get("tagMedia"):
         return _json({"results": [], "terms": [], "total": 0,
                       "source": "disabled", "offset": 0, "next_offset": ""})
@@ -377,11 +377,11 @@ async def api_media(req):
 
 @catalog_routes.post("/api/catalog/{kind}/gallery_upload")
 async def api_gallery_upload(req):
-    """🖼️ Gallery/Screenshots tab से सीधे multiple photos (v5 जैसा, बिना reload)।
+    """🖼️ Multiple photos straight from the Gallery/Screenshots tab (like v5, no reload).
 
-    v5 `/api/actor/gallery_upload` form submit करके page reload कराता था; यहाँ
-    JSON response और client in-place render. Uploads **एक-एक करके** Telegram जाते
-    हैं (thumbnail वाला ही anti-flood व्यवहार), एक fail होने पर बाकी रुकते नहीं।
+    v5's `/api/actor/gallery_upload` submitted a form and reloaded the page; here a
+    JSON response is rendered in place. Uploads go to Telegram **one at a time**
+    (the same anti-flood behaviour as thumbnails); one failure does not stop the rest.
     """
     role, _ = await get_auth(req)
     if role != "admin":
@@ -403,14 +403,14 @@ async def api_gallery_upload(req):
     except Exception as e:
         return _json({"ok": False, "error": f"Bad upload: {e}"}, 400)
     if not item_id or not blobs:
-        return _json({"ok": False, "error": "id या images नहीं मिले"}, 400)
+        return _json({"ok": False, "error": "Missing id or images"}, 400)
 
     item = await store.get_item(kind, item_id)
     if not item:
-        return _json({"ok": False, "error": "Entry नहीं मिली"}, 404)
+        return _json({"ok": False, "error": "Entry not found"}, 404)
     bot = getattr(temp, "BOT", None)
     if bot is None:
-        return _json({"ok": False, "error": "Bot अभी ready नहीं"}, 503)
+        return _json({"ok": False, "error": "The bot is not ready yet"}, 503)
 
     added = []
     for i, raw in enumerate(blobs[:12], 1):
@@ -422,13 +422,13 @@ async def api_gallery_upload(req):
             sizes = getattr(photo, "sizes", None) if photo else None
             fid = sizes[-1].file_id if sizes else getattr(photo, "file_id", "")
             if not fid:
-                raise RuntimeError("file_id नहीं मिला")
+                raise RuntimeError("No file_id returned")
             added.append("TG_ID:" + fid)
         except Exception as e:
             logger.warning(f"gallery upload {i}/{len(blobs)} failed: {e}")
             continue
     if not added:
-        return _json({"ok": False, "error": "कोई image Telegram पर save नहीं हुई"}, 502)
+        return _json({"ok": False, "error": "No images were saved to Telegram"}, 502)
 
     clean = normalize(kind, item)
     clean["gallery"] = (list(item.get("gallery") or []) + added)[:12]
@@ -438,10 +438,10 @@ async def api_gallery_upload(req):
 
 @catalog_routes.post("/api/catalog/{kind}/gallery_delete")
 async def api_gallery_delete(req):
-    """🖼️ Detail के Gallery tab से एक image बिना page reload हटाएँ (admin)।
+    """🖼️ Remove one image from the detail Gallery tab without a page reload (admin).
 
-    v5 में `/api/actor/gallery_delete` के बाद `window.location.reload()` होता था;
-    यहाँ सिर्फ़ gallery array update होती है और client DOM से card हटा देता है।
+    v5 called `window.location.reload()` after `/api/actor/gallery_delete`;
+    here only the gallery array is updated and the client removes the card from the DOM.
     """
     role, _ = await get_auth(req)
     if role != "admin":
@@ -457,7 +457,7 @@ async def api_gallery_delete(req):
         return _json({"ok": False, "error": "Bad index"}, 400)
     item = await store.get_item(kind, item_id)
     if not item:
-        return _json({"ok": False, "error": "Entry नहीं मिली"}, 404)
+        return _json({"ok": False, "error": "Entry not found"}, 404)
     gallery = list(item.get("gallery") or [])
     if idx < 0 or idx >= len(gallery):
         return _json({"ok": False, "error": "Index out of range"}, 400)

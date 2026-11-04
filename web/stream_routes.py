@@ -22,7 +22,7 @@ routes = web.RouteTableDef()
 
 
 # ======================================================
-# 🏠 ROOT — logged-in user को सीधे /search, बाकी को landing
+# 🏠 ROOT — send logged-in users straight to /search, everyone else to the landing page
 # ======================================================
 @routes.get("/", allow_head=True)
 async def root_route_handler(request):
@@ -34,8 +34,8 @@ async def root_route_handler(request):
     body = (
         "<div class='auth-wrap'><div class='auth-card' style='text-align:center'>"
         "<h2>🔎 FAST FINDER</h2>"
-        "<div class='lead'>Web पर लॉगिन करके फाइलें खोजें, असली thumbnail देखें "
-        "और फाइल नाम पर क्लिक करते ही signed streaming लिंक से वीडियो चलाएँ।</div>"
+        "<div class='lead'>Sign in to search your files on the web, see real thumbnails "
+        "and play a video from a signed streaming link by clicking its file name.</div>"
         "<a class='submit' style='display:block' href='/login'>Sign In to Search</a>"
         "<div class='links' style='justify-content:center'>"
         f"<a href='https://t.me/{bot_username}'>🤖 Telegram Bot</a>"
@@ -52,7 +52,7 @@ def _allowed(request, message_id: int) -> bool:
     e, s = request.query.get("e"), request.query.get("s")
     if verify(message_id, e, s):
         return True
-    # Purane (deploy se pehle bheje gaye) unsigned links के लिए opt-in switch
+    # Opt-in switch for old unsigned links (issued before this deployment)
     return ALLOW_UNSIGNED_LINKS and not e and not s
 
 
@@ -92,7 +92,7 @@ async def watch_handler(request):
 # 📐 RANGE PARSER (hardened)
 # ======================================================
 def parse_range(header, file_size):
-    """(first, last, length, is_partial) ya None (=416 unsatisfiable)."""
+    """(first, last, length, is_partial) or None (=416 unsatisfiable)."""
     partial = bool(header)
     try:
         if header:
@@ -129,7 +129,7 @@ async def download_handler(request):
 
 
 async def media_download(request, message_id: int):
-    # ── 1) SETUP (body शुरू होने से पहले, ताकि errors पर 4xx/5xx भेज सकें) ──
+    # ── 1) SETUP (before the body starts, so errors can still return 4xx/5xx) ──
     try:
         info = await get_media_info(message_id)
         if not info:
@@ -185,7 +185,7 @@ async def media_download(request, message_id: int):
             await resp.write(chunk)
         await resp.write_eof()
     except (ConnectionError, asyncio.CancelledError):
-        pass                       # viewer ने tab बंद किया / seek किया — normal
+        pass                       # the viewer closed the tab or seeked — normal
     except Exception as e:
         logger.error(f"Stream error (mid-body): {e!r}")
         raise

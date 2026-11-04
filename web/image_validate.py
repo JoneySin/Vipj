@@ -1,19 +1,19 @@
-"""🛡️ REAL-IMAGE VALIDATOR — "NO IMAGE" / फ़र्ज़ी thumbnail कभी DB में न जाए।
+"""🛡️ REAL-IMAGE VALIDATOR — never let "NO IMAGE" / fake thumbnails into the DB.
 
-`/warmup_thumbs` (और `/api/thumb` probe) Telegram से thumb bytes लाता है। सिर्फ़
-`thumbs[0].file_id` मौजूद होना काफ़ी नहीं है: Telegram कभी-कभी generated
-placeholder ("NO IMAGE" कार्ड), 1×1 pixel, सादा रंग का खाली frame या कोई error
-body दे देता है। v5 (`plugins/warmup.py`) इसलिए bytes download करके `send_photo`
-से दोबारा upload करता था — Telegram खुद सच्ची image ही accept करता है।
+`/warmup_thumbs` (and the `/api/thumb` probe) fetches thumb bytes from Telegram.
+The mere presence of `thumbs[0].file_id` is not enough: Telegram sometimes returns
+a generated placeholder ("NO IMAGE" card), a 1×1 pixel, a blank solid-colour frame
+or an error body. That is why v5 (`plugins/warmup.py`) downloaded the bytes and
+re-uploaded them with `send_photo` — Telegram only accepts a genuine image.
 
-fsv1 इस guarantee को और आगे ले जाता है: upload से **पहले** bytes खुद validate
-करता है (magic bytes / असली dimensions / न्यूनतम आकार / रंग-variance / placeholder
-markers)। जो pass न हो उसे कभी `TG_ID:` में save नहीं करते — `NO_THUMB` mark कर
-दिया जाता है, ताकि fake "no image" poster web पर कभी न दिखे।
+fsv1 takes that guarantee one step further: it validates the bytes **before**
+uploading (magic bytes / real dimensions / minimum size / colour variance /
+placeholder markers). Anything that fails is never saved as `TG_ID:` — it is
+marked `NO_THUMB`, so a fake "no image" poster never appears on the web.
 
-Pillow `requirements.txt` में है, पर available न हो तो pure-Python fallback चलता
-है (PNG/JPEG header parse + PNG IDAT variance) — validator कभी import error से
-thumbnail flow नहीं रोकता।
+Pillow is in `requirements.txt`, but a pure-Python fallback runs when it is
+unavailable (PNG/JPEG header parsing + PNG IDAT variance) — an import error
+must never stop the thumbnail pipeline.
 """
 
 import io
@@ -22,12 +22,12 @@ import zlib
 
 logger = logging.getLogger(__name__)
 
-# Telegram thumbnail आमतौर पर ≥ 90px होती है; placeholder 1×1 / 16×16 होता है
+# Telegram thumbnails are usually ≥ 90px; placeholders tend to be 1×1 or 16×16
 DEFAULT_MIN_BYTES = 512
 DEFAULT_MIN_DIM = 48
 DEFAULT_MIN_STDDEV = 6.0
 
-# कुछ bots placeholder image में ये literal strings डालते हैं (PNG tEXt chunk)
+# Some bots embed these literal strings in a placeholder image (PNG tEXt chunk)
 _PLACEHOLDER_MARKERS = (
     b"NO IMAGE", b"NO-IMAGE", b"NO_IMAGE", b"NO THUMB",
     b"NO THUMBNAIL", b"NO POSTER", b"NO_PREVIEW",
@@ -40,7 +40,7 @@ except Exception:                                    # pragma: no cover
 
 
 def is_image_magic(data: bytes) -> bool:
-    """JPEG / PNG / WEBP ही — SVG, HTML error page, JSON, GIF tracking pixel नहीं।"""
+    """JPEG / PNG / WEBP only — no SVG, HTML error page, JSON or GIF tracking pixel."""
     if not data or len(data) < 12:
         return False
     return (
@@ -70,7 +70,7 @@ def _jpeg_dims(data):
         length = int.from_bytes(data[pos + 2:pos + 4], "big")
         if length < 2:
             break
-        # SOF0..SOF15 (C4/C8/CC = DHT/JPG/DAC नहीं)
+        # SOF0..SOF15 (C4/C8/CC are DHT/JPG/DAC, not frames)
         if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
             return (int.from_bytes(data[pos + 7:pos + 9], "big"),
                     int.from_bytes(data[pos + 5:pos + 7], "big"))
@@ -93,7 +93,7 @@ def _webp_dims(data):
 
 
 def image_dimensions(data: bytes):
-    """(w, h) — Pillow हो तो वहीं से, warna header parse (fail-soft)।"""
+    """(w, h) — from Pillow when available, otherwise header parsing (fail-soft)."""
     if not is_image_magic(data):
         return 0, 0
     if Image is not None:
@@ -110,11 +110,11 @@ def image_dimensions(data: bytes):
 
 
 def _png_pixel_stddev(data: bytes):
-    """Pillow-न-होने पर PNG के pixels की **per-channel** stddev (pure Python)।
+    """Per-channel stddev of PNG pixels in pure Python, when Pillow is missing.
 
-    ⚠️ सादे रंग की image में भी raw scanline bytes `0, r,g,b, r,g,b…` होते हैं,
-    इसलिए पूरे buffer की byte-variance से blank placeholder पकड़ नहीं आता।
-    Channel-wise variance लेने पर सादी image ≈ 0 और असली frame ≫ 0 मिलता है।
+    ⚠️ Even a solid-colour image has raw scanline bytes `0, r,g,b, r,g,b…`,
+    so byte variance over the whole buffer cannot detect a blank placeholder.
+    Channel-wise variance gives ≈ 0 for a flat image and ≫ 0 for a real frame.
     """
     if not data.startswith(b"\x89PNG") or len(data) < 33:
         return None
@@ -122,7 +122,7 @@ def _png_pixel_stddev(data: bytes):
     h = int.from_bytes(data[20:24], "big")
     depth, color = data[24], data[25]
     if depth != 8 or color not in (2, 6) or not (0 < w <= 8192 and 0 < h <= 8192):
-        return None                       # palette/16-bit → Pillow पर छोड़ दो
+        return None                       # palette / 16-bit → leave it to Pillow
     bpp = 3 if color == 2 else 4
     stride = w * bpp
     compressed, pos = bytearray(), 8
@@ -138,9 +138,9 @@ def _png_pixel_stddev(data: bytes):
         raw = zlib.decompress(bytes(compressed))
     except Exception:
         return None
-    # PNG filter types 0–4 undo करें, नहीं तो filtered delta bytes झूठी variance
-    # दिखा सकते हैं। बड़ी image पर सिर्फ़ हर k-th row sample करते हैं (Pillow न हो
-    # तो pure-Python loop भारी न पड़े)।
+    # Undo PNG filter types 0–4, otherwise filtered delta bytes produce misleading
+    # variance. On large images we sample only every k-th row so the pure-Python
+    # loop does not get expensive when Pillow is unavailable.
     step = max(1, (w * h) // 400_000)
     pixels, prev, pos = bytearray(), bytearray(stride), 0
     for y in range(h):
@@ -183,11 +183,11 @@ def _png_pixel_stddev(data: bytes):
 
 
 def _stddev(data: bytes):
-    """RGB channel stddev — सादा/खाली placeholder ≈ 0, असली video frame ≫ 0।
+    """RGB channel stddev — a blank placeholder ≈ 0, a real video frame ≫ 0.
 
-    Pillow (`requirements.txt` में है) सब format decode करता है। न हो तो PNG
-    pure-Python से check होता है; JPEG/WEBP में variance check skip होकर magic +
-    dimensions + min-bytes + marker checks पर भरोसा रहता है।
+    Pillow (in `requirements.txt`) decodes every format. Without it PNG is
+    checked in pure Python; for JPEG/WEBP the variance check is skipped and we
+    rely on magic bytes + dimensions + min size + marker checks.
     """
     if Image is not None:
         try:
@@ -203,9 +203,9 @@ def _stddev(data: bytes):
 
 def validate_thumb(data, *, min_bytes=DEFAULT_MIN_BYTES,
                    min_dim=DEFAULT_MIN_DIM, min_stddev=DEFAULT_MIN_STDDEV):
-    """`(ok, info)` — info में reason / width / height / stddev / bytes।
+    """`(ok, info)` — info holds reason / width / height / stddev / bytes.
 
-    `ok=False` ⇒ कभी DB में `TG_ID:` न लिखें, `NO_THUMB` mark करें।
+    `ok=False` ⇒ never write `TG_ID:` to the DB; mark the file `NO_THUMB` instead.
     """
     info = {"bytes": len(data or b""), "width": 0, "height": 0, "stddev": 0.0, "reason": ""}
     if not data or len(data) < min_bytes:
@@ -220,7 +220,7 @@ def validate_thumb(data, *, min_bytes=DEFAULT_MIN_BYTES,
         info["reason"] = "placeholder-marker"
         return False, info
 
-    # structure check: truncated / corrupt JPEG-PNG Pillow verify() यहाँ पकड़ता है
+    # structure check: Pillow's verify() catches truncated / corrupt JPEG-PNG data
     if Image is not None:
         try:
             with Image.open(io.BytesIO(data)) as img:

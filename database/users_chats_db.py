@@ -139,25 +139,25 @@ class Database:
 
 # ======================================================================
 # 🌐 WEB AUTHENTICATION (login / register / OTP / session)
-#    v5 जैसा ही flow, पर fsv1 के synchronous PyMongo client के अनुकूल।
-#    सारे DB calls asyncio.to_thread() से चलते हैं ताकि bot का event loop
-#    कभी block न हो।
+#    Same flow as v5, adapted to fsv1's synchronous PyMongo client.
+#    All DB calls go through asyncio.to_thread() so the bot's event loop
+#    is never blocked.
 # ======================================================================
 
 logger = logging.getLogger(__name__)
 
-OTP_TTL = 600            # OTP 10 मिनट वैध
-OTP_MAX_TRIES = 5        # एक OTP पर अधिकतम गलत प्रयास
-OTP_MAX_SENDS = 3        # 10 मिनट में एक TG ID पर अधिकतम OTP
+OTP_TTL = 600            # An OTP stays valid for 10 minutes
+OTP_MAX_TRIES = 5        # Maximum wrong attempts for a single OTP
+OTP_MAX_SENDS = 3        # Maximum OTPs per Telegram ID in a 10-minute window
 MIN_PASSWORD_LEN = 6
 
 
 class OTPRateLimited(Exception):
-    """बहुत जल्दी-जल्दी OTP माँगा गया।"""
+    """Raised when OTPs are requested too frequently."""
 
 
 def hash_password(password: str, salt: str = "") -> str:
-    """PBKDF2-HMAC-SHA256 (per-user salt). Plain sha256 से सुरक्षित।"""
+    """PBKDF2-HMAC-SHA256 with a per-user salt — safer than plain sha256."""
     salt = salt or secrets.token_hex(16)
     dk = hashlib.pbkdf2_hmac(
         "sha256", str(password).encode(), bytes.fromhex(salt), 120_000
@@ -192,7 +192,7 @@ class WebAuthDB:
                 return
             self.col.create_index("tg_id", unique=True)
             self.col.create_index("email", unique=True)
-            # TTL index: expired sessions MongoDB खुद हटा देगा
+            # TTL index: MongoDB removes expired sessions automatically
             self.sessions.create_index("expire_at", expireAfterSeconds=0)
         except Exception as e:
             logger.debug(f"Web auth index setup skipped: {e}")
@@ -230,7 +230,7 @@ class WebAuthDB:
         return None
 
     async def identity_exists(self, tg_id: int, email: str) -> bool:
-        """Registration से पहले Telegram ID / Email already used तो True."""
+        """True if the Telegram ID or email is already registered."""
         doc = await asyncio.to_thread(
             self.col.find_one,
             {"$or": [{"tg_id": tg_id}, {"email": str(email).strip().lower()}]},
@@ -243,9 +243,9 @@ class WebAuthDB:
             self.col.update_one, {"tg_id": tg_id}, {"$set": {"last_login": time.time()}}
         )
 
-    # ───────────────── PROFILE SETTINGS (v5 जैसा) ─────────────────
+    # ───────────────── PROFILE SETTINGS (as in v5) ─────────────────
     async def get_profile(self, tg_id: int):
-        """/profile पेज के लिए हल्का doc (email + timestamps)।"""
+        """Lightweight document for the /profile page (email + timestamps)."""
         doc = await asyncio.to_thread(
             self.col.find_one,
             {"tg_id": tg_id},
@@ -254,7 +254,7 @@ class WebAuthDB:
         return doc or {}
 
     async def email_taken(self, email: str, tg_id: int) -> bool:
-        """/api/update_profile — दूसरे अकाउंट का email न ले लें।"""
+        """/api/update_profile — never reuse another account's email."""
         doc = await asyncio.to_thread(
             self.col.find_one,
             {"email": str(email).strip().lower(), "tg_id": {"$ne": tg_id}},
@@ -263,10 +263,10 @@ class WebAuthDB:
         return bool(doc)
 
     async def update_profile(self, tg_id: int, email: str, password: str = ""):
-        """Email और (optional) नया password — v5 के /api/update_profile जैसा।
+        """Update the email and, optionally, the password — mirrors v5's /api/update_profile.
 
-        Password दिया गया तो उसे hash_password() से सेव करते हैं; sessions
-        invalidate करना route की ज़िम्मेदारी है (reset_password जैसा flow)।
+        When a password is supplied it is stored via hash_password(); invalidating
+        sessions is the route's responsibility (the same flow as reset_password).
         """
         data = {"email": str(email).strip().lower()}
         if password:

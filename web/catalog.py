@@ -1,64 +1,64 @@
 """🧩 Unified Catalog UI — Posts + Directory (Actors / Apps / Websites).
 
-`JoneySin/v5` में `post_routes.py` (≈790 lines) और `actor_routes.py` (≈590 lines)
-अलग-अलग थे, दोनों में directory CSS/JS/search/pagination की हुबहू copy थी,
-create/edit के लिए अलग full-page wizards थे (हर save पर page reload), और API
-server से raw HTML strings भेजती थी।
+In `JoneySin/v5`, `post_routes.py` (≈790 lines) and `actor_routes.py` (≈590 lines)
+were separate, both carrying an exact copy of the directory CSS/JS/search/pagination,
+with separate full-page wizards for create/edit (a page reload on every save) and an
+API that returned raw HTML strings.
 
-यहाँ वही **features** हैं, पर fsv1 के लिए एकदम अलग / छोटा ढाँचा:
+The same **features** are here, but with a completely different and smaller structure for fsv1:
 
-* **एक** `CATALOGS` config + **एक** CSS/JS engine → दोनों pages, कोई duplication नहीं।
-* **JSON API + client-side render** (`textContent`-safe escaping) — server से HTML
-  strings नहीं, इसलिए markup एक ही जगह और XSS का रास्ता बंद।
-* **Inline edit modal** listing पर ही: create + edit + delete बिना page reload,
+* **One** `CATALOGS` config + **one** CSS/JS engine → both pages, no duplication.
+* **JSON API + client-side render** (`textContent`-safe escaping) — no HTML
+  strings from the server, so markup lives in one place and XSS is closed off.
+* **Inline edit modal** on the listing itself: create + edit + delete without a reload,
   live poster preview, image upload, dirty-state guard, `Ctrl/Cmd+S` save,
-  `Esc` close, **Undo** वाला delete toast (v5 में नहीं था)।
-* **🎬 Multi-video editor** — `videos[]` दोनों kinds पर, 50 तक; Library picker एक
-  search में कई files जोड़ता है (बंद नहीं होता), ▲▼ reorder, per-row delete,
-  duplicate guard. पुराने posts के `links`-में-रखे episodes auto-migrate होते हैं।
-  **🖼️ Visual gallery** — multiple image upload (Telegram पर एक-एक करके),
-  thumbnails/remove, कोई plain textarea नहीं।
+  `Esc` to close and a delete toast with **Undo** (not present in v5).
+* **🎬 Multi-video editor** — `videos[]` on both kinds, up to 50; the Library picker
+  adds several files from one search (and stays open), ▲▼ reorder, per-row delete,
+  duplicate guard. Episodes stored in `links` on older posts are auto-migrated.
+  **🖼️ Visual gallery** — multiple image upload (one at a time to Telegram),
+  thumbnails/remove, no plain textarea.
 * **🗂️ Detail tabs** — `ℹ️ Overview | 🎬 Videos | 🖼️ Gallery` (Actor) /
-  `📸 Screenshots` (Post). v5 में tabs सिर्फ़ actor detail पर थे। Count badges,
+  `📸 Screenshots` (Post). In v5 tabs existed only on the actor detail page. Count badges,
   `?tab=` deep-link (Post `?tab=screenshots`), arrow-key nav, staggered panels,
-  lightbox, **बिना reload** image delete/upload.
-* **🏷️ Tag-driven Videos — सिर्फ़ Actor पर** (`tagMedia` config flag) — v5 का
-  `get_actor_search_results(name|tags)`: Actor के Videos tab का दूसरा हिस्सा
-  **Search Tags** से Library में खोजकर आता है, ऊपर search box में custom `q`
-  टाइप करते ही tags ignore (बिल्कुल v5 जैसा)। fsv1 की अपनी `$text` +
-  regex-fallback pipeline को हर term पर चलाकर results merge/dedupe/paginate
-  करते हैं। **Post पर यह block बिल्कुल नहीं है** — वहाँ Videos tab में सिर्फ़
-  attached `videos[]` दिखते हैं (API भी `disabled` लौटाता है)।
-* **📐 Two grids, दोनों fixed** — 🎬 **video**: shared `.vgrid` (`/search` +
+  lightbox and **no-reload** image delete/upload.
+* **🏷️ Tag-driven Videos — Actors only** (`tagMedia` config flag) — v5's
+  `get_actor_search_results(name|tags)`: the second part of the Actor Videos tab
+  comes from a Library search using **Search Tags**; typing a custom `q` in the
+  box above ignores tags (exactly like v5). fsv1's own `$text` +
+  regex-fallback pipeline runs per term and the results are merged/deduped/paginated.
+  **Posts do not have this block at all** — their Videos tab shows only
+  attached `videos[]` (the API also returns `disabled`).
+* **📐 Two grids, both fixed** — 🎬 **video**: shared `.vgrid` (`/search` +
   `#catVideos` + `#catMediaResults`) 📱 **1/row**, tablet 2, 🖥️ **3/row**.
   📝🎭 **Post/Actor listing**: `.cat-grid` 📱 **2/row**, tablet 3–4, 🖥️ **5/row**.
-* **🎴 One video card everywhere** — `web.web_assets.VIDEO_CARD_CSS` का `.vcard`
-  contract `/search`, Post attached videos और Actor tag-results तीनों में एक ही
-  markup/CSS: poster + chips + size + play overlay, नाम के नीचे **compact**
-  `.vbody` padding (पुराना extra खाली space हटाया), एक ही `/api/stream` modal.
-* **✏️ Shared File Editor** — v5 के `Edit Title Metadata` (name / caption /
-  collection / custom poster / delete) का fsv1 रूप: admin-only inline modal,
-  `web.web_assets` का `FILE_EDIT_HTML`+`FILE_EDIT_JS` `/search` और दोनों detail
-  pages पर, हर `.vcard` पर ✏️ बटन → `web/file_edit_routes.py` का JSON API.
-  fsv1 के quality/duration/resolution chips भी editable; thumbnail बिना CDN के 16:9 canvas crop
-  से Telegram पर, card **बिना reload** update. v5 जैसा **thumbnail पर click → उसी poster
-  के अंदर Edit/Delete overlay**; फाइल नाम पर click → वही shared player; card में कोई
-  "Click to play" लाइन नहीं.
-* **▶ Shared Click-to-Play** — Videos tab की हर card (attached `#catVideos` और
-  Actor के tag-results `#catMediaResults`) अब **main `/search` वाला ही छोटा
-  player modal** खोलती है: `web.web_assets` का `PLAYER_MODAL_HTML` + `PLAYER_JS`
-  दोनों detail pages में include है, cards `data-fid`/`data-name` + delegated
-  click/keyboard handler से `window.play(fid, name)` चलाती हैं → वही
+* **🎴 One video card everywhere** — the `.vcard` contract from `web.web_assets.VIDEO_CARD_CSS`
+  is the same markup/CSS on `/search`, Post attached videos and Actor tag-results:
+  poster + chips + size + play overlay, **compact**
+  `.vbody` padding under the name (the old empty space is gone), one `/api/stream` modal.
+* **✏️ Shared File Editor** — fsv1's version of v5's `Edit Title Metadata` (name / caption /
+  collection / custom poster / delete): an admin-only inline modal using
+  `FILE_EDIT_HTML` + `FILE_EDIT_JS` from `web.web_assets` on `/search` and both detail
+  pages, an ✏️ button on every `.vcard` → the JSON API in `web/file_edit_routes.py`.
+  fsv1's quality/duration/resolution chips are editable too; a 16:9 canvas crop
+  uploads the thumbnail to Telegram without any CDN and the card updates **without a reload**.
+  Like v5, **clicking the thumbnail opens the Edit/Delete overlay inside that poster**;
+  clicking the file name opens the shared player; there is no "Click to play" line.
+* **▶ Shared Click-to-Play** — every card in the Videos tab (attached `#catVideos` and
+  the Actor tag-results `#catMediaResults`) opens **the same small player modal as the
+  main `/search` page**: `PLAYER_MODAL_HTML` + `PLAYER_JS` from `web.web_assets` are
+  included on both detail pages, and cards use `data-fid`/`data-name` with a delegated
+  click/keyboard handler calling `window.play(fid, name)` → the same
   `POST /api/stream` → signed `<video>` + Player page / Download / Copy link.
-  कोई नई tab, कोई अलग player UI, कोई duplicate JS नहीं।
-* **🖼️ Direct gallery upload** — v5 का `<input multiple>` form अब detail tab पर
-  ही; JSON response + in-place render (v5 reload करता था), uploads Telegram पर
-  एक-एक करके anti-flood.
+  no new tab, no separate player UI, no duplicate JS.
+* **🖼️ Direct gallery upload** — v5's `<input multiple>` form now lives on the detail
+  tab itself; a JSON response is rendered in place (v5 reloaded), and uploads go to
+  Telegram one at a time to avoid flooding.
 * **Animations**: staggered card entrance (IntersectionObserver), 3D hover +
   poster zoom + press feedback, shimmer skeleton, modal spring-pop, button
-  ripple, toast slide-in, save-flash, lightbox zoom, hero fade-up — और
-  `prefers-reduced-motion` respect (v5 में नहीं था)।
-* कोई CDN dependency नहीं (v5 Cropper.js CDN से लाता था)।
+  ripple, toast slide-in, save-flash, lightbox zoom, hero fade-up — and
+  `prefers-reduced-motion` is respected (v5 did not).
+* No CDN dependency (v5 loaded Cropper.js from a CDN).
 """
 
 import html
@@ -72,11 +72,11 @@ from web.web_assets import (app_page, PLAYER_MODAL_HTML, PLAYER_JS,
                             render_vcard, vcard_chips, vcard_size)
 
 # ─────────────────────────────────────────────────────────────
-# ⚙️ DATA-DRIVEN CONFIG — नया catalog जोड़ना हो तो सिर्फ़ यहाँ entry
+# ⚙️ DATA-DRIVEN CONFIG — add a new catalog with a single entry here
 # ─────────────────────────────────────────────────────────────
-# 🎛️ Category filter के "All" option का **एकमात्र label**: /posts–/actors का
-#    filter button और inline editor का category select दोनों यहीँ से लेते हैं
-#    (label बदलना हो तो सिर्फ़ ये constant बदलो, पुराना लम्बा label वापस न लाओ)।
+# 🎛️ The **single label** for the "All" option of the Category filter: both the
+#    /posts–/actors filter button and the inline editor's category select use it
+#    (change this one constant to change the label everywhere).
 CATEGORY_ALL_LABEL = "📂 All"
 
 CATALOGS = {
@@ -94,21 +94,21 @@ CATALOGS = {
         "galleryTab": "📸 Screenshots",
         "galleryIcon": "📸",
         "uploadLabel": "📂 Upload screenshots",
-        "galleryHint": "Movie / episode के stills — एक साथ कई upload करें",
-        "galleryEmpty": "📸 अभी कोई screenshot नहीं है।",
+        "galleryHint": "Stills from the movie or episode — upload several at once",
+        "galleryEmpty": "📸 No screenshots yet.",
         "tabAlias": "screenshots",
         "linkKind": "media",
         "linkLabel": "🔗 External / Social Links",
         "linkLabelField": "Label (Trailer / IMDb / Instagram)",
         "linkValueField": "https://…",
         "videoLabel": "🎬 Videos / Episodes",
-        "videoHint": "जितने चाहें उतने episodes जोड़ें — Library picker से एक-एक करके चुनें",
-        "tagMedia": False,             # Post पर सिर्फ़ attached videos, कोई search-text results नहीं
+        "videoHint": "Add as many episodes as you like — pick them one by one in the Library picker",
+        "tagMedia": False,             # Posts show attached videos only, no search-text results
         "videosHeading": "🎬 Videos",
-        "videoEmptyHint": "Admin: ऊपर Add Videos से कितने भी videos जोड़ें।",
-        "legacyLinksAsVideos": True,   # पुराने posts में `links` ही episodes थे
-        "placeholder": "Movies, series, posts खोजें…",
-        "empty": "🗂️ अभी कोई Post नहीं है।",
+        "videoEmptyHint": "Admins can add as many videos as they like with Add Videos above.",
+        "legacyLinksAsVideos": True,   # older posts kept their episodes in `links`
+        "placeholder": "Search movies, series, posts…",
+        "empty": "🗂️ No posts yet.",
         "categories": [
             {"value": "Movies", "label": "🎬 Movies"},
             {"value": "Web Series", "label": "📺 Web Series"},
@@ -130,21 +130,21 @@ CATALOGS = {
         "galleryTab": "🖼️ Gallery",
         "galleryIcon": "🖼️",
         "uploadLabel": "📂 Add photos to gallery",
-        "galleryHint": "एक साथ कई photos चुनें — Telegram पर एक-एक करके save होंगी",
-        "galleryEmpty": "🖼️ Gallery खाली है।",
+        "galleryHint": "Select several photos at once — they are saved to Telegram one at a time",
+        "galleryEmpty": "🖼️ The gallery is empty.",
         "tabAlias": "gallery",
         "linkKind": "url",
         "linkLabel": "🔗 Social / Website Links",
         "linkLabelField": "Label (Instagram / YouTube / X)",
         "linkValueField": "https://…",
         "videoLabel": "🎬 Videos (Filmography)",
-        "videoHint": "इस नाम की Library files जोड़ें — कितनी भी videos attach कर सकते हैं",
-        "tagMedia": True,              # Actor: Search Tags से Library videos (v5 जैसा)
+        "videoHint": "Attach Library files for this name — add as many videos as you like",
+        "tagMedia": True,              # Actor: Library videos from Search Tags (as in v5)
         "videosHeading": "📌 Attached Videos",
-        "videoEmptyHint": "नीचे Search Tags से Library की videos अपने आप दिखेंगी।",
-        "legacyLinksAsVideos": False,  # actors के `links` URLs हैं, videos नहीं
-        "placeholder": "Actor, app, website खोजें…",
-        "empty": "📇 अभी कोई Profile नहीं है।",
+        "videoEmptyHint": "Library videos from Search Tags will appear below automatically.",
+        "legacyLinksAsVideos": False,  # actor `links` are URLs, not videos
+        "placeholder": "Search actors, apps, websites…",
+        "empty": "📇 No profiles yet.",
         "categories": [
             {"value": "actor", "label": "🎭 Actor"},
             {"value": "app", "label": "📱 App"},
@@ -158,7 +158,7 @@ _SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.\-]*:", re.I)
 
 
 def clean_url(value, allow_tg=True) -> str:
-    """सिर्फ़ http/https (या TG_ID:) — `javascript:` जैसी scheme तुरंत reject।"""
+    """Allow only http/https (or TG_ID:) — reject schemes like `javascript:` immediately."""
     v = str(value or "").strip()
     if not v:
         return ""
@@ -177,11 +177,11 @@ _MEDIA_ID_RE = re.compile(r"^[A-Za-z0-9_\-=]{2,256}$")
 
 def video_card_html(fid: str, name: str, poster: str,
                     chips: str = "", data: dict = None) -> str:
-    '''🎴 SHARED VIDEO CARD — `web.web_assets.VCARD_TEMPLATE` का एकमात्र wrapper.
+    '''🎴 SHARED VIDEO CARD — the only wrapper around `web.web_assets.VCARD_TEMPLATE`.
 
-    `/search` की `card(f)` JS, Actor की `mediaCard(f)` JS और ये Python helper
-    तीनों उसी template + उसी `VCARD_CHIP_SPEC` से chips/size बनाते हैं।
-    `data` = वही fields जो `vcard_meta()` देता है (size/quality/res/duration/type)।
+    `/search`'s `card(f)` JS, the Actor `mediaCard(f)` JS and this Python helper
+    all build chips/size from the same template and `VCARD_CHIP_SPEC`.
+    `data` = the same fields returned by `vcard_meta()` (size/quality/res/duration/type).
     '''
     e = html.escape
     return render_vcard(
@@ -195,17 +195,17 @@ def video_card_html(fid: str, name: str, poster: str,
     )
 
 def clean_media_id(value) -> str:
-    """Linked media हमेशा Telegram `file_id` हो — URL/`javascript:`/control chars reject।
+    """Linked media must always be a Telegram `file_id` — reject URLs/`javascript:`/control chars.
 
-    v5 में post wizard का "Videos / Episodes" field खाली-खाली raw string ले लेता था;
-    यहाँ value सीधे `/setup_stream?file_id=…` में जाती है, इसलिए pattern-validate ज़रूरी है।
+    In v5 the post wizard's "Videos / Episodes" field accepted empty raw strings;
+    here the value goes straight into `/setup_stream?file_id=…`, so pattern validation is essential.
     """
     v = str(value or "").strip()
     return v if _MEDIA_ID_RE.match(v) else ""
 
 
 def image_src(value: str) -> str:
-    """TG_ID → अपना /api/catalog/photo (bytes Telegram से), वरना direct URL।"""
+    """TG_ID → our own /api/catalog/photo (bytes from Telegram); otherwise a direct URL."""
     v = str(value or "")
     if not v:
         return ""
@@ -215,7 +215,7 @@ def image_src(value: str) -> str:
 
 
 def normalize(kind: str, raw: dict) -> dict:
-    """UI/API से आया raw payload → साफ़, bounded, validated item dict."""
+    """Raw payload from the UI/API → a clean, bounded, validated item dict."""
     cfg = CATALOGS[kind]
     allowed = [c["value"] for c in cfg["categories"]]
     cat = str(raw.get("category") or "").strip()
@@ -232,8 +232,8 @@ def normalize(kind: str, raw: dict) -> dict:
         gal_raw = gal_raw.splitlines()
     gallery = [u for u in (clean_url(g) for g in gal_raw) if u][:12]
 
-    # 🎬 Videos — दोनों kinds के लिए, *कितने भी* (50 तक)।
-    # `file_id` सिर्फ़ Telegram का base64url token होना चाहिए; URLs/जंक reject।
+    # 🎬 Videos — for both kinds, *as many as needed* (up to 50).
+    # `file_id` must be a Telegram base64url token; reject URLs and junk.
     def _video_rows(rows):
         out = []
         for row in (rows or [])[:50]:
@@ -245,8 +245,8 @@ def normalize(kind: str, raw: dict) -> dict:
             if not fid:
                 continue
             row = {"label": label or "Video", "file_id": fid}
-            # 🎴 card metadata वही shared vcard_meta fields — renderer इन्हें
-            #    VCARD_CHIP_SPEC से दिखाता है, कोई अलग chip markup नहीं।
+            # 🎴 card metadata uses the same shared vcard_meta fields — the renderer
+            #    shows them via VCARD_CHIP_SPEC, with no separate chip markup.
             for key in ("size", "quality", "duration", "res", "type"):
                 val = str(row_in.get(key) or "").strip()[:120]
                 if val:
@@ -259,7 +259,7 @@ def normalize(kind: str, raw: dict) -> dict:
         videos = _video_rows(raw.get("videos"))
         url_rows = raw_links
     elif cfg.get("legacyLinksAsVideos"):
-        # 🔄 पुराने posts जिन्होंने episodes `links` में save किए थे — auto-migrate
+        # 🔄 Auto-migrate older posts that saved episodes inside `links`
         videos = _video_rows(raw_links)
         url_rows = []
     else:
@@ -289,11 +289,11 @@ def normalize(kind: str, raw: dict) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────
-# 🎨 SHARED CSS — दोनों pages + detail + modal + animations
+# 🎨 SHARED CSS — both pages + detail + modal + animations
 # ─────────────────────────────────────────────────────────────
 CATALOG_CSS = """
 .cat-wrap{max-width:1200px;margin:0 auto}
-/* 📄 कोई page-heading नहीं — सब कुछ नीचे वाले एक `.cat-box` में */
+/* 📄 No page heading — everything lives in the single `.cat-box` below */
 .cat-count{font-size:11px;font-weight:800;color:var(--mut);background:var(--bg3);
 border:1px solid var(--line);border-radius:20px;padding:5px 11px;white-space:nowrap;flex:0 0 auto}
 .cat-count.bump{animation:catPop .5s cubic-bezier(.34,1.56,.64,1)}
@@ -303,16 +303,16 @@ font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;transition:tra
 .cat-btn:active{transform:scale(.96)}
 .cat-btn.ghost{background:var(--bg3);border:1px solid var(--line);color:var(--txt)}
 .cat-btn.ghost:hover{background:var(--bg2);border-color:var(--red);box-shadow:none}
-/* 🧩 GitHub reference (v5 `.search-box`) जैसा **एक card-box**: search bar +
-   filter buttons + ✨ New Post/Profile + count — desktop और mobile दोनों पर।
-   📱 mobile पर chrome हटाने वाला पुराना override अब नहीं है (वही box रहता है)। */
+/* 🧩 Like the GitHub reference (v5 `.search-box`): **one card-box** holding the search bar,
+   filter buttons, ✨ New Post/Profile and the count — on desktop and mobile alike.
+   📱 The old override that stripped the chrome on mobile is gone (the box stays). */
 .cat-toolbar.cat-box{display:flex;gap:10px;flex-wrap:wrap;align-items:center;
 background:var(--card);border:1px solid var(--line);border-radius:12px;
 padding:16px;margin-bottom:25px;box-shadow:0 4px 15px rgba(0,0,0,.10)}
-/* ✨ New Post / New Profile: 🖥️ desktop (>760px) पर search के साथ एक ही लाइन।
-   nowrap + `.cat-search{min-width:0}` ⇒ search ज़रूरत के हिसाब से सिकुड़ता है,
-   filters + create button अपनी जगह रहते हैं, कोई horizontal overflow नहीं।
-   📱 mobile वाला rule FILTER_CSS के उसी `@media(max-width:760px)` ब्लॉक में। */
+/* ✨ New Post / New Profile: 🖥️ on desktop (>760px) it shares the search line.
+   nowrap + `.cat-search{min-width:0}` ⇒ the search input shrinks as needed,
+   while the filters + create button keep their width; no horizontal overflow.
+   📱 The mobile rule lives in the same `@media(max-width:760px)` block of FILTER_CSS. */
 .cat-toolbar .cat-create{flex:0 0 auto;white-space:nowrap}
 @media(min-width:761px){.cat-toolbar.cat-toolbar{flex-wrap:nowrap}}
 .cat-search{position:relative;flex:1 1 240px;min-width:0}
@@ -325,7 +325,7 @@ width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--red);
 border-radius:50%;animation:catSpin .65s linear infinite}
 .cat-search.loading .cat-spin{display:block}
 /* ── grid + cards ── */
-/* 📝/🎭 listing: 📱 mobile 2/row · 🖥️ desktop 5/row (video grids अलग .vgrid = 1/2/3) */
+/* 📝/🎭 listing: 📱 2/row on mobile · 🖥️ 5/row on desktop (video grids use .vgrid = 1/2/3) */
 .cat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 @media(min-width:620px){.cat-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}
 @media(min-width:900px){.cat-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}}
@@ -494,8 +494,8 @@ vertical-align:middle;transition:background .2s,color .2s}
 .cat-panel .cat-card.enter{opacity:1!important}
 
 /* 🎬 Video tab */
-/* 🎬 Videos tab: grid + card design अब `web.web_assets.VIDEO_CARD_CSS` का
-   shared `.vgrid` / `.vcard` है — बिल्कुल वैसा ही जैसा main /search पर। */
+/* 🎬 Videos tab: the grid + card design now come from `web.web_assets.VIDEO_CARD_CSS`
+   and its shared `.vgrid` / `.vcard` — exactly as on the main /search page. */
 .cat-vempty,.cat-gempty{background:var(--card);border:1px dashed var(--line);border-radius:12px;
 padding:34px 18px;text-align:center;color:var(--mut);font-size:13px;font-weight:700}
 
@@ -544,7 +544,7 @@ border-radius:5px;width:20px;height:20px;font-size:10px;cursor:pointer;line-heig
 margin:16px 0 8px;border-top:1px solid var(--line);padding-top:14px}
 
 
-/* ───────── 🏷️ Tag-driven video search (v5 का actor Linked Media) ───────── */
+/* ───────── 🏷️ Tag-driven video search (v5's actor Linked Media) ───────── */
 .cat-subhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 12px}
 .cat-subhead h3{font-size:14px;font-weight:900;margin:0;letter-spacing:-.2px}
 .cat-subhead .cat-hint{margin:0}
@@ -580,7 +580,7 @@ border:1px dashed var(--line);border-radius:12px;padding:14px;margin-bottom:16px
 .cat-uploadbar .cat-upload{margin:0}
 .cat-upnote{font-size:11px;font-weight:700;color:var(--mut);min-height:14px;margin-bottom:12px}
 
-/* ♿ v5 में नहीं था: reduced-motion वालों के लिए सारे animations बंद */
+/* ♿ Not in v5: disable all animations for reduced-motion users */
 @media(prefers-reduced-motion:reduce){
 .cat-card,.cat-card.enter,.cat-card.enter.in,.cat-hero,.cat-modal,.cat-mcard,.cat-toast,
 .cat-lightbox,.cat-lightbox img,.cat-gal img,.cat-poster,.cat-skel,.cat-poster-wrap,
@@ -593,7 +593,7 @@ animation:none!important;transition:none!important;opacity:1!important;transform
 
 
 # ─────────────────────────────────────────────────────────────
-# 🧠 SHARED JS — listing + inline editor (एक ही code दोनों kinds के लिए)
+# 🧠 SHARED JS — listing + inline editor (one code path for both kinds)
 # ─────────────────────────────────────────────────────────────
 CATALOG_JS = r"""
 <script>
@@ -620,15 +620,15 @@ function catLabel(v){
 function cardHTML(it){
   const id = esc(it.id), src = imgSrc(it.image);
   const tags = (it.tags||[]).slice(0,2).map(t=>'#'+t).join(' ');
-  /* ⚠️ user data कभी inline JS string में नहीं — सिर्फ़ data-id */
+  /* ⚠️ user data never goes into an inline JS string — only data-id attributes */
   const admin = ADMIN ? `<div class="cat-actions vm-actions vm-always">
       <button class="cat-edit" onclick="event.stopPropagation();openEditor(this.closest('.cat-card').dataset.id)">✏️ Edit</button>
       <button class="cat-del" onclick="event.stopPropagation();removeItem(this.closest('.cat-card').dataset.id)">🗑 Delete</button>
     </div>` : '';
-  /* ✅ Poster और Text का markup बिल्कुल एक ही — सिर्फ़ Text mode में
-     `.vm-img`/`.vm-overlay` CSS से छिपते हैं (web/mode_assets.py)।
-     `ViewMode.imgAttrs()` Text mode में src की जगह data-src देता है,
-     इसलिए thumbnail request भी नहीं जाती। कोई अलग render branch नहीं। */
+  /* ✅ Poster and Text share exactly the same markup — in Text mode only
+     `.vm-img`/`.vm-overlay` are hidden by CSS (web/mode_assets.py).
+     `ViewMode.imgAttrs()` supplies data-src instead of src in Text mode,
+     so no thumbnail request is made. There is no separate render branch. */
   const img = src
     ? `<img class="cat-poster vm-img" ${ViewMode.imgAttrs(esc(src))} alt="" loading="lazy"
           onload="this.classList.add('on')" onerror="this.remove()">`
@@ -644,13 +644,13 @@ function cardHTML(it){
   </div>`;
 }
 function skeletons(){
-  /* vm-overlay ⇒ Text mode में ये image-shaped placeholders भी नहीं दिखते
-     (MODE_CSS का एक नियम, यहाँ कोई अलग mode CSS नहीं) */
+  /* vm-overlay ⇒ these image-shaped placeholders are hidden in Text mode too
+     (one rule in MODE_CSS — no separate mode CSS here) */
   return Array.from({length:8},()=>'<div class="cat-skel vm-overlay"></div>').join('');
 }
-function emptyHTML(){ return `<div class="cat-empty">${esc(CFG.empty)}<br><span style="font-size:12px">दूसरा keyword या category चुनें।</span></div>`; }
+function emptyHTML(){ return `<div class="cat-empty">${esc(CFG.empty)}<br><span style="font-size:12px">Try another keyword or category.</span></div>`; }
 
-/* ✨ staggered entrance — v5 की staggerCards, पर reduced-motion aware */
+/* ✨ staggered entrance — like v5's staggerCards, but reduced-motion aware */
 function reveal(grid){
   const cards = Array.from(grid.querySelectorAll('.cat-card.enter'));
   if(!cards.length) return;
@@ -696,16 +696,16 @@ async function load(reset){
     state.items = {};
     (d.items||[]).forEach(it => state.items[it.id] = it);
     grid.innerHTML = (d.items||[]).length ? (d.items||[]).map(cardHTML).join('') : emptyHTML();
-    ViewMode.apply();   /* नए cards पर mode-text + data-src→src, एक ही जगह से */
+    ViewMode.apply();   /* mode-text + data-src→src on the new cards, from one place */
     state.hasNext = !!d.has_next;
     $('#catCount').textContent = (d.total||0) + ' entries';
     bump(); updatePg(); reveal(grid);
-  }catch(e){ grid.innerHTML = '<div class="cat-empty">⚠️ Load नहीं हुआ। '+esc(e.message||e)+'</div>'; }
+  }catch(e){ grid.innerHTML = '<div class="cat-empty">⚠️ Could not load results. '+esc(e.message||e)+'</div>'; }
   finally{ if(my === state.req) search.classList.remove('loading'); }
 }
 function openDetail(id){ location.href = CFG.detail + encodeURIComponent(id); }
 
-/* ── toast (Undo सहित) ── */
+/* ── toast (with Undo) ── */
 let toastTimer = null;
 function toast(msg, type, actionLabel, actionFn){
   const t = $('#catToast');
@@ -722,7 +722,7 @@ function toast(msg, type, actionLabel, actionFn){
 }
 function hideToast(){ const t=$('#catToast'); t.classList.remove('show'); }
 
-/* ── ripple (v5 का btnRipple, बिना CDN) ── */
+/* ── ripple (v5's btnRipple, without a CDN) ── */
 document.addEventListener('pointerdown', e => {
   const b = e.target.closest('.cat-btn,.cat-edit,.cat-del,.cat-upload');
   if(!b) return;
@@ -735,7 +735,7 @@ document.addEventListener('pointerdown', e => {
 
 /* ── inline editor ── */
 function editorHTML(){
-  /* 🎛️ "All" label Python-side single source (CATEGORY_ALL_LABEL) से inject */
+  /* 🎛️ The "All" label is injected from the Python-side single source (CATEGORY_ALL_LABEL) */
   const opts = ['<option value="all">' + __ALL_CAT__ + '</option>']
     .concat(CFG.categories.map(c=>`<option value="${esc(c.value)}">${esc(c.label)}</option>`)).join('');
   return `<div class="cat-modal" id="catModal" onclick="if(event.target===this)closeEditor()">
@@ -753,8 +753,8 @@ function editorHTML(){
     <div class="cat-field"><label class="cat-label">Search Tags (comma separated)</label>
       <input class="cat-input" id="fTags" placeholder="e.g. Action, Thriller, 2024"></div>
     <div class="cat-field"><label class="cat-label">${esc(CFG.imageLabel)}</label>
-      <div class="cat-preview" id="fPreview"><span>कोई image नहीं</span></div>
-      <input class="cat-input" id="fImage" placeholder="https://… या TG_ID:…" style="margin-bottom:8px">
+      <div class="cat-preview" id="fPreview"><span>No image selected</span></div>
+      <input class="cat-input" id="fImage" placeholder="https://… or TG_ID:…" style="margin-bottom:8px">
       <label class="cat-upload">📂 Upload image
         <input type="file" id="fUpload" accept="image/*" onchange="uploadImage(this)"></label>
       <span id="fUploadNote" style="font-size:11px;color:var(--mut);margin-left:8px"></span></div>
@@ -766,7 +766,7 @@ function editorHTML(){
         <button class="cat-btn ghost" type="button" onclick="addVideo('','')" style="padding:7px 13px;font-size:11px">➕ Add Video</button>
         <span class="cat-hint" id="fVideoCount" style="margin:0"></span></div>
       <div class="cat-pickbar">
-        <input class="cat-input" id="fPickerQ" placeholder="🔍 Library में file खोजें — कई videos एक साथ चुन सकते हैं…"
+        <input class="cat-input" id="fPickerQ" placeholder="🔍 Search the Library — you can select several videos…"
           oninput="clearTimeout(window.__pk);window.__pk=setTimeout(pickMedia,320)">
         <button class="cat-btn ghost" type="button" onclick="donePicking()" style="padding:7px 13px;font-size:11px">✓ Done</button>
       </div>
@@ -777,7 +777,7 @@ function editorHTML(){
       <div class="cat-galadd">
         <label class="cat-upload">${esc(CFG.uploadLabel)} (multiple)
           <input type="file" id="fGalUpload" accept="image/*" multiple onchange="uploadGallery(this)"></label>
-        <input class="cat-input" id="fGalUrl" placeholder="https://… या TG_ID:…">
+        <input class="cat-input" id="fGalUrl" placeholder="https://… or TG_ID:…">
         <button class="cat-btn ghost" type="button" onclick="addGalleryUrl()" style="padding:7px 13px;font-size:11px">➕ Add URL</button>
       </div>
       <span class="cat-hint" id="fGalNote"></span></div>
@@ -806,8 +806,8 @@ function linkRow(label, value){
 }
 function addLink(l,v){ linkRow(l,v); markDirty(); }
 
-/* 🎬 MULTI-VIDEO: हर row = {label, file_id}. कोई hardcoded limit नहीं (UI 50 तक)।
-   ▲▼ से order बदलें, ✕ से हटाएँ, Library picker से एक के बाद एक कई चुनें। */
+/* 🎬 MULTI-VIDEO: each row = {label, file_id}. No hardcoded limit (UI caps at 50).
+   ▲▼ changes the order, ✕ removes a row, the Library picker adds several one by one. */
 function videoRow(label, fid){
   const wrap = document.createElement('div'); wrap.className = 'cat-vrow';
   const a = document.createElement('input'); a.className='cat-input v-label';
@@ -816,8 +816,8 @@ function videoRow(label, fid){
   b.placeholder='Telegram File ID'; b.value=fid||'';
   const up=document.createElement('button'), dn=document.createElement('button'), x=document.createElement('button');
   for(const btn of [up,dn,x]){ btn.className='cat-vbtn'; btn.type='button'; }
-  up.textContent='▲'; up.title='ऊपर ले जाएँ'; dn.textContent='▼'; dn.title='नीचे ले जाएँ';
-  x.textContent='✕'; x.title='ये video हटाएँ';
+  up.textContent='▲'; up.title='Move up'; dn.textContent='▼'; dn.title='Move down';
+  x.textContent='✕'; x.title='Remove this video';
   up.onclick=()=>{ if(wrap.previousElementSibling){ $('#fVideos').insertBefore(wrap,wrap.previousElementSibling); markDirty(); } };
   dn.onclick=()=>{ if(wrap.nextElementSibling){ $('#fVideos').insertBefore(wrap.nextElementSibling,wrap); markDirty(); } };
   x.onclick=()=>{ wrap.remove(); updateVideoCount(); markDirty(); };
@@ -831,18 +831,18 @@ function addVideo(l,v){ const w=videoRow(l,v); w.querySelector('input').focus();
 function updateVideoCount(){
   const n=$('#fVideos').children.length;
   $('#fVideoCount').textContent = n
-    ? `${n} video${n>1?'s':''} attached — और जोड़ सकते हैं` : 'कोई video नहीं — ऊपर से जोड़ें';
+    ? `${n} video${n>1?'s':''} attached — you can add more` : 'No videos — add some above';
 }
 function attachedIds(){
   return Array.from(document.querySelectorAll('#fVideos .v-fid')).map(i=>i.value.trim()).filter(Boolean);
 }
-/* 🖼️ Gallery — visual thumbnails + remove, textarea की जगह */
+/* 🖼️ Gallery — visual thumbnails + remove instead of a textarea */
 function renderGallery(){
   const box=$('#fGalList'); box.innerHTML='';
   state.gallery.forEach((val,i)=>{
     const d=document.createElement('div'); d.className='cat-gthumb';
     const im=document.createElement('img'); im.src=imgSrc(val); im.onerror=()=>im.remove();
-    const x=document.createElement('button'); x.type='button'; x.textContent='✕'; x.title='हटाएँ';
+    const x=document.createElement('button'); x.type='button'; x.textContent='✕'; x.title='Remove';
     x.onclick=()=>{ state.gallery.splice(i,1); renderGallery(); markDirty(); };
     d.append(im,x); box.appendChild(d);
   });
@@ -851,33 +851,33 @@ function addGalleryUrl(){
   const el=$('#fGalUrl'), v=el.value.trim();
   if(!v) return;
   if(state.gallery.length>=12) return toast('Maximum 12 images','err');
-  state.gallery.push(v); el.value=''; renderGallery(); markDirty(); toast('🖼️ Image जोड़ी गई');
+  state.gallery.push(v); el.value=''; renderGallery(); markDirty(); toast('🖼️ Image added');
 }
 async function uploadGallery(input){
   const files=Array.from(input.files||[]); if(!files.length) return;
   const note=$('#fGalNote');
-  /* Telegram rate-limit से बचने के लिए uploads भी एक-एक करके (जैसे thumbnails) */
+  /* Uploads also run one at a time to stay clear of Telegram's rate limits */
   for(let i=0;i<files.length && state.gallery.length<12;i++){
-    note.textContent=`⏳ Uploading ${i+1}/${files.length} — एक-एक करके…`;
+    note.textContent=`⏳ Uploading ${i+1}/${files.length} — one at a time…`;
     const fd=new FormData(); fd.append('image',files[i]);
     try{
       const r=await fetch('/api/catalog/upload',{method:'POST',body:fd});
       const d=await r.json();
       if(!d.ok) throw new Error(d.error||'Upload failed');
       state.gallery.push(d.value); renderGallery(); markDirty();
-    }catch(e){ note.textContent='⚠️ '+e.message+' (URL paste करें)'; break; }
+    }catch(e){ note.textContent='⚠️ '+e.message+' (paste a URL instead)'; break; }
   }
-  note.textContent=`✅ ${state.gallery.length} images ready — Save दबाएँ`;
+  note.textContent=`✅ ${state.gallery.length} images ready — press Save`;
   input.value='';
 }
 function donePicking(){
   const b=$('#fPicker'); b.classList.remove('show'); b.innerHTML='';
-  toast('✓ Videos जोड़े गए — अब Save दबाएँ');
+  toast('✓ Videos added — press Save now');
 }
 function markDirty(){ state.dirty = true; $('#fDirty').style.display='inline'; }
 function setPreview(v){
   const p = $('#fPreview'), src = imgSrc(v);
-  p.innerHTML = src ? `<img src="${esc(src)}" onerror="this.remove()">` : '<span>कोई image नहीं</span>';
+  p.innerHTML = src ? `<img src="${esc(src)}" onerror="this.remove()">` : '<span>No image selected</span>';
 }
 async function openEditor(id, focus){
   state.editing = id || null; state.dirty = false;
@@ -895,11 +895,11 @@ async function openEditor(id, focus){
   $('#fBody').value = it ? (it.body||'') : '';
   $('#fTags').value = it ? (it.tags||[]).join(', ') : '';
   $('#fImage').value = it ? (it.image||'') : '';
-  /* 🎬 videos — पुराने posts के `links` को API पहले ही migrate कर देती है */
+  /* 🎬 videos — the API already migrates `links` from older posts */
   $('#fVideos').innerHTML = '';
   const vids = (it && it.videos) || [];
   if(vids.length) vids.forEach(v=>videoRow(v.label, v.file_id));
-  else if(!id) videoRow('','');   /* नया entry → एक खाली row से शुरू, multiple साफ़ दिखे */
+  else if(!id) videoRow('','');   /* a new entry starts with one empty row */
   updateVideoCount();
   state.gallery = it ? [...(it.gallery||[])] : [];
   renderGallery();
@@ -919,7 +919,7 @@ async function openEditor(id, focus){
   }, 150);
 }
 function closeEditor(force){
-  if(!force && state.dirty && !confirm('बदलाव save नहीं हुए हैं। फिर भी बंद करें?')) return;
+  if(!force && state.dirty && !confirm('You have unsaved changes. Close anyway?')) return;
   const m = $('#catModal'); m.classList.remove('show');
   setTimeout(()=>m.classList.remove('open'), 220);
   state.editing = null; state.dirty = false;
@@ -946,7 +946,7 @@ function collect(){
 }
 async function saveEditor(){
   const payload = collect();
-  if(!payload.title){ toast('Title ज़रूरी है', 'err'); $('#fTitle').focus(); return; }
+  if(!payload.title){ toast('A title is required', 'err'); $('#fTitle').focus(); return; }
   const btn = document.querySelector('#catModal .cat-mfoot .cat-btn:last-child');
   btn.disabled = true; btn.textContent = '⏳ Saving…';
   try{
@@ -964,7 +964,7 @@ async function saveEditor(){
 }
 async function removeItem(id){
   const it = state.items[id];
-  if(!it || !confirm(`"${it.title}" delete करें?`)) return;
+  if(!it || !confirm(`Delete "${it.title}"?`)) return;
   const r = await fetch(`/api/catalog/${CFG.kind}/delete`, {method:'POST',
     headers:{'Content-Type':'application/json'}, body:JSON.stringify({id})});
   const d = await r.json();
@@ -990,8 +990,8 @@ async function uploadImage(input){
     const d = await r.json();
     if(!d.ok) throw new Error(d.error || 'Upload failed');
     $('#fImage').value = d.value; setPreview(d.value); markDirty();
-    note.textContent = '✅ Telegram पर save';
-  }catch(e){ note.textContent = '⚠️ '+e.message+' (URL paste करें)'; }
+    note.textContent = '✅ Saved to Telegram';
+  }catch(e){ note.textContent = '⚠️ '+e.message+' (paste a URL instead)'; }
   input.value = '';
 }
 async function pickMedia(){
@@ -1009,20 +1009,20 @@ async function pickMedia(){
           return `<div class="cat-pick${added?' added':''}" data-fid="${fid}" data-name="${name}">`
                + `<span>${name}</span><span class="pick-add">${added?'✓ Added':'+ Add'}</span></div>`;
         }).join('')
-      : '<div class="cat-pick">कोई file नहीं मिली</div>';
+      : '<div class="cat-pick">No files found</div>';
   }catch(e){ box.innerHTML = '<div class="cat-pick">⚠️ Error</div>'; }
 }
-/* ⚠️ picker खुला रहता है — एक search से कई videos जोड़े जा सकते हैं */
+/* ⚠️ the picker stays open — several videos can be added from one search */
 document.addEventListener('click', e => {
   const p = e.target.closest('#fPicker .cat-pick');
   if(!p || !p.dataset.fid) return;
   const fid = p.dataset.fid;
-  if(attachedIds().includes(fid)) return toast('ये video पहले से जोड़ा है');
+  if(attachedIds().includes(fid)) return toast('This video is already attached');
   if($('#fVideos').children.length >= 50) return toast('Maximum 50 videos','err');
   videoRow((p.dataset.name||'Video').slice(0,70), fid);
   p.classList.add('added');
   const tag=p.querySelector('.pick-add'); if(tag) tag.textContent='✓ Added';
-  markDirty(); toast(`📎 ${$('#fVideos').children.length} videos — और चुन सकते हैं`);
+  markDirty(); toast(`📎 ${$('#fVideos').children.length} videos — you can select more`);
 });
 document.addEventListener('keydown', e => {
   if(!$('#catModal') || !$('#catModal').classList.contains('open')) return;
@@ -1072,7 +1072,7 @@ function toast(msg,type){
   t.className='cat-toast show '+(type||''); t.textContent=msg;
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3000);
 }
-/* 🗂️ tabs: Post का तीसरा tab "Screenshots", Actor का "Gallery" — एक ही engine */
+/* 🗂️ tabs: Post's third tab is "Screenshots", Actor's is "Gallery" — one engine */
 function switchTab(name, init){
   if(name===D.tabAlias) name='gallery';
   if(!['overview','videos','gallery'].includes(name)) name='overview';
@@ -1094,8 +1094,8 @@ function stagger(sel){
   });
 }
 
-/* ── 🏷️ v5 का tag-driven Linked Media, पर fsv1 की JSON API से ── */
-/* 🎴 /search वाला ही shared card — markup/chips/size web_assets.VCARD_* से */
+/* ── 🏷️ v5's tag-driven Linked Media, served by fsv1's JSON API ── */
+/* 🎴 the same shared card as /search — markup/chips/size from web_assets.VCARD_* */
 function mediaCard(f){
   return vcardHTML({
     CARD_CLASS:' enter', EXTRA_ATTRS:' data-label="1"',
@@ -1105,7 +1105,7 @@ function mediaCard(f){
     CHIPS:vcardChips(f), SIZE:vcardSize(f)
   });
 }
-/* ▶ main page जैसा ही shared player — नाम/card पर click → छोटा modal */
+/* ▶ shared player like the main page — clicking a name/card opens the small modal */
 function playCard(c){
   if(!c || !c.dataset.fid) return;
   if(typeof window.play==='function') window.play(c.dataset.fid, c.dataset.name||'Video');
@@ -1115,12 +1115,12 @@ document.addEventListener('click',e=>{
   if(c) playCard(c);
 });
 async function loadMedia(offset){
-  if(!D.tagMedia) return;                 /* Post पर search-text results नहीं चाहिए */
+  if(!D.tagMedia) return;                 /* Posts must not show search-text results */
   const box=document.getElementById('catMediaResults'); if(!box) return;
   mediaLoaded=true; mediaOffset=Math.max(0,offset||0);
   const q=(document.getElementById('catMediaQ')||{}).value||'';
   const info=document.getElementById('catMediaInfo');
-  if(info) info.textContent='⏳ Library में खोजा जा रहा है…';
+  if(info) info.textContent='⏳ Searching the Library…';
   try{
     const r=await fetch('/api/catalog/'+D.kind+'/media?id='+encodeURIComponent(D.id)
       +'&q='+encodeURIComponent(q.trim())+'&offset='+mediaOffset+'&limit='+D.limit);
@@ -1128,16 +1128,16 @@ async function loadMedia(offset){
     mediaNext=d.next_offset||'';
     const cards=(d.results||[]).map(mediaCard);
     box.innerHTML=cards.length?cards.join('')
-      : '<div class="cat-vempty">🔍 इन tags से कोई Library file नहीं मिली।<br>'
-        + '<span style="font-size:11px;font-weight:600">ऊपर search box में नाम लिखकर भी ढूँढ सकते हैं।</span></div>';
+      : '<div class="cat-vempty">🔍 No Library files matched these tags.<br>'
+        + '<span style="font-size:11px;font-weight:600">You can also search by name in the box above.</span></div>';
     box.querySelectorAll('img').forEach(im=>{
       im.addEventListener('load',()=>im.classList.add('on'));
       if(im.complete&&im.naturalWidth) im.classList.add('on');
     });
     if(info){
-      if(d.source==='tags') info.innerHTML='🏷️ <b>'+d.terms.length+'</b> Search Tags से <b>'+d.total+'</b> videos मिलीं';
-      else if(d.source==='custom') info.innerHTML='🔍 &quot;'+esc(q.trim())+'&quot; के लिए <b>'+d.total+'</b> results';
-      else info.innerHTML='📝 Title से <b>'+d.total+'</b> results (इस entry पर Tags नहीं हैं)';
+      if(d.source==='tags') info.innerHTML='🏷️ <b>'+d.terms.length+'</b> Search Tags found <b>'+d.total+'</b> videos';
+      else if(d.source==='custom') info.innerHTML='🔍 &quot;'+esc(q.trim())+'&quot;: <b>'+d.total+'</b> results';
+      else info.innerHTML='📝 Title: <b>'+d.total+'</b> results (this entry has no tags)';
     }
     const pg=document.getElementById('catMediaPg');
     if(pg){
@@ -1149,7 +1149,7 @@ async function loadMedia(offset){
       if(lbl) lbl.textContent='Page '+(Math.floor(mediaOffset/D.limit)+1);
     }
     stagger('#catMediaResults .vcard');
-  }catch(e){ if(info) info.textContent='⚠️ Load नहीं हुआ'; }
+  }catch(e){ if(info) info.textContent='⚠️ Could not load results'; }
 }
 function mediaPage(step){
   if(!D.tagMedia) return;
@@ -1166,7 +1166,7 @@ function renderGallery(){
       +'onclick="openLight(this.dataset.src)">'
       +'<img src="'+esc(src)+'" alt="" loading="lazy" '
       +'onload="this.classList.add(\'on\')" onerror="this.remove()">'
-      +(D.admin ? '<button class="cat-galdel" title="हटाएँ" '
+      +(D.admin ? '<button class="cat-galdel" title="Remove" '
         +'onclick="event.stopPropagation();deleteGallery('+i+')">✕</button>' : '')
       +'</div>').join('')
     : '<div class="cat-gempty">'+esc(D.galleryEmpty)+'</div>';
@@ -1179,14 +1179,14 @@ async function uploadGalleryFiles(input){
   const fd=new FormData();
   files.slice(0,12).forEach(f=>fd.append('image',f));
   fd.append('id',D.id);
-  if(note) note.textContent='⏳ '+files.length+' photos Telegram पर एक-एक करके…';
+  if(note) note.textContent='⏳ Uploading '+files.length+' photos to Telegram one at a time…';
   try{
     const r=await fetch('/api/catalog/'+D.kind+'/gallery_upload',{method:'POST',body:fd});
     const d=await r.json();
     if(!d.ok) throw new Error(d.error||'Upload failed');
     (d.added||[]).forEach(v=>GALLERY.push(imageSrc(v)));
     renderGallery();
-    if(note) note.textContent='✅ '+(d.added||[]).length+' photos जोड़ी गईं';
+    if(note) note.textContent='✅ '+(d.added||[]).length+' photos added';
     toast('🖼️ '+(d.added||[]).length+' photos added');
   }catch(e){
     if(note) note.textContent='⚠️ '+e.message;
@@ -1195,13 +1195,13 @@ async function uploadGalleryFiles(input){
   input.value='';
 }
 async function deleteGallery(idx){
-  if(!confirm('ये image हटाएँ?')) return;
+  if(!confirm('Remove this image?')) return;
   try{
     const r=await fetch('/api/catalog/'+D.kind+'/gallery_delete',{method:'POST',
       headers:{'Content-Type':'application/json'},body:JSON.stringify({id:D.id,index:Number(idx)})});
     const d=await r.json();
     if(!d.ok) return toast(d.error||'Delete failed','err');
-    GALLERY.splice(idx,1); renderGallery(); toast('🗑 Image हटाई गई');
+    GALLERY.splice(idx,1); renderGallery(); toast('🗑 Image removed');
   }catch(e){ toast('Delete failed','err'); }
 }
 function openLight(src){
@@ -1214,7 +1214,7 @@ function closeLight(){
   setTimeout(()=>l.classList.remove('open'),250);
 }
 async function deleteDetail(id){
-  if(!confirm('Delete करें?')) return;
+  if(!confirm('Delete this item?')) return;
   const r=await fetch('/api/catalog/'+D.kind+'/delete',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
   const d=await r.json();
@@ -1226,7 +1226,7 @@ document.querySelectorAll('.vposter img,.cat-galitem img').forEach(img=>{
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){ closeLight(); if(window.closePlayer) window.closePlayer(); }
   const focused=document.activeElement||{};
-  if(focused.closest && focused.closest('#feModal')) return;  // ✏️ editor modal खुला हो तो tab-nav बंद
+  if(focused.closest && focused.closest('#feModal')) return;  // ✏️ skip tab-nav while the editor modal is open
   if((e.key==='Enter'||e.key===' ') && focused.classList && focused.classList.contains('vcard')){
     e.preventDefault(); playCard(focused); return;
   }
@@ -1259,7 +1259,7 @@ switchTab(_initTab||'overview',true);
 
 def _category_options(kind: str, include_all: bool = True) -> str:
     cfg = CATALOGS[kind]
-    # 🎛️ Default filter button पर सिर्फ़ "All" (📂 icon अलग `.fdd-ico` में जाता है)
+    # 🎛️ The default filter button reads just "All" (📂 sits in its own `.fdd-ico`)
     out = ([f'<option value="all">{html.escape(CATEGORY_ALL_LABEL)}</option>']
            if include_all else [])
     out += [
@@ -1272,20 +1272,20 @@ def _category_options(kind: str, include_all: bool = True) -> str:
 def _listing_body(kind: str, role: str) -> str:
     cfg = CATALOGS[kind]
     admin = role == "admin"
-    # ✨ Create button `.cat-toolbar` में: 🖥️ desktop पर search वाली ही लाइन,
-    #    📱 mobile पर filter buttons वाली row के ठीक नीचे (DOM order = search → filters → create)।
+    # ✨ The create button lives in `.cat-toolbar`: 🖥️ on desktop it shares the search line,
+    #    📱 on mobile it sits directly below the filter row (DOM order = search → filters → create).
     create_btn = (
         '<button class="cat-btn cat-create" onclick="openEditor(\'\')">✨ New '
         + html.escape(cfg["singular"]) + "</button>"
         if admin else ""
     )
-    # 🎛️ filter buttons की परिभाषा web_assets.FILTER_OPTIONS/CATALOG_FILTERS में —
-    #    सिर्फ़ categories dynamic हैं, बाकी markup कहीं दोहराया नहीं गया।
+    # 🎛️ filter buttons are defined in web_assets.FILTER_OPTIONS/CATALOG_FILTERS —
+    #    only the categories are dynamic; no other markup is duplicated.
     filters_html = filter_buttons(CATALOG_FILTERS,
                                   {"catCategory": _category_options(kind)})
-    # 🧩 GitHub reference (v5 `.search-box`) जैसा: **एक ही card-box** में search,
-    #    filter buttons और ✨ New Post/Profile (plus छोटा count)। कोई अलग
-    #    "Content Posts" / "Directory Profiles" वाला page-heading नहीं।
+    # 🧩 Like the GitHub reference (v5 `.search-box`): search, filter buttons
+    #    and ✨ New Post/Profile (plus the small count) all live in **one card-box**.
+    #    There is no separate "Content Posts" / "Directory Profiles" page heading.
     return f"""<div class="main"><div class="cat-wrap">
   <div class="cat-toolbar cat-box" role="search">
     <div class="cat-search" id="catSearch">
@@ -1309,14 +1309,14 @@ def _listing_body(kind: str, role: str) -> str:
 
 
 def build_listing_page(kind: str, role: str, tg_id: int):
-    """📝 /posts · 🎭 /actors — एक ही shell, सिर्फ़ config बदलता है।"""
+    """📝 /posts · 🎭 /actors — one shell, only the config changes."""
     cfg = CATALOGS[kind]
     js = (
         CATALOG_JS
         .replace("__CFG__", json.dumps(cfg, ensure_ascii=False))
         .replace("__ALL_CAT__", json.dumps(CATEGORY_ALL_LABEL, ensure_ascii=False))
         .replace("__ADMIN__", "true" if role == "admin" else "false")
-        # editor modal को JS से inject करें ताकि markup एक ही जगह रहे
+        # inject the editor modal from JS so its markup stays in one place
         .replace("/* ── wiring ── */", "/* ── wiring ── */\n$('#catModalHost').innerHTML = editorHTML();")
     )
     return app_page(
@@ -1327,7 +1327,7 @@ def build_listing_page(kind: str, role: str, tg_id: int):
 
 
 def _detail_body(kind: str, role: str, item: dict) -> str:
-    """🗂️ Overview / 🎬 Videos (tags-driven) / 🖼️ Gallery या 📸 Screenshots।"""
+    """🗂️ Overview / 🎬 Videos (tags-driven) / 🖼️ Gallery or 📸 Screenshots."""
     cfg = CATALOGS[kind]
     esc = html.escape
     admin = role == "admin"
@@ -1352,7 +1352,7 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
         for l in (item.get("links") or [])[:20] if l.get("value")
     )
 
-    # 📌 manually attached videos (पिछला multi-video feature बरकरार)
+    # 📌 manually attached videos (the earlier multi-video feature is preserved)
     videos = [v for v in (item.get("videos") or [])[:50] if v.get("file_id")]
     if videos:
         vids_html = ""
@@ -1363,27 +1363,27 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
             vids_html += video_card_html(fid, label, poster, data=v)
     else:
         vids_html = (
-            '<div class="cat-vempty">🎬 अभी कोई video attach नहीं है।'
+            '<div class="cat-vempty">🎬 No videos attached yet.'
             f'<br><span style="font-size:11px;font-weight:600">{video_empty_hint}</span></div>'
         )
 
-    # 🏷️ v5 जैसा: Videos tab का मुख्य हिस्सा "Search Tags" से आता है
+    # 🏷️ Like v5: the main part of the Videos tab comes from "Search Tags"
     tags = [str(t).strip() for t in (item.get("tags") or []) if str(t).strip()][:12]
     tag_section = ""
     if cfg["tagMedia"]:
         tag_pills = "".join(f'<span class="cat-tagpill">🏷️ <b>#{esc(t)}</b></span>' for t in tags)
         if not tag_pills:
-            tag_pills = '<span class="cat-tagpill">🏷️ कोई Search Tag नहीं — <b>Title</b> से खोजेंगे</span>'
+            tag_pills = '<span class="cat-tagpill">🏷️ No search tags — searching by <b>Title</b></span>'
         tag_section = f"""
-    <div class="cat-subhead"><h3>🏷️ Library से — Search Tags के आधार पर</h3>
-      <span class="cat-hint">जैसे v5 का actor Linked Media tab</span></div>
+    <div class="cat-subhead"><h3>🏷️ From the Library — based on Search Tags</h3>
+      <span class="cat-hint">like the actor Linked Media tab in v5</span></div>
     <div class="cat-tagline" id="catTagPills">{tag_pills}</div>
     <div class="cat-mediabar">
       <div class="cat-search"><input type="search" id="catMediaQ" autocomplete="off"
-        placeholder="Search inside this profile… (खाली = Tags से auto)"></div>
+        placeholder="Search inside this profile… (empty = use tags automatically)"></div>
       <button class="cat-btn ghost" style="padding:9px 14px;font-size:11px" onclick="loadMedia(0)">🔍 Search</button>
     </div>
-    <div class="cat-mediainfo" id="catMediaInfo">Videos tab खोलते ही Tags से search…</div>
+    <div class="cat-mediainfo" id="catMediaInfo">Opening the Videos tab searches by tags…</div>
     <div class="cat-vgrid vgrid" id="catMediaResults"></div>
     <div class="cat-mediapg" id="catMediaPg" style="display:none">
       <button id="catMediaPrev" onclick="mediaPage(-1)">◀ Prev</button>
@@ -1398,7 +1398,7 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
         gal_html = ""
         for i, u in enumerate(gallery):
             del_btn = (
-                f'<button class="cat-galdel" title="हटाएँ" '
+                f'<button class="cat-galdel" title="Remove" '
                 f'onclick="event.stopPropagation();deleteGallery(this.closest(\'.cat-galitem\').dataset.idx)">✕</button>'
                 if admin else ""
             )
@@ -1454,19 +1454,19 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
       <div class="cat-hero-info">
         <div class="cat-hero-title">{title}</div>
         <div class="cat-chips"><span class="cat-chip red">{esc(cat_label)}</span>{chips}</div>
-        <div class="cat-body-txt">{body or '<span style="color:var(--mut)">कोई description नहीं।</span>'}</div>
-        <div class="cat-links">{links_html or '<span style="color:var(--mut);font-size:12px">🔗 कोई external link नहीं।</span>'}</div>
+        <div class="cat-body-txt">{body or '<span style="color:var(--mut)">No description available.</span>'}</div>
+        <div class="cat-links">{links_html or '<span style="color:var(--mut);font-size:12px">🔗 No external links.</span>'}</div>
         {admin_bar}
       </div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
-      <button class="cat-btn ghost" onclick="switchTab('videos')">🎬 Videos देखें →</button>
+      <button class="cat-btn ghost" onclick="switchTab('videos')">🎬 View Videos →</button>
       <button class="cat-btn ghost" onclick="switchTab('gallery')">{gallery_tab} ({len(gallery)}) →</button>
     </div>
   </section>
 
   <section class="cat-panel" id="cp-videos">
-    <div class="cat-subhead"><h3>{videos_heading}</h3><span class="cat-hint">Editor से जोड़े गए · {len(videos)}</span></div>
+    <div class="cat-subhead"><h3>{videos_heading}</h3><span class="cat-hint">Added in the editor · {len(videos)}</span></div>
     <div class="cat-vgrid vgrid" id="catVideos">{vids_html}</div>
     {tag_section}
   </section>

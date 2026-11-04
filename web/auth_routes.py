@@ -1,10 +1,10 @@
 """🔐 Web login / registration / password reset routes.
 
-Flow (v5 जैसा):
-  * Email + password से login → HttpOnly cookie session (RAM + MongoDB).
-  * नया अकाउंट: Telegram ID + Email + Password → bot PM में OTP → verify.
-  * Password भूल गए: Telegram ID → bot PM में OTP → नया password.
-  * Logout / password reset पर सारे पुराने sessions बंद.
+Flow (as in v5):
+  * Email + password login → HttpOnly cookie session (RAM + MongoDB).
+  * New account: Telegram ID + Email + Password → OTP in the bot PM → verify.
+  * Forgotten password: Telegram ID → OTP in the bot PM → new password.
+  * Logout / password reset closes every existing session.
 """
 
 import logging
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 auth_routes = web.RouteTableDef()
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-REG_OTP_TTL = 300        # registration OTP 5 मिनट
+REG_OTP_TTL = 300        # registration OTPs are valid for 5 minutes
 REG_MAX_TRIES = 5
 
 
@@ -43,7 +43,7 @@ def _redirect(path, **params):
 
 
 async def _send_otp(tg_id: int, message: str) -> bool:
-    """Bot PM में OTP भेजो (user ने bot को /start किया होना चाहिए)।"""
+    """Send the OTP to the bot PM (the user must have sent /start to the bot)."""
     bot = getattr(temp, "BOT", None)
     if bot is None:
         return False
@@ -62,8 +62,8 @@ async def login_page(req):
     if role:
         return web.HTTPFound("/search")
     inner = (
-        "<div class='lead'>अपने अकाउंट से लॉगिन करें और सीधे web पर फाइलें खोजें, "
-        "असली thumbnail देखें और नाम पर क्लिक करके stream करें।</div>"
+        "<div class='lead'>Sign in to search your files on the web, "
+        "see real thumbnails and stream a video by clicking its name.</div>"
         "<form action='/api/login' method='post'>"
         "<input type='email' name='email' placeholder='Email Address' required autocomplete='username'>"
         "<input type='password' name='password' placeholder='Password' required autocomplete='current-password'>"
@@ -93,7 +93,7 @@ async def api_login(req):
     expiry = time.time() + WEB_SESSION_TTL
     temp.USER_SESSIONS[sid] = {"tg_id": tg_id, "expiry": expiry}
     prune_sessions()
-    await web_db.create_session(sid, tg_id, expiry)   # restart पर भी login बना रहे
+    await web_db.create_session(sid, tg_id, expiry)   # the session survives a restart
 
     res = web.HTTPFound("/search")
     res.set_cookie(
@@ -122,8 +122,8 @@ async def logout(req):
 @auth_routes.get("/register")
 async def register_page(req):
     inner = (
-        "<div class='lead'>OTP आपके Telegram bot PM में जाएगा — पहले bot को "
-        "<b>/start</b> भेजें। Telegram ID और Email आपके अकाउंट से लिंक होंगे।</div>"
+        "<div class='lead'>The OTP will arrive in your Telegram bot PM — send "
+        "<b>/start</b> to the bot first. Your Telegram ID and email will be linked to your account.</div>"
         "<form action='/api/register_step1' method='post'>"
         "<input type='number' name='tg_id' placeholder='Telegram ID (e.g. 123456789)' required>"
         "<input type='email' name='email' placeholder='Email Address' required>"
@@ -168,7 +168,7 @@ async def api_register_step1(req):
         temp.REG_PENDING.pop(tg_id, None)
         return _redirect(
             "/register",
-            err="OTP नहीं भेजा जा सका। पहले Telegram में bot को /start करें।",
+            err="Could not send the OTP. Send /start to the bot on Telegram first.",
         )
     return _redirect("/verify_registration", tg_id=tg_id)
 
@@ -179,7 +179,7 @@ async def verify_registration_page(req):
     if not tg_id.isdigit():
         return web.HTTPFound("/register")
     inner = (
-        "<div class='lead'>आपके Telegram bot PM में 6-digit OTP भेजा गया है।</div>"
+        "<div class='lead'>A 6-digit OTP has been sent to your Telegram bot PM.</div>"
         "<form action='/api/register_step2' method='post'>"
         f"<input type='hidden' name='tg_id' value='{tg_id}'>"
         "<input type='text' name='otp' placeholder='Enter 6-digit OTP' "
@@ -224,8 +224,8 @@ async def api_register_step2(req):
 @auth_routes.get("/forgot_password")
 async def forgot_password_page(req):
     inner = (
-        "<div class='lead'>अपना Telegram ID डालें, bot PM में OTP जाएगा। "
-        "उसी OTP से नीचे नया password सेट करें।</div>"
+        "<div class='lead'>Enter your Telegram ID to receive an OTP in the bot PM. "
+        "Use that OTP below to set a new password.</div>"
         "<form action='/api/forgot_password' method='post'>"
         "<input type='number' name='tg_id' placeholder='Telegram ID' required>"
         "<button class='submit' type='submit'>Send OTP to Telegram</button></form>"
@@ -262,7 +262,7 @@ async def api_forgot_password(req):
         f"OTP: {otp}\n\nValid for 10 minutes. Do not share it with anyone.",
     )
     if not sent:
-        return _redirect("/forgot_password", err="OTP नहीं भेजा जा सका। Bot को /start करें।")
+        return _redirect("/forgot_password", err="Could not send the OTP. Send /start to the bot first.")
     return _redirect("/forgot_password", msg="OTP sent to your Telegram!")
 
 
@@ -284,7 +284,7 @@ async def api_reset_password(req):
     if not ok:
         return _redirect("/forgot_password", err="Invalid or expired OTP")
 
-    # Password बदलते ही पुराने सारे sessions बंद (RAM + DB)
+    # Changing the password closes every existing session (RAM + DB)
     for key in [k for k, v in temp.USER_SESSIONS.items() if v.get("tg_id") == tg_id]:
         temp.USER_SESSIONS.pop(key, None)
     try:

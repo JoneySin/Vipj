@@ -1,34 +1,34 @@
-"""📸 REAL THUMBNAIL + TRUE METADATA ENGINE — fsv1 का serial extraction.
+"""📸 REAL THUMBNAIL + TRUE METADATA ENGINE — fsv1's serial extraction.
 
-Storage model (Koyeb free / 512 MB RAM) **जैसा पहले था, वैसा ही**:
-  * MongoDB   → सिर्फ Telegram thumbnail का **file_id string**
-                `thumb_url: "TG_ID:<file_id>"` (v5 जैसा), या `"NO_THUMB"`। कोई
-                image bytes नहीं।
-  * Server RAM → कोई thumbnail cache नहीं। सिर्फ़ चल रही request के दौरान
-                transient buffer; response भेजते ही free।
-  * Browser   → `/api/thumb` `ETag` + `Cache-Control` + 304, poster ब्राउज़र
-                की अपनी cache में।
+Storage model (Koyeb free / 512 MB RAM) — **unchanged**:
+  * MongoDB   → only the Telegram thumbnail **file_id string**
+                 `thumb_url: "TG_ID:<file_id>"` (as in v5), or `"NO_THUMB"`.
+                 No image bytes are stored.
+  * Server RAM → no thumbnail cache. Only a transient buffer for the in-flight
+                 request, released as soon as the response is sent.
+  * Browser   → `/api/thumb` uses `ETag` + `Cache-Control` + 304, so the poster
+                 lives in the browser's own cache.
 
-v5 (`JoneySin/v5`) से सीखा, fsv1 के अपने ढंग से:
+Learned from v5 (`JoneySin/v5`), implemented the fsv1 way:
 
-  * **पहली बार thumbnail निकालते समय rate limit न लगे इसलिए एक-एक करके** —
-    पूरे process में `_probe_lock` के कारण किसी भी समय सिर्फ़ **एक**
-    `send_cached_media()` चलता है, और हर probe के बीच 1.2–3.0s का random
-    anti-flood gap (`plugins/warmup.py`)।
-  * `/api/thumb` 21 parallel probes नहीं खोलता: single-worker **queue** + browser
-    `retry=true` (v5 का `reloadThumb` pattern)।
-  * **FLOOD_WAIT / 420** → `wait of N seconds` parse (या `FloodWait.value`),
-    `sleep(N + extra)` करके 5 attempts तक retry।
-  * 🆕 **/warmup_thumbs = thumbnail + असली metadata एक ही probe में**: उसी
-    `send_cached_media` msg से (और ज़रूरत पर file के bytes से) duration /
-    width / height / quality / mime / size / type निकालकर DB में `$set`।
-    `media_probe.py` Telegram के अक्सर-झूठे `1280×720` attributes की जगह
-    container header की सच्ची dimensions लिखता है।
-  * 🆕 **कोई फ़र्ज़ी "NO IMAGE" thumbnail DB में NEVER save**: candidate bytes
-    download → `web/image_validate.py` से magic/dimensions/variance/markers
-    check → Telegram `send_photo` से permanent re-upload (v5 warmup का तरीका)।
-    जो pass न हो उसे reject करके `NO_THUMB` mark करते हैं, placeholder कभी
-    `TG_ID:` नहीं बनता। Admin का `thumb_source:"web"` poster कभी overwrite नहीं।
+  * **First-time extraction runs one file at a time to avoid rate limits** —
+    `_probe_lock` guarantees only **one** `send_cached_media()` call process-wide,
+    with a random 1.2–3.0s anti-flood gap between probes (`plugins/warmup.py`).
+
+  * `/api/thumb` does not open 21 parallel probes: a single-worker **queue** plus
+    browser `retry=true` (v5's `reloadThumb` pattern).
+  * **FLOOD_WAIT / 420** → parse `wait of N seconds` (or `FloodWait.value`),
+    `sleep(N + extra)` and retry up to 5 attempts.
+  * 🆕 **/warmup_thumbs = thumbnail + real metadata in one probe**: the same
+    `send_cached_media` message (and, when needed, the file's bytes) supplies
+    duration / width / height / quality / mime / size / type for a DB `$set`.
+    `media_probe.py` replaces Telegram's often-wrong `1280×720` attributes with
+    the real dimensions from the container header.
+  * 🆕 **Never save a fake "NO IMAGE" thumbnail to the DB**: download the candidate
+    bytes → check magic/dimensions/variance/markers with `web/image_validate.py`
+    → permanently re-upload via Telegram `send_photo` (v5 warmup's approach).
+    Anything that fails is rejected and marked `NO_THUMB`; a placeholder never
+    becomes a `TG_ID:`. An admin's `thumb_source:"web"` poster is never overwritten.
 """
 
 import asyncio
@@ -54,22 +54,22 @@ from web.image_validate import validate_thumb
 
 logger = logging.getLogger(__name__)
 
-# v5 का THUMBNAIL_STORAGE_CHANNEL fsv1 में CATALOG_STORAGE_CHANNEL है (default BIN)
+# v5's THUMBNAIL_STORAGE_CHANNEL is CATALOG_STORAGE_CHANNEL in fsv1 (defaults to BIN)
 _STORAGE_CHANNEL = getattr(_info, "CATALOG_STORAGE_CHANNEL", BIN_CHANNEL)
 _MIN_THUMB_BYTES = int(getattr(_info, "THUMB_MIN_BYTES", 512))
 _MIN_THUMB_DIM = int(getattr(_info, "THUMB_MIN_DIM", 48))
 _MIN_THUMB_STDDEV = float(getattr(_info, "THUMB_MIN_STDDEV", 6.0))
 
-# ── Concurrency control (कोई thumbnail data यहाँ store नहीं होता) ──────────
-# पहले से ज्ञात TG_ID वाली फाइलों के download के लिए सीमित concurrency
+# ── Concurrency control (no thumbnail data is stored here) ─────────────────
+# Limited concurrency for downloading files that already have a known TG_ID
 _download_sem = asyncio.Semaphore(THUMB_FETCH_CONCURRENCY)
-# ⚠️ FIRST-TIME PROBE: एक समय में सिर्फ़ EK file (v5 warmup "single-bot safe")
+# ⚠️ FIRST-TIME PROBE: only ONE file at a time (v5 warmup "single-bot safe")
 _probe_lock = asyncio.Lock()
 _probe_queue: asyncio.Queue = asyncio.Queue()
-_queued = set()                 # fid — duplicate enqueue रोकने के लिए
+_queued = set()                 # file ids — prevents duplicate enqueues
 _MAX_QUEUE = 2000
 _worker_task = None
-# fid -> asyncio.Task: identical concurrent requests एक ही download share करें
+# fid -> asyncio.Task: identical concurrent requests share one download
 _INFLIGHT = {}
 _STATS = {"done": 0, "ok": 0, "no_thumb": 0, "failed": 0,
           "rejected": 0, "meta": 0}
@@ -84,15 +84,15 @@ def image_content_type(data: bytes) -> str:
 
 
 def thumb_version(fid: str, thumb_ref: str = "") -> str:
-    """v5 की तरह पूरे thumb_url का hash — thumbnail बदले तो URL/ETag बदले।"""
+    """Like v5, hash the whole thumb_url — a new thumbnail changes the URL/ETag."""
     raw = f"{fid}:{thumb_ref}"
     return f"{zlib.crc32(raw.encode('utf-8')):08x}"
 
 
 def thumb_id_from_doc(doc) -> str:
-    """DB doc से Telegram thumbnail file_id (v5 `TG_ID:` + legacy alias)।
+    """Read the Telegram thumbnail file_id from a DB doc (v5 `TG_ID:` + legacy alias).
 
-    `NO_THUMB` = permanently no-poster ⇒ कोई ID नहीं।
+    `NO_THUMB` = permanently without a poster ⇒ there is no id.
     """
     doc = doc or {}
     raw = str(doc.get("thumb_url") or "")
@@ -108,7 +108,7 @@ def is_no_thumb(doc) -> bool:
 
 
 def invalidate_thumb(fid: str) -> None:
-    """✏️ Admin ने custom poster बदला → in-flight download/probe पुराना न लौटाए।"""
+    """✏️ An admin changed the custom poster → an in-flight download must not restore the old one."""
     if not fid:
         return
     _INFLIGHT.pop(f"dl:{fid}", None)
@@ -116,7 +116,7 @@ def invalidate_thumb(fid: str) -> None:
 
 
 def thumb_queue_state() -> dict:
-    """/stats / /api/db_stats और `/warmup_thumbs` report का हल्का snapshot."""
+    """Lightweight snapshot for /stats, /api/db_stats and the `/warmup_thumbs` report."""
     return {
         "queued": len(_queued),
         "done": _STATS["done"],
@@ -129,16 +129,16 @@ def thumb_queue_state() -> dict:
 
 
 async def thumb_state(fid: str) -> str:
-    """/api/thumb के 404 पर हल्का status ('queued' ⇒ browser retry करे)।"""
+    """Lightweight status for a 404 from /api/thumb ('queued' ⇒ the browser should retry)."""
     doc = await _read_doc(fid)
     if doc is None:
-        return "missing"                 # DB में नहीं है ⇒ बेकार Telegram call न करें
+        return "missing"                 # not in the DB ⇒ skip a pointless Telegram call
     if is_no_thumb(doc):
         return "no-thumb"
     if fid in _queued:
         return "queued"
     if thumb_id_from_doc(doc):
-        # unverified lock = index-time ID, अभी validate होना बाकी है
+        # an unverified lock is an index-time id that still needs validation
         if not doc.get("thumb_verified"):
             enqueue_probe(fid, force=True)
             return "queued"
@@ -150,7 +150,7 @@ async def thumb_state(fid: str) -> str:
 # 🛡️ v5-style FLOOD_WAIT handling
 # ─────────────────────────────────────────────────────────────
 def flood_wait_seconds(err) -> int:
-    """FloodWait exception (`e.value`) या error string से wait seconds निकालो।"""
+    """Extract the wait seconds from a FloodWait exception (`e.value`) or its message."""
     value = getattr(err, "value", None)
     if isinstance(value, (int, float)) and value > 0:
         return int(value)
@@ -168,7 +168,7 @@ async def _backoff(err, default: float = 2.0):
 
 
 async def _delete_later(message_id: int, delay: int = 5):
-    """v5 की delete-queue जैसा — probe msg को BIN_CHANNEL से हटा दो (non-blocking)।"""
+    """Like v5's delete queue — remove the probe message from BIN_CHANNEL (non-blocking)."""
     await asyncio.sleep(delay)
     try:
         await temp.BOT.delete_messages(BIN_CHANNEL, message_id)
@@ -177,7 +177,7 @@ async def _delete_later(message_id: int, delay: int = 5):
 
 
 def _valid_thumb_ref(tid) -> bool:
-    """v5 warmup की strict ID validation: string, >20 chars, कोई NO_THUMB marker नहीं।"""
+    """v5 warmup's strict id validation: a string, >20 chars, no NO_THUMB marker."""
     return (
         isinstance(tid, str)
         and len(tid.strip()) > 20
@@ -186,10 +186,10 @@ def _valid_thumb_ref(tid) -> bool:
 
 
 def _extract_media(msg):
-    """msg से media object + **सारे** thumbnail file_id (बड़े पहले)।
+    """Media object plus **all** thumbnail file_ids from the message (largest first).
 
-    Telegram कभी-कभी पहली thumb placeholder होती है और दूसरी असली frame,
-    इसलिए सिर्फ़ `thumbs[0]` पर भरोसा नहीं करते।
+    Telegram sometimes returns a placeholder first and the real frame second,
+    so we never rely on `thumbs[0]` alone.
     """
     media = getattr(msg, msg.media.value, None) if msg and getattr(msg, "media", None) else None
     ids, seen = [], set()
@@ -211,12 +211,12 @@ def _extract_media(msg):
         if tid and tid not in seen:
             seen.add(tid)
             ids.append(tid)
-    ids.reverse()                    # Telegram thumbs छोटे→बड़े; असली बड़ी पहले
+    ids.reverse()                    # Telegram returns thumbs small→large; real large ones first
     return media, ids
 
 
 async def _download_thumb(thumb_file_id: str):
-    """Telegram से thumbnail bytes — कहीं store नहीं, सीधे return।"""
+    """Download thumbnail bytes from Telegram — never stored, returned directly."""
     bot = getattr(temp, "BOT", None)
     if not bot or not thumb_file_id:
         return None
@@ -237,11 +237,11 @@ async def _download_thumb(thumb_file_id: str):
 
 
 async def _upload_thumb(data: bytes) -> str:
-    """✅ v5 warmup: validate की हुई image को storage channel पर fresh upload।
+    """✅ v5 warmup: fresh-upload the validated image to the storage channel.
 
-    Telegram `send_photo` खुद सच्ची image ही accept करता है ⇒ ये ID permanent
-    होती है (transient thumb file_reference expire नहीं होती)। Fail-soft: bot
-    में method न हो तो validated original ID ही use होगी।
+    Telegram's `send_photo` only accepts a genuine image ⇒ this id is permanent
+    (a transient thumb file_reference cannot expire). Fail-soft: if the bot lacks
+    the method, the validated original id is used instead.
     """
     bot = getattr(temp, "BOT", None)
     if not bot or not data:
@@ -260,10 +260,10 @@ async def _upload_thumb(data: bytes) -> str:
 
 
 async def _real_thumb_bytes(thumb_ids):
-    """हर candidate download + validate → `(bytes, info)` या `(None, {})`।
+    """Download + validate every candidate → `(bytes, info)` or `(None, {})`.
 
-    जो भी fake / "NO IMAGE" / blank / tiny placeholder हो उसे reject करते हैं;
-    `_STATS['rejected']` में गिनते हैं ताकि `/warmup_thumbs` report में दिखे।
+    Anything fake / "NO IMAGE" / blank / tiny is rejected;
+    `_STATS['rejected']` counts it so it appears in the `/warmup_thumbs` report.
     """
     for tid in thumb_ids:
         if not _valid_thumb_ref(tid):
@@ -287,7 +287,7 @@ async def _real_thumb_bytes(thumb_ids):
 
 
 async def get_image_bytes(telegram_file_id: str):
-    """📷 Public wrapper — posts/actors के `TG_ID:` images के लिए।"""
+    """📷 Public wrapper — used for Posts/Actors `TG_ID:` images."""
     return await _download_thumb(telegram_file_id)
 
 
@@ -307,12 +307,12 @@ def _meta_version(doc) -> int:
 
 
 async def probe_file(fid: str, force: bool = False):
-    """🖼️ EK file: **असली thumbnail + सच्ची metadata** — v5 warmup जैसा serial.
+    """🖼️ ONE file: **real thumbnail + true metadata** — serial, like v5 warmup.
 
-    `_probe_lock` पूरे process में एक समय में सिर्फ़ एक `send_cached_media`
-    चलने देता है, probe के बीच anti-flood gap रहता है। DB में सिर्फ़ ID
-    (`TG_ID:` / `NO_THUMB`) + metadata (`duration/quality/...`) जाती है।
-    Fake placeholder कभी save नहीं होती — `NO_THUMB` mark हो जाती है।
+    `_probe_lock` allows only one `send_cached_media` at a time process-wide,
+    with an anti-flood gap between probes. The DB receives only the id
+    (`TG_ID:` / `NO_THUMB`) and metadata (`duration/quality/...`).
+    A fake placeholder is never saved — the file is marked `NO_THUMB` instead.
     """
     if not fid or len(fid) > 512:
         return None
@@ -322,7 +322,7 @@ async def probe_file(fid: str, force: bool = False):
         try:
             doc = await _read_doc(fid) or {}
             raw = str(doc.get("thumb_url") or "")
-            custom = str(doc.get("thumb_source") or "") == "web"   # admin poster सुरक्षित
+            custom = str(doc.get("thumb_source") or "") == "web"   # protect the admin poster
             verified = bool(doc.get("thumb_verified"))
 
             need_meta = force or _meta_version(doc) < META_V
@@ -331,7 +331,7 @@ async def probe_file(fid: str, force: bool = False):
                 or (raw.startswith("TG_ID:") and not verified)
             )
             if custom:
-                need_thumb = False        # custom poster कभी overwrite न करें
+                need_thumb = False        # never overwrite a custom poster
 
             if not need_meta and not need_thumb:
                 if raw.startswith("TG_ID:"):
@@ -360,7 +360,7 @@ async def probe_file(fid: str, force: bool = False):
                 file_name = str(doc.get("file_name") or "")
                 meta = {}
 
-                # 1️⃣ सच्ची metadata — उसी msg से + file bytes probe (free backfill)
+                # 1️⃣ True metadata — from the same message + a file-bytes probe (free backfill)
                 if need_meta and media:
                     try:
                         probed_meta = await probe_telegram_media(
@@ -371,11 +371,11 @@ async def probe_file(fid: str, force: bool = False):
                         logger.debug(f"[probe] {fid[:16]} media probe skipped: {e}")
                         probed_meta = {}
                     meta.update(build_media_meta(media, probed_meta, file_name, doc))
-                    need_meta = False       # अगले attempt में range fetch दोबारा नहीं
+                    need_meta = False       # do not repeat the range fetch on the next attempt
 
-                # 2️⃣ असली thumbnail — validate + permanent re-upload
-                #    कोई candidate न हो / सब fake हों ⇒ तुरंत NO_THUMB mark
-                #    (5 बार वही placeholder download करना बेकार है)।
+                # 2️⃣ Real thumbnail — validate + permanent re-upload
+                #    no candidate / all fake ⇒ mark NO_THUMB immediately
+                #    (downloading the same placeholder 5 times is pointless).
                 data, info = (None, {})
                 if need_thumb:
                     data, info = await _real_thumb_bytes(thumb_ids)
@@ -406,27 +406,27 @@ async def probe_file(fid: str, force: bool = False):
                 asyncio.create_task(_delete_later(getattr(msg, "id", 0)))
 
                 if not need_thumb:
-                    return None                    # सिर्फ़ metadata backfill था
+                    return None                    # this was a metadata-only backfill
                 if data:
                     _STATS["ok"] += 1
                     return data
-                # Telegram के पास सिर्फ़ fake/placeholder था ⇒ DB में कुछ नहीं save
+                # Telegram only had a fake/placeholder ⇒ save nothing to the DB
                 _STATS["no_thumb"] += 1
                 return None
 
-            # send_cached_media हर attempt में fail हुआ ⇒ network/flood issue,
-            # इसे NO_THUMB mark नहीं करते (अगली बार फिर कोशिश होगी)।
+            # Every `send_cached_media` attempt failed ⇒ network/flood issue,
+            # do not mark NO_THUMB (it will be retried next time).
             _STATS["failed"] += 1
             return None
         finally:
             _STATS["done"] += 1
-            # ⏱️ v5 warmup जैसा 1.2–3.0s random anti-flood gap (सिर्फ़ probe के बाद)
+            # ⏱️ v5-warmup-style 1.2–3.0s random anti-flood gap (after a probe only)
             if probed:
                 await asyncio.sleep(random.uniform(THUMB_PROBE_GAP_MIN, THUMB_PROBE_GAP_MAX))
 
 
 # ─────────────────────────────────────────────────────────────
-# 🔄 SINGLE-WORKER QUEUE — "एक एक करके थंबनेल निकले"
+# 🔄 SINGLE-WORKER QUEUE — "thumbnails are extracted one at a time"
 # ─────────────────────────────────────────────────────────────
 def _ensure_worker():
     global _worker_task
@@ -435,7 +435,7 @@ def _ensure_worker():
 
 
 async def _queue_worker():
-    """Queue से एक समय में एक file; बाकी sab wait करते हैं (no parallel burst)।"""
+    """One file at a time from the queue; the rest wait (no parallel burst)."""
     while True:
         fid, force = await _probe_queue.get()
         try:
@@ -448,7 +448,7 @@ async def _queue_worker():
 
 
 def enqueue_probe(fid: str, force: bool = False) -> bool:
-    """First-time / stale-ID वाली फाइल को serial queue में डालो (non-blocking)।"""
+    """Enqueue a first-time / stale-id file without blocking."""
     if not fid or len(fid) > 512:
         return False
     if fid in _queued or len(_queued) >= _MAX_QUEUE:
@@ -460,24 +460,24 @@ def enqueue_probe(fid: str, force: bool = False) -> bool:
 
 
 async def get_thumb(fid: str, retry: bool = False):
-    """Poster bytes या None. कोई persistent RAM cache नहीं।
+    """Poster bytes or None. There is no persistent RAM cache.
 
-    * `TG_ID:` मौजूद → सीधे download (identical requests एक task share करते हैं)
-    * `NO_THUMB`     → तुरंत None, कोई Telegram call नहीं (v5 जैसा)
-    * ID नहीं है      → serial queue में डालो, अभी 404; browser `retry=true` से
-                       थोड़ी देर बाद poster ले लेगा (एक-एक करके)
-    * 🆕 stored ID अगर fake/blank निकले → serve नहीं, force re-probe
+    * `TG_ID:` present → download directly (identical requests share one task)
+    * `NO_THUMB`       → return None immediately, no Telegram call (as in v5)
+    * no id            → enqueue it and return 404 for now; the browser's `retry=true`
+                         picks up the poster shortly (one file at a time)
+    * 🆕 a stored id turns out fake/blank → do not serve it, force a re-probe
     """
     if not fid or len(fid) > 512:
         return None
 
     doc = await _read_doc(fid)
     if doc is None:
-        return None                      # unknown file_id ⇒ कोई probe/queue नहीं
+        return None                      # unknown file_id ⇒ no probe / no queue
     if is_no_thumb(doc):
         return None
-    # Admin का intentional custom poster (`thumb_source:"web"`) Telegram ने
-    # `send_photo` से पहले ही validate कर लिया — उसे size/variance से न रोकें।
+    # Telegram already validated an intentional custom poster (`thumb_source:"web"`)
+    # when it was uploaded with `send_photo` — do not block it by size/variance.
     custom = str(doc.get("thumb_source") or "") == "web"
     thumb_file_id = thumb_id_from_doc(doc)
 
@@ -501,7 +501,7 @@ async def get_thumb(fid: str, retry: bool = False):
             )[0]
             if ok:
                 return data
-            # 💾 DB में फ़र्ज़ी poster मिला → उसे हटाकर दोबारा असली निकालो
+            # 💾 A fake poster was found in the DB → remove it and fetch a real one
             _STATS["rejected"] += 1
             await update_file_meta(fid, {
                 "thumb_url": "", "thumb_file_id": "",
@@ -509,10 +509,10 @@ async def get_thumb(fid: str, retry: bool = False):
             })
             enqueue_probe(fid, force=True)
             return None
-        # file_reference पुराना/expired → fresh probe (भी एक-एक करके)
+        # stale / expired file_reference → fresh probe (still one at a time)
         enqueue_probe(fid, force=True)
         return None
 
-    # 🆕 FIRST TIME: 21 parallel Telegram calls की जगह एक serial queue
+    # 🆕 FIRST TIME: one serial queue instead of 21 parallel Telegram calls
     enqueue_probe(fid)
     return None

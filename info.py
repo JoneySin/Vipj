@@ -83,9 +83,9 @@ if not BIN_CHANNEL:
     exit()
 BIN_CHANNEL = int(BIN_CHANNEL)
 
-# 📚 Posts / Actors के cover-avatar Telegram पर यहीं जाते हैं।
-# अगर BIN_CHANNEL भी INDEX_CHANNELS में है (covers search में न आएँ), तो
-# एक अलग private channel का id यहाँ दे दें — default BIN_CHANNEL ही रहेगा।
+# 📚 Cover images and avatars for Posts / Actors are uploaded to this Telegram channel.
+# If BIN_CHANNEL is also in INDEX_CHANNELS (so covers do not appear in file search),
+# set a separate private channel id here; otherwise BIN_CHANNEL is used by default.
 CATALOG_STORAGE_CHANNEL = environ.get("CATALOG_STORAGE_CHANNEL", "")
 CATALOG_STORAGE_CHANNEL = (
     int(CATALOG_STORAGE_CHANNEL) if CATALOG_STORAGE_CHANNEL else BIN_CHANNEL
@@ -111,43 +111,43 @@ PROTECT_CONTENT = is_enabled('PROTECT_CONTENT', False)
 IS_STREAM = is_enabled('IS_STREAM', True)
 
 # ================= WEB SEARCH / LOGIN =================
-# Web par ek page me kitne results dikhane hain (pagination / load-more)
-# 21 = 3 columns × 7 rows (desktop), mobile पर 21 rows
+# How many results to show per web page (pagination / load-more)
+# 21 = 3 columns × 7 rows on desktop; 21 rows on mobile
 MAX_WEB_RESULTS = max(1, min(int(environ.get('MAX_WEB_RESULTS', '21')), 100))
 
-# Web login cookie ki validity (seconds) — default 7 din
+# Web login cookie lifetime in seconds — defaults to 7 days
 WEB_SESSION_TTL = int(environ.get('WEB_SESSION_TTL', 7 * 24 * 3600))
 
-# Web stream link ki validity (seconds) — default 6 ghante
+# Web stream link lifetime in seconds — defaults to 6 hours
 WEB_STREAM_TTL = int(environ.get('WEB_STREAM_TTL', 6 * 3600))
 
-# 📸 DB में सिर्फ Telegram thumbnail का file_id ("TG_ID:..." string) जाता है।
-# Image bytes न DB में, न server RAM cache में — browser के HTTP cache में रहती हैं।
-# Server पर कोई RAM cache नहीं (Koyeb free 512MB); browser अपने HTTP cache में
-# poster रखेगा — ETag + max-age नीचे।
+# 📸 Only the Telegram thumbnail file_id ("TG_ID:..." string) is stored in the DB.
+# No image bytes in the DB or in a server RAM cache — they live in the browser's HTTP cache.
+# There is no server-side RAM cache (Koyeb's free tier has 512 MB); the browser keeps
+# posters in its own HTTP cache using ETag + max-age (see below).
 THUMB_BROWSER_CACHE = int(environ.get('THUMB_BROWSER_CACHE', 7 * 24 * 3600))
-# एक साथ कितने Telegram thumbnail downloads चलें (सिर्फ़ known TG_ID वाली फाइलें)
+# How many Telegram thumbnail downloads may run at once (only files with a known TG_ID)
 THUMB_FETCH_CONCURRENCY = max(1, min(int(environ.get('THUMB_FETCH_CONCURRENCY', '6')), 20))
 
-# ── 🖼️ FIRST-TIME THUMBNAIL EXTRACTION (JoneySin/v5 के warmup engine जैसा) ──
-# पहली बार 21 नई फाइलें एक साथ खुलने पर Telegram FLOOD_WAIT न लगे, इसलिए
-# probes एक-एक करके चलते हैं और हर file के बीच random gap रहता है।
+# ── 🖼️ FIRST-TIME THUMBNAIL EXTRACTION (like JoneySin/v5's warmup engine) ──
+# Opening 21 new files at once can trigger Telegram FLOOD_WAIT, so probes
+# run one at a time with a random gap between files.
 THUMB_PROBE_GAP_MIN = float(environ.get('THUMB_PROBE_GAP_MIN', '1.2'))
 THUMB_PROBE_GAP_MAX = max(THUMB_PROBE_GAP_MIN, float(environ.get('THUMB_PROBE_GAP_MAX', '3.0')))
 THUMB_PROBE_ATTEMPTS = max(1, min(int(environ.get('THUMB_PROBE_ATTEMPTS', '5')), 10))
-# FLOOD_WAIT में Telegram के बताए seconds + यह extra buffer
+# On FLOOD_WAIT, wait for Telegram's requested seconds plus this extra buffer
 THUMB_FLOOD_EXTRA = max(0, int(environ.get('THUMB_FLOOD_EXTRA', '10')))
 
-# ── 🛡️ REAL-THUMBNAIL VALIDATION (/warmup_thumbs में fake "NO IMAGE" रोकना) ──
-# Telegram कभी-कभी generated placeholder / 1×1 pixel / सादा frame भेज देता है।
-# ये thresholds pass न करने वाली image कभी `TG_ID:` में save नहीं होती — NO_THUMB.
+# ── 🛡️ REAL-THUMBNAIL VALIDATION (reject fake "NO IMAGE" cards in /warmup_thumbs) ──
+# Telegram sometimes returns a generated placeholder, a 1×1 pixel or a blank frame.
+# Images that fail these thresholds are never saved as `TG_ID:` — they become NO_THUMB.
 THUMB_MIN_BYTES = int(environ.get('THUMB_MIN_BYTES', '512'))
-THUMB_MIN_DIM = int(environ.get('THUMB_MIN_DIM', '48'))          # px (w और h दोनों)
-# RGB channel stddev — सादा/खाली placeholder ≈ 0, असली video frame ≫ 6
+THUMB_MIN_DIM = int(environ.get('THUMB_MIN_DIM', '48'))          # px (both width and height)
+# RGB channel stddev — a blank placeholder ≈ 0, a real video frame ≫ 6
 THUMB_MIN_STDDEV = float(environ.get('THUMB_MIN_STDDEV', '6.0'))
 
-# Purane (unsigned) /watch/<id> links deploy se pehle bheje gaye ho sakte hain.
-# Default False = sirf signed links chalengi. True karke backward compatibility on karo.
+# Older unsigned /watch/<id> links may have been shared before deployment.
+# Default False = only signed links work. Set True for backward compatibility.
 ALLOW_UNSIGNED_LINKS = is_enabled('ALLOW_UNSIGNED_LINKS', False)
 
 # ================= PUBLIC URL =================

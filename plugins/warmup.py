@@ -1,23 +1,23 @@
-"""🖼️ `/warmup_thumbs` — thumbnail + **असली metadata** का sequential engine.
+"""🖼️ `/warmup_thumbs` — sequential engine for thumbnails + **real metadata**.
 
-JoneySin/v5 के `plugins/warmup.py` से सीखा: एक-एक करके `send_cached_media`,
-हर file के बीच 1.2–3.0s random anti-flood gap, FloodWait पर `e.value + 10`
-sleep, strict thumb validation और बिना थंबनेल वाली file को `NO_THUMB` mark।
+Learned from `plugins/warmup.py` in JoneySin/v5: `send_cached_media` one file at a
+time, a random 1.2–3.0s anti-flood gap between files, `e.value + 10` sleep on
+FloodWait, strict thumbnail validation and a `NO_THUMB` mark for files without one.
 
-fsv1 में यही सब `web/thumb_engine.py::probe_file()` + `_probe_lock` में है (web
-requests भी उसी single lock/queue से गुजरती हैं)। इस command की खासियत अब:
+In fsv1 all of that lives in `web/thumb_engine.py::probe_file()` + `_probe_lock` (web
+requests go through the same single lock/queue). This command additionally:
 
-  * **सिर्फ़ thumbnail नहीं, पूरा important data DB में**: duration, quality,
-    width/height, mime, size, type — `media_probe.py` file के असली bytes से
-    सच्ची dimensions/duration निकालता है (Telegram का default 1280×720 झूठा
-    हो सकता है)।
-  * **fake "NO IMAGE" poster कभी save नहीं**: candidate bytes validate होते हैं,
-    सच्ची image ही `TG_ID:` में जाती है; fake/blank हो तो `NO_THUMB` mark। v5
-    की तरह validate हुई image को storage channel पर permanent re-upload किया
-    जाता है।
-  * Query सिर्फ़ उन्हीं docs की है जिनका thumbnail अभी **verified** नहीं है या
-    जिनका metadata probe (`meta_v`) बाकी है — यानी पहले index हुई files की
-    बिना-जाँचे `TG_ID:` ID भी इसी run में validate हो जाती है।
+  * **writes more than thumbnails to the DB**: duration, quality, width/height,
+    mime, size and type. `media_probe.py` reads the file's real bytes to get
+    accurate dimensions/duration (Telegram's default 1280×720 can be wrong).
+
+  * **never saves a fake "NO IMAGE" poster**: candidate bytes are validated,
+    only genuine images become `TG_ID:`; fake/blank ones are marked `NO_THUMB`.
+    Like v5, a validated image is permanently re-uploaded to the storage channel.
+
+  * The query only selects documents whose thumbnail is not yet **verified** or
+    whose metadata probe (`meta_v`) is pending — so unverified `TG_ID:` ids from
+    earlier indexing are validated in this run as well.
 """
 
 import asyncio
@@ -34,9 +34,9 @@ from media_probe import META_V
 
 logger = logging.getLogger(__name__)
 
-# v5 की स्मार्ट फ़िल्टर + fsv1 का verification/meta gate:
-#   * NO_THUMB = पहले ही confirm हो चुका "कोई असली poster नहीं" ⇒ दोबारा न उठाएँ
-#   * बाकी: ID missing / unverified / metadata probe बाकी
+# v5's smart filter plus fsv1's verification/metadata gate:
+#   * NO_THUMB = already confirmed to have no real poster ⇒ do not pick it up again
+#   * everything else: missing id / unverified / metadata probe pending
 _PENDING_QUERY = {
     "thumb_url": {"$ne": "NO_THUMB"},
     "$or": [
@@ -61,17 +61,17 @@ def _progress(col_name, done, total, ok, meta, fake, elapsed):
         f"💾 Meta saved: <code>{meta:,}</code>\n"
         f"⚡ Speed: <code>{speed:.1f} files/min</code> · ETA <code>~{eta}s</code>\n"
         "────────────────────\n"
-        f"{dot} <i>एक-एक करके, anti-flood gap के साथ — कोई parallel burst नहीं।</i>"
+        f"{dot} <i>One file at a time with an anti-flood gap — no parallel bursts.</i>"
     )
 
 
 @Client.on_message(filters.command("warmup_thumbs") & filters.user(ADMINS))
 async def warmup_thumbs_cmd(client, message):
-    # Lazy import: `web` package bot.py में पहले से load है; cycle से बचाव।
+    # Lazy import: the `web` package is already loaded by bot.py; this avoids a cycle.
     from web.thumb_engine import probe_file, thumb_queue_state
 
     status = await message.reply(
-        "⚙️ <b>Thumbnail + Metadata Warmup</b>\n\nPending files गिनी जा रही हैं…",
+        "⚙️ <b>Thumbnail + Metadata Warmup</b>\n\nCounting pending files…",
         parse_mode=enums.ParseMode.HTML,
     )
 
@@ -81,9 +81,9 @@ async def warmup_thumbs_cmd(client, message):
     total = len(docs)
     if not total:
         return await status.edit_text(
-            "✨ <b>सब कुछ up-to-date है!</b>\n\n"
-            "सभी files के पास <b>verified</b> <code>TG_ID:</code> thumbnail lock, "
-            "सच्चा <code>meta_v</code> metadata या <code>NO_THUMB</code> mark है।",
+            "✨ <b>Everything is up-to-date!</b>\n\n"
+            "Every file has a <b>verified</b> <code>TG_ID:</code> thumbnail lock, "
+            "accurate <code>meta_v</code> metadata or a <code>NO_THUMB</code> mark.",
             parse_mode=enums.ParseMode.HTML,
         )
 
@@ -96,14 +96,14 @@ async def warmup_thumbs_cmd(client, message):
             skipped += 1
             continue
         try:
-            # ⚠️ यहीं serial है: global _probe_lock + 1.2–3.0s gap + FloodWait retry
-            #    उसी probe में true metadata + verified real thumbnail DB में जाते हैं।
+            # ⚠️ This is the serial point: global _probe_lock + 1.2–3.0s gap + FloodWait retry
+            #    The same probe writes true metadata and the verified thumbnail to the DB.
             await probe_file(fid)
         except Exception as e:
             logger.warning(f"[warmup] {fid[:16]} skipped: {e}")
             skipped += 1
 
-        # v5 की तरह हर 10 files पर UI update
+        # Like v5, refresh the UI every 10 files
         if i % 10 == 0 or i == total:
             q = thumb_queue_state()
             try:
@@ -132,9 +132,9 @@ async def warmup_thumbs_cmd(client, message):
         f"💾 Duration/quality/meta saved: <code>{meta:,}</code>\n"
         f"🚫 Fake \"NO IMAGE\" rejected: <code>{fake:,}</code>\n"
         f"⚪ No real poster (NO_THUMB): <code>{no_thumb:,}</code>\n"
-        f"⏳ Queue में बाकी: <code>{q['queued']}</code> · Errors: <code>{failed + skipped}</code>\n"
+        f"⏳ Remaining in queue: <code>{q['queued']}</code> · Errors: <code>{failed + skipped}</code>\n"
         f"🕐 Time: <code>{int(time.time() - start)}s</code>\n\n"
-        "<i>Ab web पर सिर्फ़ verified posters + सच्ची duration/quality दिखेंगी, "
-        "बिना extra probe के।</i>",
+        "<i>The web UI now shows only verified posters and accurate duration/quality, "
+        "with no extra probing.</i>",
         parse_mode=enums.ParseMode.HTML,
     )

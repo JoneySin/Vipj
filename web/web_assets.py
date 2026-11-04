@@ -1,40 +1,40 @@
 """🎨 Shared web assets: session/auth helper, page shell, CSS and the search UI.
 
-`v5` के dashboard/miniapp जैसा look — sidebar (Home / Database Stats /
-Profile Settings / Sign Out), stats cards और profile settings, पर fsv1 के
-लिए एक ही self-contained page (कोई extra template engine नहीं)।
+A look like `v5`'s dashboard/mini-app — sidebar (Home / Database Stats /
+Profile Settings / Sign Out), stats cards and profile settings — but as one
+self-contained page for fsv1 (no extra template engine).
 
-▶ `PLAYER_MODAL_HTML` + `PLAYER_JS` एक **shared player component** है: `/search`
-के अलावा `/post/<id>` और `/actor/<id>` के Videos tabs भी यही modal, यही
-`/api/stream` flow और यही signed watch/download actions इस्तेमाल करते हैं।
-JS एक IIFE में `window.play/closePlayer/copyLink` expose करता है, इसलिए हर
-page के अपने `$` / `esc` / `const` से कोई नाम-टकराव नहीं होता।
+▶ `PLAYER_MODAL_HTML` + `PLAYER_JS` are a **shared player component**: besides
+`/search`, the Videos tabs of `/post/<id>` and `/actor/<id>` use the same modal,
+the same `/api/stream` flow and the same signed watch/download actions.
+The JS exposes `window.play/closePlayer/copyLink` from an IIFE, so there are no
+name collisions with a page's own `$` / `esc` / `const`.
 
-✏️ `FILE_EDIT_HTML` + `FILE_EDIT_JS` admin-only **file editor** है — v5 के
-`Edit Title Metadata` (name / caption / poster / delete) का fsv1
-रूप: JSON API, बिना CDN का 16:9 canvas crop, बिना reload card update।
+✏️ `FILE_EDIT_HTML` + `FILE_EDIT_JS` are the admin-only **file editor** — fsv1's
+version of v5's `Edit Title Metadata` (name / caption / poster / delete):
+a JSON API, a CDN-free 16:9 canvas crop and card updates without a reload.
 
-🎛️ `FILTER_CSS` + `FILTER_JS` एक **shared filter dropdown component** है —
-सिर्फ़ `<select class="filter-dd">` लिखो, `SITE_JS` का `FilterDD` engine उसे
-styled button + custom options menu में upgrade कर देता है (MutationObserver से
-बाद में आने वाले selects भी)। Native select hidden रहकर `value`/`change` बनाए
-रखता है, इसलिए पुराना JS बिल्कुल नहीं बदलना पड़ता। **Dropdown का पूरा UI इसी एक
-जगह है** — बदलाव एक file में करो, `/search`, `/posts`, `/actors`, editor modals
-सब में दिखेगा। **Filter buttons की options/specs भी यहीं** `FILTER_OPTIONS` +
-`SEARCH_FILTERS`/`CATALOG_FILTERS` + `filter_buttons()` में — कोई page अपना
-`<option>` नहीं लिखता, `sel.value=` लिखते ही label अपने आप sync हो जाता है
-(किसी page पर अलग `ddSet()` code नहीं)। Mobile पर दोनों toolbar एक ही
-`.filters` row + एक ही `@media` नियम: search bar ऊपर, दो बराबर buttons नीचे।
+🎛️ `FILTER_CSS` + `FILTER_JS` are a **shared filter dropdown component** —
+just write `<select class="filter-dd">` and the `FilterDD` engine in `SITE_JS`
+upgrades it into a styled button + custom options menu (the MutationObserver
+also upgrades selects added later). The native select stays hidden but keeps
+`value`/`change`, so existing JS needs no changes. **The entire dropdown UI lives
+in this one place** — edit one file and `/search`, `/posts`, `/actors` and the
+editor modals all change. **Filter button options/specs live here too** in
+`FILTER_OPTIONS` + `SEARCH_FILTERS`/`CATALOG_FILTERS` + `filter_buttons()` — no
+page writes its own `<option>`, and setting `sel.value=` syncs the label automatically
+(no separate `ddSet()` code on any page). On mobile both toolbars share one
+`.filters` row and one `@media` rule: search bar above, two equal buttons below.
 
-🎴 `VCARD_TEMPLATE` + `VCARD_CHIP_SPEC` + `vcard_meta()` — **video card का
-एकमात्र source**: markup, chips (size/duration/quality/res/type) और data
-normalization सब यहीं। Python `render_vcard()` और JS `vcardHTML()` उसी एक
-template/spec को भरते हैं; `/search`, Post attached videos, Actor tag-results
-तीनों बिल्कुल एक जैसे cards दिखाते हैं। बदलाव = सिर्फ़ यहाँ।
+🎴 `VCARD_TEMPLATE` + `VCARD_CHIP_SPEC` + `vcard_meta()` — the **single source
+for video cards**: markup, chips (size/duration/quality/res/type) and data
+normalization all live here. Python `render_vcard()` and JS `vcardHTML()` fill the
+same template/spec; `/search`, Post attached videos and Actor tag-results
+show exactly the same cards. Changes belong here only.
 
-🎴 `VIDEO_CARD_CSS` एक **shared video card** है — `/search` की grid और
-Post/Actor Videos tabs बिल्कुल वही `.vcard`/`.vgrid` markup वाली cards,
-वही 1/2/3 responsive grid और नाम के नीचे वही compact padding दिखाती हैं।
+🎴 `VIDEO_CARD_CSS` is a **shared video card** — the `/search` grid and the
+Post/Actor Videos tabs use the same `.vcard`/`.vgrid` markup,
+the same 1/2/3 responsive grid and the same compact padding under the name.
 """
 
 import html
@@ -57,7 +57,7 @@ from database.users_chats_db import web_db
 # 🔐 SESSION / AUTH
 # ─────────────────────────────────────────────────────────────
 def prune_sessions():
-    """RAM की expired sessions साफ़ करो + uncontrolled growth रोको."""
+    """Remove expired sessions from RAM and prevent uncontrolled growth."""
     sessions = temp.USER_SESSIONS
     if len(sessions) <= 5000:
         return
@@ -76,7 +76,7 @@ async def get_auth(req):
 
     session = temp.USER_SESSIONS.get(sid)
     if not session:
-        # Bot restart / dusra instance → DB se session wapas lao
+        # Bot restart / another instance → reload the session from the DB
         try:
             session = await web_db.get_session(sid)
             if session:
@@ -95,7 +95,7 @@ async def get_auth(req):
 
 
 def is_secure_request(req):
-    """Proxy (Koyeb/Render) के पीछे असली scheme का पता लगाओ."""
+    """Detect the real scheme behind a proxy (Koyeb/Render)."""
     return (
         req.secure
         or req.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower() == "https"
@@ -106,8 +106,8 @@ def is_secure_request(req):
 VIDEO_CARD_CSS = r"""
 /* ─────────────────────────────────────────────────────────────
    ▶ SHARED VIDEO CARD — /search + /post/<id> + /actor/<id> Videos tabs
-   सब एक ही `.vcard` markup, एक ही `.vgrid` (📱 1 / 📟 2 / 🖥️ 3) और
-   नाम के नीचे minimum padding इस्तेमाल करते हैं।
+    all use the same `.vcard` markup, the same `.vgrid` (📱 1 / 📟 2 / 🖥️ 3) and
+    the minimum padding under the name.
    ───────────────────────────────────────────────────────────── */
 .vgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
 @media(min-width:620px){.vgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
@@ -150,7 +150,7 @@ font-size:30px;background:linear-gradient(transparent,rgba(0,0,0,.5));
 opacity:0;transition:opacity .2s;pointer-events:none}
 .vcard:hover .vplay{opacity:1}
 .vposter{cursor:pointer}
-/* 📸 v5 जैसा: thumbnail पर click → उसी poster के अंदर Edit/Delete बार slide-up */
+/* 📸 Like v5: clicking the thumbnail slides an Edit/Delete bar up inside that poster */
 .vadmin{position:absolute;left:0;right:0;bottom:0;z-index:5;display:flex;gap:6px;
 padding:9px 8px;background:linear-gradient(transparent,rgba(0,0,0,.9) 45%);
 opacity:0;visibility:hidden;transform:translateY(10px);pointer-events:none;
@@ -166,7 +166,7 @@ backdrop-filter:blur(8px);transition:background .12s,transform .1s}
 .vadmin .va-del{background:rgba(160,8,8,.82);border-color:rgba(229,9,20,.5)}
 .vadmin .va-del:hover{background:rgba(229,9,20,.95)}
 .vadmin button:active{transform:scale(.94)}
-/* ✅ नाम के नीचे का extra space हटाया — सिर्फ़ उतनी ही padding जितनी ज़रूरी */
+/* ✅ Removed the extra space under the name — only the necessary padding remains */
 .vbody{padding:8px 11px 9px}
 .vtitle{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
 font-size:13px;font-weight:700;line-height:1.35;cursor:pointer;transition:color .18s}
@@ -183,17 +183,17 @@ transition:none!important;opacity:1!important;transform:none!important}
 # 🎨 SHARED CSS
 # ─────────────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────
-# 🎴 SHARED VIDEO CARD — markup + chips + data का **एकमात्र source**
-#   `/search`, Post attached videos, Actor tag-results तीनों यहीं से बनते हैं:
+# 🎴 SHARED VIDEO CARD — the **single source** for markup + chips + data
+#   `/search`, Post attached videos and Actor tag-results are all built here:
 #     Python  → render_vcard() / vcard_chips() / vcard_size()
-#     JS      → vcardHTML()    / vcardChips() / vcardSize()  (SITE_JS में नीचे)
-#   Template और chip spec दोनों एक बार लिखे हैं — JS को यही Python values
-#   json.dumps करके दी जाती हैं। chip जोड़ना/हटाना/क्रम बदलना/रंग बदलना
-#   हो → सिर्फ़ VCARD_CHIP_SPEC बदलो, तीनों जगह एक साथ बदलेगा।
+#     JS      → vcardHTML()    / vcardChips() / vcardSize()  (in SITE_JS below)
+#   The template and chip spec are each written once — the same Python values
+#   are passed to JS with json.dumps. To add/remove a chip, reorder them or
+#   change colours, edit only VCARD_CHIP_SPEC and every surface changes at once.
 # ─────────────────────────────────────────────────────────────
-# ⚠️ "VIDEO"/"FILE" टाइप chip हटा दी गई — thumbnail पर अब सिर्फ़
-#    quality → res → duration chips हैं। `type` payload में रह सकता है
-#    (API/editor इस्तेमाल करते हैं), पर card पर chip नहीं बनती।
+# ⚠️ The "VIDEO"/"FILE" type chip was removed — thumbnails now show only
+#    quality → res → duration chips. `type` may remain in the payload
+#    (used by the API/editor), but it no longer produces a chip on the card.
 VCARD_CHIP_SPEC = (
     ("quality",  "vtag blue", ("unknown",)),
     ("res",      "vtag",      ()),
@@ -219,7 +219,7 @@ _VIDEO_EXT = (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts",
 
 
 def vcard_is_video(doc) -> bool:
-    """Library doc video है या नहीं — सभी card payloads यहीं से `type` लेते हैं।"""
+    """Whether a Library doc is a video — every card payload gets `type` here."""
     doc = doc or {}
     name = str(doc.get("file_name") or "").lower()
     mime = str(doc.get("mime_type") or "").lower()
@@ -240,9 +240,9 @@ def _vcard_duration(value) -> str:
 
 
 def vcard_meta(doc) -> dict:
-    """🎴 एकमात्र card-data normalizer — `/api/search`, `/api/catalog/{kind}/media`
-    और attached-video enrichment सब यही size/duration/res/quality/type लेते हैं,
-    इसलिए तीनों जगह chips का text भी बिल्कुल एक जैसा होता है।"""
+    """🎴 The only card-data normalizer — `/api/search`, `/api/catalog/{kind}/media`
+    and attached-video enrichment all take size/duration/res/quality/type from here,
+    so the chip text is identical in all three places."""
     doc = doc or {}
     fid = str(doc.get("_id") or "")
     try:
@@ -265,7 +265,7 @@ def vcard_meta(doc) -> dict:
 
 
 def vcard_chips(data) -> str:
-    """सभी `.vchips` — order/class/skip rules सिर्फ़ VCARD_CHIP_SPEC में।"""
+    """Every `.vchips` — order/class/skip rules live only in VCARD_CHIP_SPEC."""
     data = data or {}
     out = []
     for field, cls, skip in VCARD_CHIP_SPEC:
@@ -282,7 +282,7 @@ def vcard_size(data) -> str:
 
 
 def render_vcard(**kw) -> str:
-    """Python-side card render — उसी VCARD_TEMPLATE से जो JS इस्तेमाल करता है।"""
+    """Python-side card render — from the same VCARD_TEMPLATE that JS uses."""
     tokens = {k: "" for k in (
         "CARD_CLASS", "EXTRA_ATTRS", "POSTER_ID", "IMG_ATTRS", "IMG_ERROR",
         "CHIPS", "SIZE", "FID", "NAME", "RAW_FID")}
@@ -290,7 +290,7 @@ def render_vcard(**kw) -> str:
     return VCARD_TEMPLATE.format(**tokens)
 
 
-_VCARD_JS_TPL = r"""/* 🎴 SHARED VIDEO CARD — template + chip spec web_assets.py से (Python → JS) */
+_VCARD_JS_TPL = r"""/* 🎴 SHARED VIDEO CARD — template + chip spec from web_assets.py (Python → JS) */
 (function(){
   var TPL=__VCARD_TEMPLATE__, SPEC=__VCARD_CHIP_SPEC__;
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
@@ -322,7 +322,7 @@ VCARD_JS = (_VCARD_JS_TPL
                      json.dumps([list(x) for x in VCARD_CHIP_SPEC])))
 
 FILE_EDIT_HTML = r"""<style>
-/* ✏️ Shared FILE EDITOR — v5 "Edit Title Metadata" का fsv1 रूप (कोई CDN नहीं) */
+/* ✏️ Shared FILE EDITOR — fsv1's take on v5 "Edit Title Metadata" (no CDN) */
 .femodal{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.88);display:none;
 align-items:center;justify-content:center;padding:14px}
 .femodal.open{display:flex}
@@ -428,7 +428,7 @@ FILE_EDIT_JS = r"""<script>
         const t=c.querySelector('.vtitle'); if(t) t.textContent=f.name;
         c.dataset.name=f.name; c.setAttribute('aria-label','Play '+f.name);
       }
-      // chips + size भी उसी shared spec से — edit के बाद card अलग न दिखे
+      // chips + size also come from the same shared spec — the card must not look different after an edit
       const chips=c.querySelector('.vchips');
       if(chips) chips.innerHTML=vcardChips(f);
       const sz=c.querySelector('.vsize');
@@ -467,7 +467,7 @@ FILE_EDIT_JS = r"""<script>
         const po=q('#fePoster'); if(po) po.style.display='none';
         const cv=q('#feCanvas'); if(cv) cv.style.display='block';
         drawCrop();
-        q('#feStatus').textContent='✂️ 16:9 crop — drag से position, slider से zoom';
+        q('#feStatus').textContent='✂️ 16:9 crop — drag to position, use the slider to zoom';
       };
       im.src=e.target.result;
     };
@@ -477,7 +477,7 @@ FILE_EDIT_JS = r"""<script>
     if(!fid||!q('#feModal')) return;
     current=String(fid); crop=null; busy=false;
     q('#feModal').classList.add('open');
-    q('#feStatus').textContent='लोड हो रहा है…';
+    q('#feStatus').textContent='Loading…';
     q('#feFile').value=''; q('#feZoom').value=1;
     fetch('/api/file/meta?id='+encodeURIComponent(current),{credentials:'same-origin'})
       .then(r=>r.json()).then(d=>{
@@ -527,13 +527,13 @@ FILE_EDIT_JS = r"""<script>
           if(ud.ok) f=ud.file; else toast('Poster: '+(ud.error||'upload failed'),true);
         }
       }
-      syncCard(f); setPoster(f); toast('✨ File updated — बिना reload'); close();
+      syncCard(f); setPoster(f); toast('✨ File updated — no reload'); close();
     }catch(e){ toast('Network error: '+String(e.message||e),true); }
     finally{ setBusy(false); }
   }
   async function resetThumb(){
     if(!current||busy) return;
-    if(!confirm('Custom poster हटाकर Telegram की original thumbnail लाएँ?')) return;
+    if(!confirm('Remove the custom poster and restore the original Telegram thumbnail?')) return;
     setBusy(true);
     try{
       const r=await fetch('/api/file/thumb_reset',{method:'POST',credentials:'same-origin',
@@ -541,13 +541,13 @@ FILE_EDIT_JS = r"""<script>
       const d=await r.json();
       if(!d.ok){ toast(d.error||'Reset failed',true); return; }
       syncCard(d.file); setPoster(d.file);
-      toast('🔄 Original thumbnail serial queue में डाली गई');
+      toast('🔄 Original thumbnail queued for a fresh fetch');
     }catch(e){ toast('Network error: '+String(e.message||e),true); }
     finally{ setBusy(false); }
   }
   async function deleteById(fid){
     if(!fid||busy) return;
-    if(!confirm('इस file को database से permanently हटाएँ?')) return;
+    if(!confirm('Permanently delete this file from the database?')) return;
     setBusy(true);
     try{
       const r=await fetch('/api/file/delete',{method:'POST',credentials:'same-origin',
@@ -562,14 +562,14 @@ FILE_EDIT_JS = r"""<script>
   }
   function remove(){ if(current) return deleteById(current); }
 
-  /* ── 📸 v5-style: thumbnail के अंदर Edit/Delete overlay ─────── */
+  /* ── 📸 v5-style: Edit/Delete overlay inside the thumbnail ─────── */
   function closeAdmin(){
     Array.prototype.forEach.call(document.querySelectorAll('.vcard.admin-active'),
       c=>c.classList.remove('admin-active'));
   }
   function toggleAdmin(card){
     const was=card.classList.contains('admin-active');
-    closeAdmin();                         /* एक समय पर सिर्फ़ एक card खुला */
+    closeAdmin();                         /* only one card open at a time */
     if(!was) card.classList.add('admin-active');
   }
   function fidOf(node){
@@ -596,12 +596,12 @@ FILE_EDIT_JS = r"""<script>
     if(poster){
       const card=poster.closest('.vcard[data-fid]');
       if(card){
-        e.preventDefault(); e.stopPropagation();   /* player न खुले — overlay खुले */
+        e.preventDefault(); e.stopPropagation();   /* do not open the player — open the overlay */
         toggleAdmin(card);
         return;
       }
     }
-    closeAdmin();                         /* बाहर click → सब overlay बंद */
+    closeAdmin();                         /* outside click → close every overlay */
   },true);
   document.addEventListener('keydown',e=>{
     if(e.key==='Escape'){
@@ -640,9 +640,9 @@ FILE_EDIT_JS = r"""<script>
 
 FILTER_CSS = r"""
 /* ═══════════════════════════════════════════════════════════════════
-   🎛️ SHARED FILTER DROPDOWN — हर filter control का UI सिर्फ़ यहीं
-   कोई भी <select class="filter-dd"> अपने आप इसी component में बदल जाता है
-   (SITE_JS का FilterDD engine)। बदलाव = सिर्फ़ यह CSS + नीचे वाला JS।
+   🎛️ SHARED FILTER DROPDOWN — the UI for every filter control lives only here
+   Any <select class="filter-dd"> is automatically turned into this component
+   (the FilterDD engine in SITE_JS). Changes belong in this CSS + the JS below.
    ═══════════════════════════════════════════════════════════════════ */
 .fdd{position:relative;display:inline-flex;min-width:132px;flex:0 0 auto;vertical-align:middle}
 .fdd.full{display:flex;width:100%;min-width:0}
@@ -683,21 +683,21 @@ cursor:pointer;text-align:left;transition:background .12s,color .12s}
 width:1px!important;height:1px!important;padding:0!important;border:0!important;
 opacity:0!important;pointer-events:none!important;clip:rect(0,0,0,0)!important;
 overflow:hidden!important}
-/* container layout भी यहीं — filter row की base + mobile CSS एक ही ब्लॉक में */
+/* container layout lives here too — base + mobile CSS for the filter row in one block */
 .filters{display:flex;gap:10px;align-items:center;flex:0 0 auto}
 .filters .fdd{min-width:132px}
-/* 📱 mobile: /search और /posts–/actors **एक ही नियम** — search bar अपनी लाइन,
-   filter buttons उसी `.filters` row में ठीक नीचे, बराबर चौड़ाई के। */
+/* 📱 mobile: /search and /posts–/actors share **one rule** — the search bar on its own line,
+   filter buttons directly below in the same `.filters` row, equally wide. */
 @media(max-width:760px){
 .qwrap,.cat-toolbar .cat-search{flex:1 1 100%}
 .filters{flex:1 1 100%}
 .filters .fdd{flex:1 1 0;min-width:0}
-/* ✅ v5 `.search-box` जैसा: mobile पर भी **एक ही box** (card + border + padding)
-   बरकरार — सिर्फ़ अंदर के controls तीन लाइनों में बँटते हैं, chrome नहीं हटता। */
-/* ✨ New Post / New Profile: filter buttons वाली row के ठीक नीचे पूरी लाइन।
-   (0,3,0) ⇒ body में बाद में आने वाला CATALOG_CSS `.cat-toolbar .cat-create` हरा न पाए। */
+/* ✅ Like v5 `.search-box`: mobile keeps **one box** (card + border + padding)
+   too — only the controls inside split into three lines, the chrome is not removed. */
+/* ✨ New Post / New Profile: a full-width line directly below the filter buttons.
+   (0,3,0) ⇒ the later CATALOG_CSS `.cat-toolbar .cat-create` rule cannot override it. */
 .cat-toolbar.cat-toolbar .cat-create{flex:1 1 100%;width:100%}
-/* count उसी box के अंदर सबसे नीचे, बिल्कुल हल्का (कोई अलग heading नहीं) */
+/* the count sits at the bottom of the same box, very light (no separate heading) */
 .cat-toolbar.cat-toolbar .cat-count{flex:1 1 100%;text-align:right;
 background:none;border:0;padding:2px 0 0}
 }
@@ -705,10 +705,10 @@ background:none;border:0;padding:2px 0 0}
 """
 
 FILTER_JS = r"""
-/* 🎛️ SHARED FILTER DROPDOWN ENGINE — सभी <select class="filter-dd"> यहीं से upgrade.
-   Native <select> DOM में hidden रहता है (value + change events = पुराना code वैसा ही),
-   दिखता है styled button + custom options menu. नया select कभी भी जोड़ो —
-   MutationObserver उसे अपने आप upgrade कर देगा, किसी दूसरी file में बदलाव नहीं। */
+/* 🎛️ SHARED FILTER DROPDOWN ENGINE — every <select class="filter-dd"> is upgraded here.
+   The native <select> stays hidden in the DOM (value + change events = old code unchanged),
+   while a styled button + custom options menu are shown. Add a new select at any time —
+   the MutationObserver upgrades it automatically, with no changes in another file. */
 (function(){
   var ALL=[];
   function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;
@@ -766,8 +766,8 @@ FILTER_JS = r"""
     d.sel.dispatchEvent(new Event('change',{bubbles:true}));
     render(d);close(d);d.btn.focus();
   }
-  /* कोई भी page `sel.value = x` लिखे → button label अपने आप sync.
-     इसलिए किसी page पर ddSet()/refresh() बुलाने वाला अलग code नहीं चाहिए। */
+  /* Any page writing `sel.value = x` syncs the button label automatically.
+     That is why no page needs its own ddSet()/refresh() call. */
   function watchValue(sel,d){
     var desc=null,pObj=Object.getPrototypeOf(sel);
     while(pObj&&!desc){
@@ -864,9 +864,9 @@ FILTER_JS = r"""
 
 
 # ─────────────────────────────────────────────────────────────
-# 🎛️ FILTER BUTTONS — एकमात्र definition (options, labels, markup)
-#   "Poster/Text" जैसे options अब दोनों pages पर अलग-अलग नहीं लिखे जाते।
-#   नया button जोड़ना हो / label बदलना हो → सिर्फ़ यहाँ बदलो।
+# 🎛️ FILTER BUTTONS — the only definition (options, labels, markup)
+#   Options like "Poster/Text" are not written separately on both pages.
+#   To add a button or change a label, edit only this place.
 # ─────────────────────────────────────────────────────────────
 FILTER_OPTIONS = {
     "view":  VIEW_MODE_OPTIONS,
@@ -885,8 +885,8 @@ CATALOG_FILTERS = (
 
 
 def filter_select(sel_id, *, options, cap, label, onchange="", full=False, vm=False):
-    """एक filter button का markup। `options` = FILTER_OPTIONS key | (value,label)
-    pairs | पहले से बना `<option>` HTML (जैसे catalog की dynamic categories)।"""
+    """Markup for one filter button. `options` = a FILTER_OPTIONS key | (value,label)
+    pairs | pre-built `<option>` HTML (such as the catalog's dynamic categories)."""
     if options is None:
         options = ()
     if isinstance(options, str) and options in FILTER_OPTIONS:
@@ -907,8 +907,8 @@ def filter_select(sel_id, *, options, cap, label, onchange="", full=False, vm=Fa
 
 
 def filter_buttons(specs, dynamic=None):
-    """पूरी `.filters` row — `/search` और `/posts`–`/actors` दोनों यहीं से।
-    `dynamic` = {select_id: `<option>` HTML} (catalog categories)।"""
+    """The whole `.filters` row — shared by `/search` and `/posts`–`/actors`.
+    `dynamic` = {select_id: `<option>` HTML} (catalog categories)."""
     dynamic = dynamic or {}
     out = ["      " + filter_select(
         sp["id"], options=dynamic.get(sp["id"], sp.get("options")),
@@ -938,7 +938,7 @@ align-items:center;gap:8px;flex:1}
 padding:7px 13px;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit}
 .tbtn:hover{border-color:var(--red)}
 .search-zone{padding:18px 4% 14px;background:var(--bg);border-bottom:1px solid var(--line)}
-/* 🖥️ desktop: search input + दोनों filter dropdowns एक ही लाइन में */
+/* 🖥️ desktop: search input + both filter dropdowns on the same line */
 .srow{display:flex;gap:10px;max-width:1100px;align-items:center;flex-wrap:wrap}
 .qwrap{position:relative;flex:1 1 320px;min-width:0}
 .sinput{display:block;width:100%;min-width:0;box-sizing:border-box;background:var(--bg2);
@@ -998,7 +998,7 @@ padding:15px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;m
 font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 .links a:hover{color:var(--red)}
 .hr{border:0;border-top:1px solid var(--line);margin:24px 0}
-/* 📱 mobile filter row (search + दोनों buttons) → FILTER_CSS में एक ही नियम */
+/* 📱 mobile filter row (search + both buttons) → one rule in FILTER_CSS */
 @media(max-width:520px){.spin{display:none!important}
 .auth-card{padding:24px}.vgrid{gap:8px}}
 
@@ -1007,17 +1007,17 @@ font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 SITE_CSS += VIDEO_CARD_CSS
 SITE_CSS += FILTER_CSS
 SITE_CSS += GROUP_CSS
-# ⚠️ MODE_CSS आख़िर में — Poster/Text का इकलौता नियम-सेट, बाकी सब ऊपर base only
+# ⚠️ MODE_CSS comes last — the only rule-set for Poster/Text; everything above is base only
 SITE_CSS += MODE_CSS
 
 
 
 
 # ─────────────────────────────────────────────────────────────
-# 🧭 APP SHELL — JoneySin/v5 (web/web_assets.py) जैसा sidebar
-#    Home · Database Stats · Profile Settings + footer में Sign Out.
-#    Identity badge अब सिर्फ़ Profile Settings में — desktop topbar/
-#    sidebar में "#<tg_id> · ADMIN" नहीं दिखता।
+# 🧭 APP SHELL — a sidebar like JoneySin/v5 (web/web_assets.py)
+#    Home · Database Stats · Profile Settings + Sign Out in the footer.
+#    The identity badge now lives only in Profile Settings — the desktop topbar/
+#    sidebar does not show "#<tg_id> · ADMIN".
 # ─────────────────────────────────────────────────────────────
 APP_CSS = """
 /* ── v5-style sidebar / app shell ── */
@@ -1115,7 +1115,7 @@ font-weight:800;font-size:13px;cursor:pointer;font-family:inherit}
 .scard{padding:20px}}
 """
 
-# Theme + sidebar — सभी logged-in pages पर एक ही script (v5 की तरह shared head)
+# Theme + sidebar — one shared script on every logged-in page (like v5's shared head)
 SITE_JS = """
 (function(){if(localStorage.getItem('ff_theme')==='light')document.documentElement.classList.add('light')})();
 function toggleTheme(){var l=document.documentElement.classList.toggle('light');localStorage.setItem('ff_theme',l?'light':'dark')}
@@ -1128,7 +1128,7 @@ SITE_JS += VCARD_JS
 SITE_JS += GROUP_JS
 SITE_JS += MODE_JS
 
-# v5 के NAV_MENU जैसा — Database Stats admin-only है
+# Like v5's NAV_MENU — Database Stats is admin-only
 NAV_MENU = (
     ("dash",    "/search",  "🏠 Home"),
     ("posts",   "/posts",   "📝 Posts"),
@@ -1139,20 +1139,20 @@ NAV_MENU = (
 
 
 def identity_badge(tg_id: int, role: str) -> str:
-    """'#5292444428 · ADMIN' — v5 में यही identity Profile Settings में दिखती है।"""
+    """'#5292444428 · ADMIN' — in v5 this identity appears in Profile Settings."""
     return f"#{html.escape(str(tg_id))}" + (" · ADMIN" if role == "admin" else "")
 
 
 def nav_shell(tg_id: int, role: str, active_tab: str = "") -> str:
-    """v5 जैसा sidebar + topbar. Sign Out सिर्फ़ sidebar footer में है —
-    main/topbar पर दोबारा नहीं दिखता।"""
+    """Sidebar + topbar like v5. Sign Out appears only in the sidebar footer —
+    never again in the main area/topbar."""
     links = "".join(
         f'<a href="{href}" class="sb-link {"active" if active_tab == tab else ""}">{label}</a>'
         for tab, href, label in NAV_MENU
         if role == "admin" or tab != "stats"      # Database Stats admin-only (v5)
     )
-    # ℹ️ desktop topbar से "#<tg_id> · ADMIN" badge हटा दिया गया — identity
-    #    अब सिर्फ़ Profile Settings पर दिखती है (sidebar में भी ID नहीं)।
+    # ℹ️ The "#<tg_id> · ADMIN" badge was removed from the desktop topbar — identity
+    #    now appears only on Profile Settings (no ID in the sidebar either).
     role_txt = "ADMIN" if role == "admin" else "USER"
     return (
         '<div class="sidebar-overlay" id="sbOverlay" onclick="closeSidebar()"></div>'
@@ -1178,7 +1178,7 @@ def nav_shell(tg_id: int, role: str, active_tab: str = "") -> str:
 
 def app_page(title: str, body: str, tg_id: int, role: str,
              active_tab: str = "", body_class: str = ""):
-    """Logged-in pages (Search / Database Stats / Profile Settings) का common shell."""
+    """Common shell for logged-in pages (Search / Database Stats / Profile Settings)."""
     return html_response(
         "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -1226,10 +1226,10 @@ def form_page(title: str, inner: str, err: str = "", msg: str = "", heading: str
 
 
 # ─────────────────────────────────────────────────────────────
-# ▶ SHARED PLAYER MODAL — /search + /post/<id> + /actor/<id> सब एक ही
-#   modal, एक ही `/api/stream` flow इस्तेमाल करते हैं (कोई duplicate JS नहीं)।
-#   PLAYER_JS एक IIFE में `window.play/closePlayer/copyLink` expose करता है,
-#   इसलिए page के अपने `$` / `esc` / `const` से कोई नाम-टकराव नहीं होता।
+# ▶ SHARED PLAYER MODAL — /search + /post/<id> + /actor/<id> all use the same
+# modal and the same `/api/stream` flow (no duplicate JS).
+# PLAYER_JS exposes `window.play/closePlayer/copyLink` from an IIFE,
+# so there are no name collisions with a page's own `$` / `esc` / `const`.
 # ─────────────────────────────────────────────────────────────
 PLAYER_MODAL_HTML = """<div class="modal" id="modal" onclick="if(event.target===this)closePlayer()">
   <div class="mcard">
@@ -1242,7 +1242,7 @@ PLAYER_MODAL_HTML = """<div class="modal" id="modal" onclick="if(event.target===
       <button onclick="copyLink()">🔗 Copy stream link</button>
       <button onclick="closePlayer()">Close</button>
     </div>
-    <div class="mnote" id="pNote">Signed streaming link — सीमित समय के लिए वैध।</div>
+    <div class="mnote" id="pNote">Signed streaming link — valid for a limited time.</div>
   </div>
 </div>"""
 
@@ -1254,7 +1254,7 @@ PLAYER_JS = r"""<script>
     const modal=q('#modal'), v=q('#player');
     if(!modal || !v) return;
     q('#pTitle').textContent='⏳ '+name;
-    q('#pNote').textContent='Streaming link तैयार हो रही है…';
+    q('#pNote').textContent='Preparing the streaming link…';
     modal.classList.add('open');
     v.pause(); v.removeAttribute('src');
     try{
@@ -1263,7 +1263,7 @@ PLAYER_JS = r"""<script>
       if(r.status===401){location.href='/login?err='+encodeURIComponent('Session expired. Please sign in again.');return}
       const d=await r.json();
       if(!d.stream){q('#pTitle').textContent='❌ '+(d.error||'Stream unavailable');
-        q('#pNote').textContent='यह फाइल अभी stream नहीं हो सकी।';return}
+        q('#pNote').textContent='This file could not be streamed right now.';return}
       currentWatch=location.origin+d.watch;
       q('#pTitle').textContent='▶ '+name;
       q('#pNote').textContent='Signed link · '+(d.expires_in||0)+' seconds valid · Range/seek supported';
@@ -1295,12 +1295,12 @@ PLAYER_JS = r"""<script>
 
 
 # ─────────────────────────────────────────────────────────────
-# 🔍 SEARCH PAGE (login ke baad)
+# 🔍 SEARCH PAGE (after login)
 # ─────────────────────────────────────────────────────────────
 SEARCH_BODY = """<div class="search-zone">
   <div class="srow" id="srow">
     <div class="qwrap">
-      <input class="sinput" id="q" type="search" placeholder="Movie / series / file name खोजें..." autocomplete="off">
+      <input class="sinput" id="q" type="search" placeholder="Search movies, series or file names..." autocomplete="off">
       <div class="spin"></div>
     </div>
     __FILTER_BUTTONS__
@@ -1309,7 +1309,7 @@ SEARCH_BODY = """<div class="search-zone">
 
 <div class="main">
   <div class="vgrid vm-grid" id="grid"></div>
-  <button class="more" id="more" onclick="load(false)">और दिखाओ ⬇</button>
+  <button class="more" id="more" onclick="load(false)">Show more ⬇</button>
 </div>
 
 __PLAYER_MODAL__
@@ -1321,8 +1321,8 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let curQ='',offset=0,loading=false,hasMore=false,seenGroups={};
 let debounce=null;
-/* 🖼️📄 Poster/Text पूरा `web/mode_assets.py` (SITE_JS → window.ViewMode) से —
-   यहाँ कोई mode logic नहीं; सिर्फ़ एक init call। Group filter अलग feature है। */
+/* 🖼️📄 Poster/Text comes entirely from `web/mode_assets.py` (SITE_JS → window.ViewMode) —
+   there is no mode logic here, just one init call. The group filter is a separate feature. */
 let groupMode=localStorage.getItem('ff_group_mode')||'all';
 if(!['all','group','ungroup'].includes(groupMode))groupMode='all';
 ViewMode.init({storage:ViewMode.storageFor()});
@@ -1335,10 +1335,10 @@ $('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(debounce
 $('#q').addEventListener('input',()=>{clearTimeout(debounce);debounce=setTimeout(()=>{
   const v=$('#q').value.trim();if(v.length>=2||v==='')doSearch()},420)});
 
-/* 🎴 card का markup/chips/size सब web_assets.VCARD_TEMPLATE + VCARD_CHIP_SPEC से —
-   Post/Actor Videos tabs भी बिल्कुल यही vcardHTML()/vcardChips()/vcardSize() चलाते हैं। */
+/* 🎴 Card markup/chips/size come from web_assets.VCARD_TEMPLATE + VCARD_CHIP_SPEC —
+   the Post/Actor Videos tabs run the exact same vcardHTML()/vcardChips()/vcardSize(). */
 function imgAttrs(f){
-  // src ⇄ data-src का फैसला सिर्फ़ ViewMode (web/mode_assets.py) करता है
+  // only ViewMode (web/mode_assets.py) decides between src ⇄ data-src
   return ViewMode.imgAttrs(f.thumb?encodeURI(f.thumb):'');
 }
 function cardTokens(f){
@@ -1349,18 +1349,18 @@ function cardTokens(f){
     CHIPS:vcardChips(f), SIZE:vcardSize(f)
   };
 }
-/* 🎴 एक ही entry point: group card (`web/group_assets.py`) या shared vcard.
-   Group के अंदर की हर variant भी इसी cardHTML() → vcardHTML() से बनती है,
-   इसलिए /search, Post, Actor तीनों पर card बिल्कुल एक जैसा रहता है। */
+/* 🎴 One entry point: a group card (`web/group_assets.py`) or the shared vcard.
+   Every variant inside a group is also built by this cardHTML() → vcardHTML(),
+   so cards look identical on /search, Post and Actor. */
 function cardHTML(f){
   if(f.group)return groupHTML(f,imgAttrs(f),'thumbFail(this)');
   return vcardHTML(cardTokens(f));
 }
 window.cardHTML=cardHTML;
 function card(f){return cardHTML(f)}
-// v5 के reloadThumb(fileId) जैसा: पहली बार poster serial warmup queue में
-// एक-एक करके निकलता है, इसलिए 404 पर `retry=true&t=...` से धीरे-धीरे दोबारा
-// माँगो — जैसे-जैसे ID DB में lock होती है, posters अपने आप दिखते जाते हैं।
+// Like v5's reloadThumb(fileId): first-time posters come from a serial warmup queue
+// one at a time, so on a 404 we retry gradually with `retry=true&t=...` —
+// as ids are locked into the DB, the posters appear automatically.
 function thumbFail(img){
   const delays=[1500,2500,4000,6000,9000,12000,16000,20000];
   const n=Number(img.dataset.retry||0);
@@ -1386,8 +1386,8 @@ async function load(reset){
     const r=await fetch(`/api/search?q=${encodeURIComponent(curQ)}&offset=${offset}&group=${groupMode}`,{credentials:'same-origin'});
     if(r.status===401){location.href='/login?err='+encodeURIComponent('Session expired. Please sign in again.');return}
     const d=await r.json();
-    // 🗂️ Saved group के सारे members हर page पर आते हैं — एक ही group card
-    //    दोबारा न दिखे, इसलिए key याद रखो (raw-file offset बरकरार)।
+    // 🗂️ All members of a saved group appear on every page — remember the key so
+    //    the same group card is not shown twice (raw-file offset is preserved).
     const list=(d.results||[]).filter(f=>{
       if(!f.group)return true;
       const k=String(f.key||f.gid||'');
@@ -1398,13 +1398,13 @@ async function load(reset){
     hasMore=!!d.next_offset;
     offset=hasMore?Number(d.next_offset):0;
     $('#more').classList.toggle('show',hasMore);
-    // ℹ️ "Recently Added / Database Stats" वाली meta लाइन हटा दी गई —
-    //    गिनती सिर्फ़ sidebar के "Database Stats" पेज पर दिखती है।
+    // ℹ️ The "Recently Added / Database Stats" meta line was removed —
+    //    the count is shown only on the sidebar's "Database Stats" page.
     if(!$('#grid').children.length){
-      $('#grid').innerHTML=`<div class="state">🔍 कोई फाइल नहीं मिली।<br>दूसरा नाम / keyword ट्राय करें।</div>`;
+      $('#grid').innerHTML=`<div class="state">🔍 No files found.<br>Try another name or keyword.</div>`;
     }
   }catch(e){
-    $('#grid').innerHTML=`<div class="state">⚠️ Search load नहीं हुआ।<br>${esc(e.message||e)}</div>`;
+    $('#grid').innerHTML=`<div class="state">⚠️ Search could not be loaded.<br>${esc(e.message||e)}</div>`;
   }finally{loading=false;$('#srow').classList.remove('loading')}
 }
 
@@ -1429,13 +1429,13 @@ __GROUP_ADMIN_JS__"""
 
 
 def search_page(tg_id: int, role: str):
-    """v5 जैसा sidebar वाला app shell + search body.
+    """The app shell + search body with a v5-style sidebar.
 
-    * Sign Out सिर्फ़ sidebar footer में (topbar पर नहीं)।
-    * Mode/Filter dropdowns desktop पर search bar के साथ एक लाइन में,
-      mobile पर उसके ठीक नीचे एक ही लाइन में।
-    * "Recently Added / Database Stats" वाली meta लाइन हटा दी गई —
-      गिनती सिर्फ़ `/stats` (Database Stats) पेज पर।
+    * Sign Out only in the sidebar footer (not the topbar).
+    * Mode/Filter dropdowns share the search line on desktop,
+      and sit on one line directly below it on mobile.
+    * The "Recently Added / Database Stats" meta line was removed —
+      the count lives only on the `/stats` (Database Stats) page.
     """
     admin = role == "admin"
     body = (SEARCH_BODY
@@ -1446,8 +1446,8 @@ def search_page(tg_id: int, role: str):
             .replace("__FILE_EDIT_JS__", FILE_EDIT_JS if admin else "")
             .replace("__GROUP_ADMIN_HTML__", GROUP_ADMIN_HTML if admin else "")
             .replace("__GROUP_ADMIN_JS__", GROUP_ADMIN_JS if admin else ""))
-    # GROUP_JS (head) को admin flag body के पहले script में मिलता है —
-    # ताकि load(true) से बनने वाले group cards में admin overlay आ जाए।
+    # GROUP_JS (head) receives the admin flag in the first body script —
+    # so group cards created by load(true) get their admin overlay.
     if admin:
         body = '<script>window.IS_GROUP_ADMIN=true;</script>' + body
     return app_page(
