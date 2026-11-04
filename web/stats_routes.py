@@ -18,6 +18,7 @@ from info import PORT
 from utils import temp
 from database.ia_filterdb import db_count_documents, get_recent_files, collection
 from database.users_chats_db import db as user_db, web_db
+from database.catalog_db import store as catalog_store
 from web.web_assets import get_auth, app_page
 from web.thumb_engine import thumb_queue_state
 
@@ -79,6 +80,8 @@ async def _stats_numbers():
     )
     # 🖼️ v5-style serial warmup queue (पहली बार thumbnail एक-एक करके)
     queue = thumb_queue_state()
+    # 📚 Posts + Directory counts (v5 के "Content Posts / Universal Directory" cards)
+    catalog = await _safe(catalog_store.counts(), {"posts": 0, "actors": 0})
     return {
         "total_files": total_files,
         "recent_files": recent_files,
@@ -87,6 +90,8 @@ async def _stats_numbers():
         "web_accounts": web_accounts,
         "thumbnails": thumbnails,
         "thumb_queue": queue,
+        "posts": catalog.get("posts", 0),
+        "actors": catalog.get("actors", 0),
     }
 
 
@@ -157,6 +162,16 @@ async def stats_page(req):
       <div class="st-label">⏳ Thumb Warmup Queue</div>
       <div class="st-val" style="color:var(--red)" data-count="{s['thumb_queue']['queued']}" data-delay="400">{s['thumb_queue']['queued']:,}</div>
       <div class="st-sub">पहली बार posters <b>एक-एक करके</b> निकल रहे हैं · {s['thumb_queue']['ok']:,} locked · {s['thumb_queue']['no_thumb']:,} NO_THUMB</div></div>
+
+    <div class="st-card anim-card"><div class="st-bar" style="background:#e50914"></div>
+      <div class="st-label">📝 Content Posts</div>
+      <div class="st-val" style="color:#e50914" data-count="{s['posts']}" data-delay="440">{s['posts']:,}</div>
+      <div class="st-sub">Published catalog entries</div></div>
+
+    <div class="st-card anim-card"><div class="st-bar" style="background:#00d2c4"></div>
+      <div class="st-label">🎭 Directory Profiles</div>
+      <div class="st-val" style="color:#00d2c4" data-count="{s['actors']}" data-delay="480">{s['actors']:,}</div>
+      <div class="st-sub">Actors · Apps · Websites</div></div>
   </div>
 </div>{_STATS_JS}'''
 

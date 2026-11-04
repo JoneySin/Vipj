@@ -13,9 +13,11 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 |---|---|
 | 🔐 Login / Register | Email + Password, registration Telegram bot PM में **OTP** से, forgot-password OTP reset, HttpOnly cookie session (RAM + MongoDB यानी restart पर भी login बना रहे) |
 | 🔍 Web Search | `/search` → `/api/search` → MongoDB text search + regex fallback, **टाइप करते ही auto-search** (Search बटन नहीं), **21 results प्रति पेज** (3 columns × 7 rows desktop), "और दिखाओ" pagination, खाली query पर **Recently Added** grid (अब कोई "Recently Added / Database Stats" टेक्स्ट लाइन नहीं — गिनती सिर्फ़ **Database Stats** पेज पर) |
-| 🧭 v5 Sidebar | हर logged-in पेज पर hamburger sidebar — **Home · Database Stats (admin-only) · Profile Settings**, header में `#ID · ADMIN`, footer में **Sign Out** (बिल्कुल `JoneySin/v5` जैसा)। Main/topbar पर दोबारा **Sign Out नहीं** है |
+| 🧭 v5 Sidebar | हर logged-in पेज पर hamburger sidebar — **Home · 📝 Posts · 🎭 Actors · Database Stats (admin-only) · Profile Settings**, header में `#ID · ADMIN`, footer में **Sign Out** (बिल्कुल `JoneySin/v5` जैसा)। Main/topbar पर दोबारा **Sign Out नहीं** है |
 | 📊 Database Stats | `/stats` — v5 जैसे animated stat cards; **"🆕 Recently Added Files"** की गिनती यहीं, search पेज की meta लाइन में नहीं |
 | ⚙️ Profile Settings | `/profile` — v5 जैसा Account Settings: `#ID · ADMIN` identity, Account Status (👑 Admin / 💎 Premium / 🆓 Free), Telegram ID, Email + Password बदलना (tabs, show/hide, strength meter) |
+| 📝 Posts + 🎭 Actors | `/posts` (Movies / Web Series / App Video / Other) और `/actors` (Actor / App / Website) — **एक ही shared catalog engine** से दोनों। Poster/Text view, category filter, live search, pagination, detail pages (`/post/<id>`, `/actor/<id>`), gallery lightbox, linked episodes / social links, और actor page पर Library की related files |
+| ✏️ Inline Edit + Animations | Admin को listing पर ही **modal editor**: create / edit / delete बिना page reload, live cover preview + Telegram image upload, library से linked-media picker, unsaved-changes guard, `Ctrl/Cmd+S`, `Esc`, **Undo** वाला delete toast (पुराने deep-links बचे रहते हैं)। Animations: staggered card entrance (IntersectionObserver), 3D hover, poster zoom, shimmer skeleton, modal spring, button ripple, save-flash, toast slide, lightbox zoom — सब `prefers-reduced-motion` का सम्मान करते हैं, बिना किसी CDN के |
 | 📐 Responsive Grid | 🖥️ Desktop ≥1024px: **3 वीडियो / row** · 📟 Tablet: 2 · 📱 Mobile: **1 वीडियो / row** |
 | 🎛️ View / Filter | 2 dropdowns — **Poster / Text** mode (Text में सिर्फ़ नाम + meta की कॉम्पैक्ट लिस्ट, कोई thumbnail request नहीं) और **All / Group / UnGroup** (एक ही टाइटल की 2+ फाइलें = Group, अकेली फाइल = UnGroup)। 🖥️ **Desktop:** search bar के साथ **एक ही लाइन में** · 📱 **Mobile:** search bar के ठीक नीचे **दोनों एक ही लाइन में** (अलग-अलग rows नहीं)। दोनों चुनाव browser में याद रहते हैं |
 | 📏 Size Chip | **File size thumbnail के अंदर** (नीचे-दाएँ badge) — फाइल नाम के नीचे की size/Stream लाइन हटा दी गई |
@@ -39,6 +41,13 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | GET | `/stats` | **Database Stats** (admin-only) — v5 जैसे counters, "Recently Added Files" की गिनती यहीं |
 | GET | `/api/db_stats` | उन्हीं counters का JSON (admin-only) |
 | GET | `/profile` | **Profile Settings** — v5 जैसा Account Settings (`#ID · ADMIN`, status, email, password) |
+| GET | `/posts`, `/actors` | **Content Posts / Directory Profiles** — shared catalog UI (search, filter, Poster/Text, pagination) |
+| GET | `/post/<id>`, `/actor/<id>` | Detail page — hero, description, tags, gallery lightbox, links, admin Edit/Delete |
+| GET | `/api/catalog/{kind}?q=&category=&offset=&limit=&id=` | Unified JSON list / single item (login required) |
+| POST | `/api/catalog/{kind}/save` | **Create + Edit एक ही endpoint** (admin); `restore:true` = Undo-delete उसी id से |
+| POST | `/api/catalog/{kind}/delete` | Delete (admin) |
+| POST | `/api/catalog/upload` | Cover/avatar image → Telegram → permanent `TG_ID:` (admin, ≤5 MB) |
+| GET | `/api/catalog/photo?id=` | `TG_ID:` image bytes — उसी serial-safe, FloodWait-aware download engine से |
 | POST | `/api/update_profile` | Email / password update (password बदलने पर सभी sessions बंद) |
 | GET | `/api/search?q=&offset=&limit=&group=` | JSON results (`file_id`, `name`, `size`, `quality`, `duration`, `res`, `thumb`); `group=all\|group\|ungroup` |
 | GET | `/api/thumb?file_id=&v=` | असली thumbnail image (login required) |
@@ -68,6 +77,7 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 | `WEB_SESSION_TTL` | `604800` | Login cookie validity (seconds, 7 दिन) |
 | `WEB_STREAM_TTL` | `21600` | Web stream link validity (6 घंटे) |
 | `THUMB_BROWSER_CACHE` | `604800` | ब्राउज़र poster कितने सेकंड अपने cache में रखे (7 दिन) |
+| `CATALOG_STORAGE_CHANNEL` | `BIN_CHANNEL` | Posts/Actors के cover images किस Telegram channel में जाएँ। अगर `BIN_CHANNEL` भी `INDEX_CHANNELS` में है तो अलग private channel दे दें, वरना covers file-search में आ सकते हैं |
 | `THUMB_FETCH_CONCURRENCY` | `6` | सिर्फ़ **पहले से `TG_ID:` वाली** फाइलों के download की concurrency (first-time probe हमेशा 1 ही) |
 | `THUMB_PROBE_GAP_MIN` / `THUMB_PROBE_GAP_MAX` | `1.2` / `3.0` | v5 warmup जैसा **हर first-time probe के बीच** random anti-flood gap (seconds) |
 | `THUMB_PROBE_ATTEMPTS` | `5` | एक file के लिए `send_cached_media` के maximum attempts |
@@ -112,6 +122,28 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 
 ---
 
+## 🧠 Posts + Actors का restructuring
+
+`JoneySin/v5` में ये features `post_routes.py` (~790 lines) और `actor_routes.py`
+(~590 lines) में बंटे थे — directory CSS/JS/search/pagination दोनों में copy-paste,
+create/edit के लिए अलग-अलग full-page multipart wizards (हर save पर reload),
+server से raw HTML strings, और Cropper.js CDN पर निर्भरता। यहाँ **सिर्फ़ features
+समझे गए**, ढाँचा नया है:
+
+* **एक** `CATALOGS` config + **एक** CSS/JS engine → दोनों pages; नया catalog जोड़ना
+  हो तो सिर्फ़ config में एक entry।
+* **JSON API + client-side render** (`textContent`-safe escaping) → server कभी HTML
+  string नहीं भेजता, markup एक जगह, XSS का रास्ता बंद।
+* **एक** `/save` endpoint create + edit + Undo-restore संभालता है (v5 में अलग API थे)।
+* **Inline modal** से edit → page reload नहीं; dirty guard, keyboard shortcuts, live
+  preview, upload, media picker — वो सब v5 के wizards में नहीं था।
+* **Validation**: URL/scheme sanitization, media `file_id` pattern check, field length
+  caps, short-hex ids, admin-only writes, `prefers-reduced-motion` support।
+* Images Telegram में `TG_ID:` के रूप में → DB में bytes नहीं; serving उसी
+  `web/thumb_engine.py` के rate-limit-safe download path से, तो कोई अलग burst नहीं।
+
+---
+
 ## 🗂️ कहाँ-क्या बदला
 
 ```
@@ -130,7 +162,13 @@ web/utils/media_info.py          → media metadata cache (नया)
 web/utils/render_template.py     → signed player page + poster
 web/utils/custom_dl.py           → FileId support + आख़िरी Range chunk fix
 web/stream_routes.py             → landing, signed watch/download, hardened Range
-web/__init__.py                  → तीनों route tables register
+database/catalog_db.py           → एक CatalogStore: catalog_posts + catalog_actors,
+                                   short-hex ids, PyMongo→to_thread, in-memory fallback (नया)
+web/catalog.py                   → एक CATALOGS config + shared CSS/JS/detail/editor engine (नया)
+web/catalog_routes.py            → pages + generic JSON API + upload/photo (नया)
+web/thumb_engine.py              → Telegram fetch (बिना किसी cache के), DB में सिर्फ ID backfill,
+                                   catalog images के लिए get_image_bytes()
+web/__init__.py                  → सभी route tables register
 plugins/callbacks.py             → bot के Watch/Download links अब signed
 ```
 

@@ -83,6 +83,14 @@ if not BIN_CHANNEL:
     exit()
 BIN_CHANNEL = int(BIN_CHANNEL)
 
+# 📚 Posts / Actors के cover-avatar Telegram पर यहीं जाते हैं।
+# अगर BIN_CHANNEL भी INDEX_CHANNELS में है (covers search में न आएँ), तो
+# एक अलग private channel का id यहाँ दे दें — default BIN_CHANNEL ही रहेगा।
+CATALOG_STORAGE_CHANNEL = environ.get("CATALOG_STORAGE_CHANNEL", "")
+CATALOG_STORAGE_CHANNEL = (
+    int(CATALOG_STORAGE_CHANNEL) if CATALOG_STORAGE_CHANNEL else BIN_CHANNEL
+)
+
 # ================= DATABASE =================
 
 DATA_DATABASE_URL = environ.get('DATA_DATABASE_URL', "")

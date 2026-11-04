@@ -185,6 +185,15 @@ async def _download_thumb(thumb_file_id: str):
     return None
 
 
+async def get_image_bytes(telegram_file_id: str):
+    """📷 Public wrapper — posts/actors के `TG_ID:` images के लिए।
+
+    उसी limited-concurrency + FloodWait-safe download path से जाता है, इसलिए
+    catalog page खुलने पर कोई अलग/parallel Telegram burst नहीं बनता।
+    """
+    return await _download_thumb(telegram_file_id)
+
+
 async def _read_doc(fid: str):
     return await asyncio.to_thread(
         collection.find_one, {"_id": fid},

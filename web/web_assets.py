@@ -336,6 +336,8 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSidebar
 # v5 के NAV_MENU जैसा — Database Stats admin-only है
 NAV_MENU = (
     ("dash",    "/search",  "🏠 Home"),
+    ("posts",   "/posts",   "📝 Posts"),
+    ("actors",  "/actors",  "🎭 Actors"),
     ("stats",   "/stats",   "📊 Database Stats"),
     ("profile", "/profile", "⚙️ Profile Settings"),
 )
