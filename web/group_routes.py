@@ -27,7 +27,8 @@ from collections import defaultdict
 from aiohttp import web
 
 import info as _info
-from info import BIN_CHANNEL, THUMB_BROWSER_CACHE
+from info import BIN_CHANNEL
+from env_store import env_manager
 from utils import temp
 from database.group_db import (
     store, title_key, group_title, quality_label, episode_chips,
@@ -671,7 +672,8 @@ async def api_group_thumb(req):
     if not ref.startswith("TG_ID:"):
         return web.Response(status=404)
     etag = f'"{req.query.get("v") or thumb_version(gid, ref)}"'
-    headers = {"Cache-Control": f"private, max-age={THUMB_BROWSER_CACHE}", "ETag": etag}
+    cache_ttl = int(env_manager.get("THUMB_BROWSER_CACHE") or 0)
+    headers = {"Cache-Control": f"private, max-age={cache_ttl}", "ETag": etag}
     if req.headers.get("If-None-Match") == etag:
         return web.Response(status=304, headers=headers)
     data = await get_image_bytes(ref[len("TG_ID:"):])

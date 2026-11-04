@@ -4,7 +4,8 @@ from datetime import datetime, timedelta
 
 from hydrogram.errors import FloodWait
 
-from info import ADMINS, IS_PREMIUM
+from info import ADMINS
+from env_store import env_manager
 from database.users_chats_db import db
 
 
@@ -66,8 +67,8 @@ async def is_premium(user_id, bot=None) -> bool:
     if user_id in ADMINS:
         return True
     
-    # If premium system is disabled, everyone has access
-    if not IS_PREMIUM:
+    # If premium system is disabled, everyone has access (⚙️ panel se live badalta hai)
+    if not env_manager.get("IS_PREMIUM"):
         return True
 
     now_ts = time.time()

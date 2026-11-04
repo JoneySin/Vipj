@@ -8,6 +8,7 @@ from hydrogram import Client, filters, enums
 from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from info import ADMINS
+from env_store import env_manager
 from database.users_chats_db import db
 from database.ia_filterdb import get_search_results
 from utils import (
@@ -231,8 +232,9 @@ async def filter_handler(client, message):
         # 📩 PM SEARCH - CHECK PREMIUM FIRST
         # ==============================
         if not is_group_chat:
-            # Admin always allowed
-            if user_id not in ADMINS:
+            # Admin allowed (⚙️ ADMIN_MODE off ho to admin bhi normal user jaisa)
+            admin_ok = user_id in ADMINS and env_manager.get("ADMIN_MODE")
+            if not admin_ok:
                 # Check premium status
                 try:
                     user_is_premium = await is_premium(user_id, client)
@@ -291,7 +293,7 @@ async def filter_handler(client, message):
             is_pm = False
 
             # Rate limit check for groups (non-premium users only)
-            if user_id not in ADMINS:
+            if not (user_id in ADMINS and env_manager.get("ADMIN_MODE")):
                 try:
                     user_is_premium = await is_premium(user_id, client)
                 except:

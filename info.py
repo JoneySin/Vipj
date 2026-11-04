@@ -146,6 +146,9 @@ THUMB_MIN_DIM = int(environ.get('THUMB_MIN_DIM', '48'))          # px (both widt
 # RGB channel stddev — a blank placeholder ≈ 0, a real video frame ≫ 6
 THUMB_MIN_STDDEV = float(environ.get('THUMB_MIN_STDDEV', '6.0'))
 
+# HMAC secret for /watch + /download links (panel se badal sakte hain)
+STREAM_SECRET = environ.get("STREAM_SECRET", "")
+
 # Older unsigned /watch/<id> links may have been shared before deployment.
 # Default False = only signed links work. Set True for backward compatibility.
 ALLOW_UNSIGNED_LINKS = is_enabled('ALLOW_UNSIGNED_LINKS', False)
@@ -178,3 +181,18 @@ RECEIPT_SEND_USERNAME = environ.get("RECEIPT_SEND_USERNAME", "")
 if not UPI_ID or not UPI_NAME:
     logger.info('Premium disabled due to missing UPI details')
     IS_PREMIUM = False
+
+
+# ================= ENV SNAPSHOT (⚙️ /admin → Environment) =================
+# Panel se badli gayi values MongoDB (`bot_env`) se startup par yahin apply hoti hain;
+# `env_store.BOOT_VALUES` = host env / code default — panel ka "Reset" isi par wapas jaata hai.
+try:
+    import env_store as _env_store
+
+    _env_store.BOOT_VALUES = {
+        _s.name: globals().get(_s.name, _s.default) for _s in _env_store.SPECS
+    }
+    _env_store.info_ready()
+    del _env_store
+except Exception as _e:  # pragma: no cover — panel na chale to bot pehle jaisa hi chalta hai
+    logger.warning(f"env_store init skipped: {_e}")

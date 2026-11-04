@@ -63,6 +63,8 @@ class Database:
         self.reminders = dbase.reminders
         self.bans = dbase.bans
         self.warns = dbase.warns
+        # ⚙️ /admin → Environment ke panel overrides (env_store.py padhta/likhta hai)
+        self.env = dbase.bot_env
 
         self._create_indexes()
 
@@ -75,6 +77,7 @@ class Database:
             self.warns.create_index([("user_id", 1), ("chat_id", 1)])
             self.premium.create_index("id", unique=True)
             self.reminders.create_index([("sent", 1), ("remind_at", 1)])
+            self.env.create_index("updated_at")
         except:
             pass
 
@@ -135,6 +138,41 @@ class Database:
         return await asyncio.to_thread(
             lambda: list(self.premium.find({"plan.premium": True}))
         )
+
+    # =========================
+    # ⚙️ ENVIRONMENT OVERRIDES  (/admin → Environment)
+    #    Ek doc per variable: {_id: "IS_PREMIUM", value: "False",
+    #                          by: 123, updated_at: ts, history: [{value, by, at}, ...]}
+    # =========================
+    ENV_HISTORY_LIMIT = 10
+
+    async def get_env_overrides(self):
+        return await asyncio.to_thread(lambda: list(self.env.find({})))
+
+    async def set_env_override(self, name: str, value: str, by: int = 0, old: str = ""):
+        now = time.time()
+        entry = {"value": value, "by": by, "at": now}
+        if old:
+            entry["old"] = old
+        await asyncio.to_thread(
+            self.env.update_one,
+            {"_id": name},
+            {
+                "$set": {"value": value, "by": by, "updated_at": now},
+                "$push": {
+                    "history": {
+                        "$each": [entry],
+                        "$slice": -self.ENV_HISTORY_LIMIT,
+                    }
+                },
+            },
+            upsert=True,
+        )
+        return True
+
+    async def delete_env_override(self, name: str):
+        res = await asyncio.to_thread(self.env.delete_one, {"_id": name})
+        return bool(res.deleted_count)
 
 
 # ======================================================================

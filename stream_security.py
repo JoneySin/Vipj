@@ -46,3 +46,45 @@ def verify(mid: int, exp, sig) -> bool:
     if exp < 0 or (exp and exp < time.time()):
         return False
     return hmac.compare_digest(_sig(mid, exp), str(sig or ""))
+
+
+# ======================================================================
+# 🔁 LIVE SECRET (⚙️ /admin → Environment → STREAM_SECRET)
+# ======================================================================
+
+import logging as _logging
+
+_log = _logging.getLogger(__name__)
+
+
+def refresh_secret() -> bool:
+    """`STREAM_SECRET` badla jaaye to naye secret se links banao.
+
+    Purane links (jo purane secret se sign hue the) bina kisi warning ke expire ho jaate hain —
+    panel confirm screen par yahi likha hai. `STREAM_SECRET` khaali = `BOT_TOKEN` se derive.
+    """
+    global _SECRET, USER_LINK_TTL, STREAM_TTL
+
+    import info as _info
+
+    secret = str(getattr(_info, "STREAM_SECRET", "") or "").strip()
+    try:
+        ttl_web = int(getattr(_info, "WEB_STREAM_TTL", STREAM_TTL))
+    except (TypeError, ValueError):
+        ttl_web = STREAM_TTL
+    try:
+        ttl_delete = int(getattr(_info, "PM_FILE_DELETE_TIME", USER_LINK_TTL))
+    except (TypeError, ValueError):
+        ttl_delete = USER_LINK_TTL
+
+    _SECRET = hashlib.sha256(
+        b"fsv1-stream-link:" + (secret or _info.BOT_TOKEN).encode()
+    ).digest()
+    # /watch + /download links free kiye jaate hain by default 6 ghante ke liye.
+    # Agar admin `PM_FILE_DELETE_TIME` 6 ghante se zyada rakhta hai (file PM me itni der
+    # rehti hai), to links ki umar bhi utni hi rakhni chahiye — warna file rahegi
+    # par link mar jayega.
+    STREAM_TTL = min(max(ttl_web, ttl_delete, 60), MAX_LINK_TTL)
+    USER_LINK_TTL = STREAM_TTL
+    _log.info(f"[stream] secret refreshed (ttl={STREAM_TTL}s)")
+    return True

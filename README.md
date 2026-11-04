@@ -109,6 +109,48 @@ Variables that are actually used in code (`API_ID`, `API_HASH`, `BOT_TOKEN`, `AD
 | `STREAM_SECRET` | Derived from `BOT_TOKEN` | HMAC secret — **set it in production**; changing it expires old links |
 | `ALLOW_UNSIGNED_LINKS` | `False` | Set to `True` to keep old unsigned `/watch/<id>` links that were shared before deployment working |
 
+### ⚙️ `/admin` → Environment — PM se poora env dekho aur badlo
+
+`/admin` panel ke **⚙️ Environment** button (ya seedha **`/env`** PM me) se bot ka poora
+environment ek jagah dikhta hai — aur badla bhi ja sakta hai, **bina restart**.
+
+* **Buttons:** `/admin` → ⚙️ Environment → group (🔐 Secrets, ⚙️ Bot, 💎 Premium, 🎬 Files, 🌐 Web, 🖼️ Thumbs) → variable → value.
+  Boolean par **✅ Set True / ❌ Set False** → confirm → **✅ Apply**. Number/text par **✏️ Change** → value bhejiye → confirm.
+* **Text commands (PM):**
+
+  | Command | Kaam |
+  |---|---|
+  | `/env` | panel (buttons) |
+  | `/env all` | saare variables — value + source (`panel` / `env` / `default`) |
+  | `/env list` | sirf badle ja sakne wale (settable) variables |
+  | `/env get NAME` | ek variable ki detail, range + default |
+  | `/env set NAME VALUE` | live badlo — `true/false` (on/off, 1/0 bhi) |
+  | `/env reset NAME` | panel ka badlav hata kar host env / default par |
+  | `/env clear NAME` | text value khaali karo (UPI_ID, UPI_NAME …) |
+  | `/env search TEXT` | variable dhoondo |
+
+* **Turant lagu:** code `env_store.env_manager.get()` padhta hai (import ke waqt value freeze nahi hoti),
+  isliye `IS_PREMIUM`, `IS_STREAM`, `PROTECT_CONTENT`, `USE_CAPTION_FILTER`, `ALLOW_UNSIGNED_LINKS`,
+  `MAX_BTN`, `MAX_WEB_RESULTS`, `WEB_STREAM_TTL`, `PM_FILE_DELETE_TIME`, `PRE_DAY_AMOUNT`, `UPI_ID`,
+  `THUMB_*` … sab **turant** asar karte hain. `STREAM_SECRET` badalne par HMAC turant refresh hota hai
+  (purane links expire), `IS_PREMIUM` badalne par premium RAM cache saaf hoti hai.
+* **Restart-proof:** badlav MongoDB collection **`bot_env`** me save hote hain (history ke saath) aur
+  `bot.py` ke start par `env_manager.ensure_loaded()` unhe handlers chalu hone se **pehle** apply karta hai.
+  Saath hi ek gitignored **`.env`** mirror likha jaata hai (jo `docker-compose`/`python-dotenv` set-up me
+  kaam aata hai) — asli source of truth `bot_env` hi hai.
+* **Secrets masked:** `BOT_TOKEN`, `API_HASH`, `DATA_DATABASE_URL`, `STREAM_SECRET` sirf `1234…cdef` jaisa
+  dikhte hain. Deployment ke vars (`API_ID`, `ADMINS`, `BIN_CHANNEL`, `LOG_CHANNEL`, `URL`, `PORT`,
+  database names) **read-only** hain — panel sirf batata hai, badal nahi sakta. Naya `STREAM_SECRET`
+  set karte waqt `KEEP` bhejne par purani value hi rahegi.
+* **Audit:** har change `LOG_CHANNEL` me log hota hai (kaun, kaunsa var, kab) aur `bot_env.history` me
+  aakhri 10 entries rehti hain.
+* **`ADMIN_MODE` (maintenance switch):** `false` = admins ko file delivery/stream band aur
+  rate-limit exemption hata (normal users pehle jaisa). `/env`/`/admin` khud hamesha chalta rehta
+  hai, isliye `false` karne ke baad bhi `/env set ADMIN_MODE true` se turant wapas aa jaate hain.
+* Naya variable list me jodna ho to sirf **`env_store.SPECS`** me ek line — panel, `/env all`, masking,
+  validation aur `.env` mirror sab apne aap update ho jaate hain
+  (`tests/test_env_store.py` guard karta hai ki `info.py` ka har `is_enabled()` switch spec me ho).
+
 ---
 
 ## 🧑‍💻 Getting started

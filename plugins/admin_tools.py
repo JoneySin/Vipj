@@ -117,6 +117,16 @@ async def build_dashboard():
     except:
         pass
 
+    try:
+        from env_store import env_manager
+        env_line = (
+            f"⚙️ <b>Env overrides</b>  : <code>{env_manager.override_count()}</code>"
+            + (" · admin mode ⛔️ OFF" if not env_manager.get("ADMIN_MODE") else "")
+            + "\n"
+        )
+    except Exception:
+        env_line = ""
+
     return (
         "📊 <b>ADMIN CONTROL PANEL</b>\n\n"
         f"👤 <b>Users</b>        : <code>{stats['users']}</code>\n"
@@ -124,6 +134,7 @@ async def build_dashboard():
         f"📦 <b>Indexed Files</b>: <code>{stats['files']}</code>\n"
         f"💎 <b>Premium Users</b>: <code>{stats['premium']}</code>\n\n"
         f"⚡ <b>Index Speed</b>  : <code>{idx_text}</code>\n"
+        f"{env_line}"
         f"🗃 <b>DB Size</b>      : <code>{stats['used_data']}</code>\n\n"
         f"⏱ <b>Uptime</b>       : <code>{stats['uptime']}</code>\n"
         f"🔄 <b>Updated</b>      : <code>{stats['now']}</code>"
@@ -141,10 +152,11 @@ def admin_panel_buttons():
             InlineKeyboardButton("🗑 Delete Files", callback_data="admin_delete")
         ],
         [
-            InlineKeyboardButton("🔄 Refresh", callback_data="admin_refresh"),
-            InlineKeyboardButton("🔄 Restart Bot", callback_data="admin_restart")
+            InlineKeyboardButton("⚙️ Environment", callback_data="admin_env"),
+            InlineKeyboardButton("🔄 Refresh", callback_data="admin_refresh")
         ],
         [
+            InlineKeyboardButton("🔄 Restart Bot", callback_data="admin_restart"),
             InlineKeyboardButton("❌ Close", callback_data="close_data")
         ]
     ])
@@ -215,6 +227,17 @@ def delete_quality_buttons():
 
 @Client.on_message(filters.command(["admin", "dashboard"]) & filters.user(ADMINS))
 async def open_admin_panel(bot, message):
+    args = message.text.split()[1:]
+    if args and args[0].lower() in ("env", "environment", "config", "settings"):
+        # `/admin env` = PM env panel · `/admin set NAME VALUE` = seedha badlo
+        rest = args[1:]
+        try:
+            message.text = "/env" + ((" " + " ".join(rest)) if rest else "")
+        except Exception:
+            pass
+        from plugins.env_panel import env_cmd
+        return await env_cmd(bot, message)
+
     msg = await message.reply("⏳ Loading admin panel...")
     text = await build_dashboard()
     await safe_edit(msg, text, reply_markup=admin_panel_buttons())
@@ -272,6 +295,11 @@ async def admin_callbacks(bot, query: CallbackQuery):
             os.execl(sys.executable, sys.executable, "bot.py")
         except Exception as e:
             await safe_edit(query.message, f"❌ Restart failed: {e}")
+
+    # ⚙️ Environment panel (poora env — dekho + badlo)
+    elif action == "admin_env":
+        from plugins.env_panel import send_index
+        return await send_index(bot, query)
 
     # Back to main panel
     elif action == "admin_back":

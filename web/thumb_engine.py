@@ -42,12 +42,10 @@ import info as _info
 from info import (
     BIN_CHANNEL,
     THUMB_FETCH_CONCURRENCY,
-    THUMB_PROBE_GAP_MIN,
-    THUMB_PROBE_GAP_MAX,
-    THUMB_PROBE_ATTEMPTS,
     THUMB_FLOOD_EXTRA,
 )
 from utils import temp
+from env_store import env_manager
 from database.ia_filterdb import collection, update_file_meta
 from media_probe import META_V, build_media_meta, probe_telegram_media
 from web.image_validate import validate_thumb
@@ -56,13 +54,27 @@ logger = logging.getLogger(__name__)
 
 # v5's THUMBNAIL_STORAGE_CHANNEL is CATALOG_STORAGE_CHANNEL in fsv1 (defaults to BIN)
 _STORAGE_CHANNEL = getattr(_info, "CATALOG_STORAGE_CHANNEL", BIN_CHANNEL)
-_MIN_THUMB_BYTES = int(getattr(_info, "THUMB_MIN_BYTES", 512))
-_MIN_THUMB_DIM = int(getattr(_info, "THUMB_MIN_DIM", 48))
-_MIN_THUMB_STDDEV = float(getattr(_info, "THUMB_MIN_STDDEV", 6.0))
+def _thumb_limits():
+    """Validation thresholds — ⚙️ panel se live (import ke waqt freeze nahi)."""
+    return (
+        int(env_manager.get("THUMB_MIN_BYTES") or 0),
+        int(env_manager.get("THUMB_MIN_DIM") or 1),
+        float(env_manager.get("THUMB_MIN_STDDEV") or 0),
+    )
 
 # ── Concurrency control (no thumbnail data is stored here) ─────────────────
 # Limited concurrency for downloading files that already have a known TG_ID
 _download_sem = asyncio.Semaphore(THUMB_FETCH_CONCURRENCY)
+_SEM_LIMIT = THUMB_FETCH_CONCURRENCY
+
+
+def _sync_download_sem():
+    """`THUMB_FETCH_CONCURRENCY` panel se badla → naya semaphore (purana drain ho jaayega)."""
+    global _download_sem, _SEM_LIMIT
+    limit = max(1, min(int(env_manager.get("THUMB_FETCH_CONCURRENCY") or 6), 20))
+    if limit != _SEM_LIMIT:
+        _SEM_LIMIT = limit
+        _download_sem = asyncio.Semaphore(limit)
 # ⚠️ FIRST-TIME PROBE: only ONE file at a time (v5 warmup "single-bot safe")
 _probe_lock = asyncio.Lock()
 _probe_queue: asyncio.Queue = asyncio.Queue()
@@ -222,6 +234,8 @@ async def _download_thumb(thumb_file_id: str):
         return None
     for attempt in range(3):
         try:
+            # ⚙️ concurrency panel se badalne par semaphore bhi badal jaata hai
+            _sync_download_sem()
             async with _download_sem:
                 buf = await bot.download_media(thumb_file_id, in_memory=True)
             if not buf:
@@ -265,6 +279,7 @@ async def _real_thumb_bytes(thumb_ids):
     Anything fake / "NO IMAGE" / blank / tiny is rejected;
     `_STATS['rejected']` counts it so it appears in the `/warmup_thumbs` report.
     """
+    _lim = _thumb_limits()
     for tid in thumb_ids:
         if not _valid_thumb_ref(tid):
             _STATS["rejected"] += 1
@@ -274,9 +289,7 @@ async def _real_thumb_bytes(thumb_ids):
             continue
         ok, info = validate_thumb(
             data,
-            min_bytes=_MIN_THUMB_BYTES,
-            min_dim=_MIN_THUMB_DIM,
-            min_stddev=_MIN_THUMB_STDDEV,
+            min_bytes=_lim[0], min_dim=_lim[1], min_stddev=_lim[2],
         )
         if not ok:
             _STATS["rejected"] += 1
@@ -342,7 +355,7 @@ async def probe_file(fid: str, force: bool = False):
             if bot is None:
                 return None
 
-            for attempt in range(THUMB_PROBE_ATTEMPTS):
+            for attempt in range(int(env_manager.get("THUMB_PROBE_ATTEMPTS") or 5)):
                 msg = None
                 try:
                     msg = await bot.send_cached_media(chat_id=BIN_CHANNEL, file_id=fid)
@@ -422,7 +435,10 @@ async def probe_file(fid: str, force: bool = False):
             _STATS["done"] += 1
             # ⏱️ v5-warmup-style 1.2–3.0s random anti-flood gap (after a probe only)
             if probed:
-                await asyncio.sleep(random.uniform(THUMB_PROBE_GAP_MIN, THUMB_PROBE_GAP_MAX))
+                await asyncio.sleep(random.uniform(
+                    float(env_manager.get("THUMB_PROBE_GAP_MIN") or 0),
+                    float(env_manager.get("THUMB_PROBE_GAP_MAX") or 0),
+                ))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -495,10 +511,7 @@ async def get_thumb(fid: str, retry: bool = False):
             task.add_done_callback(_cleanup)
         data = await asyncio.shield(task)
         if data:
-            ok = True if custom else validate_thumb(
-                data, min_bytes=_MIN_THUMB_BYTES,
-                min_dim=_MIN_THUMB_DIM, min_stddev=_MIN_THUMB_STDDEV,
-            )[0]
+            ok = True if custom else validate_thumb(data, *_thumb_limits())[0]
             if ok:
                 return data
             # 💾 A fake poster was found in the DB → remove it and fetch a real one

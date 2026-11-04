@@ -6,8 +6,10 @@ from datetime import datetime, timedelta
 
 from hydrogram import Client, filters
 from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from hydrogram.errors import ListenerTimeout
 
-from info import ADMINS, IS_PREMIUM, PRE_DAY_AMOUNT, UPI_ID, UPI_NAME, RECEIPT_SEND_USERNAME
+from info import ADMINS
+from env_store import env_manager
 from database.users_chats_db import db
 from utils import is_premium
 
@@ -117,10 +119,11 @@ def cancel_btn():
 
 def duration_buttons(num):
     """Generate duration selection buttons based on number"""
-    hours_price = max(1, (num // 24) or 1) * PRE_DAY_AMOUNT
-    days_price = num * PRE_DAY_AMOUNT
-    months_price = num * 30 * PRE_DAY_AMOUNT
-    years_price = num * 365 * PRE_DAY_AMOUNT
+    pre_day = int(env_manager.get("PRE_DAY_AMOUNT") or 10)
+    hours_price = max(1, (num // 24) or 1) * pre_day
+    days_price = num * pre_day
+    months_price = num * 30 * pre_day
+    years_price = num * 365 * pre_day
     
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"⏰ {num} Hours (₹{hours_price})", callback_data=f"dur#{num}#hour")],
@@ -161,7 +164,7 @@ def myplan_text(data):
 
 @Client.on_message(filters.command("plan") & filters.private)
 async def plan_cmd(client, message):
-    if not IS_PREMIUM:
+    if not env_manager.get("IS_PREMIUM"):
         return await message.reply("⚠️ Premium system disabled")
 
     uid = message.from_user.id
@@ -180,12 +183,12 @@ async def plan_cmd(client, message):
 🎯 Priority support
 🌟 Exclusive features
 
-💰 **Pricing:** ₹{PRE_DAY_AMOUNT}/day
+💰 **Pricing:** ₹{env_manager.get("PRE_DAY_AMOUNT")}/day
 
 📌 **Example Plans:**
-• 7 days = ₹{7 * PRE_DAY_AMOUNT}
-• 30 days = ₹{30 * PRE_DAY_AMOUNT}
-• 365 days = ₹{365 * PRE_DAY_AMOUNT}
+• 7 days = ₹{7 * int(env_manager.get("PRE_DAY_AMOUNT") or 10)}
+• 30 days = ₹{30 * int(env_manager.get("PRE_DAY_AMOUNT") or 10)}
+• 365 days = ₹{365 * int(env_manager.get("PRE_DAY_AMOUNT") or 10)}
 """
     if premium:
         text += "\n✅ **You already have Premium!**\nYou can renew or extend your current plan."
@@ -383,7 +386,7 @@ async def duration_selected(client, query: CallbackQuery):
     else:
         return await query.answer("❌ Invalid unit", show_alert=True)
     
-    amount = days * PRE_DAY_AMOUNT
+    amount = days * int(env_manager.get("PRE_DAY_AMOUNT") or 10)
     
     active_sessions[uid] = {
         "step": "waiting_screenshot",
@@ -393,7 +396,9 @@ async def duration_selected(client, query: CallbackQuery):
     }
     
     try:
-        upi_url = f"upi://pay?pa={UPI_ID}&pn={UPI_NAME}&am={amount}&cu=INR"
+        upi_id = env_manager.get("UPI_ID") or ""
+        upi_name = env_manager.get("UPI_NAME") or ""
+        upi_url = f"upi://pay?pa={upi_id}&pn={upi_name}&am={amount}&cu=INR"
         qr = qrcode.make(upi_url)
         bio = BytesIO()
         qr.save(bio, "PNG")
@@ -409,7 +414,7 @@ async def duration_selected(client, query: CallbackQuery):
 💵 **Amount:** ₹{amount}
 ⏰ **Duration:** {days} days
 
-📱 **UPI ID:** `{UPI_ID}`
+📱 **UPI ID:** `{upi_id}`
 
 📸 **Next Step:** Send payment screenshot after completing payment
 """,
@@ -450,7 +455,7 @@ async def duration_selected(client, query: CallbackQuery):
             )
             return
     
-    except asyncio.TimeoutError:
+    except (asyncio.TimeoutError, ListenerTimeout):
         active_sessions.pop(uid, None)
         return await query.message.reply(
             "⏱️ Timeout! Screenshot not received. Payment cancelled.",
@@ -470,7 +475,7 @@ async def duration_selected(client, query: CallbackQuery):
     
     try:
         await client.send_photo(
-            RECEIPT_SEND_USERNAME,
+            env_manager.get("RECEIPT_SEND_USERNAME") or "",
             receipt.photo.file_id,
             caption=f"""
 🔔 **#PremiumPayment**

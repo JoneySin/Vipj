@@ -29,6 +29,7 @@ from aiohttp import web
 
 from web import web_app
 from info import API_ID, API_HASH, BOT_TOKEN, PORT, LOG_CHANNEL, ADMINS
+from env_store import env_manager
 
 from utils import (
     temp,
@@ -145,6 +146,15 @@ class Bot(Client):
         )
 
     async def start(self):
+        # ---- ⚙️ panel env overrides (MongoDB) → live info ----
+        # Handlers chalu hone se pehle, taaki pehla update hi sahi settings par chale.
+        try:
+            await env_manager.ensure_loaded()
+            if env_manager.override_count():
+                logger.info(f"⚙️ {env_manager.override_count()} env override(s) applied")
+        except Exception as e:
+            logger.warning(f"⚠️ env overrides load failed: {e}")
+
         await super().start()
 
         # ---- runtime globals ----

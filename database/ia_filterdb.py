@@ -15,9 +15,8 @@ from info import (
     DATA_DATABASE_URL,
     DATABASE_NAME,
     COLLECTION_NAME,
-    MAX_BTN,
-    USE_CAPTION_FILTER
 )
+from env_store import env_manager
 
 logger = logging.getLogger(__name__)
 
@@ -171,12 +170,16 @@ def detect_quality(name: str) -> str:
 async def get_search_results(
     query: str,
     offset: int = 0,
-    max_results: int = MAX_BTN
+    max_results: int = None
 ) -> Tuple[List[Dict], str, int]:
     """
     Search files with text search + regex fallback
     Returns: (files, next_offset, total_count)
     """
+    # ⚙️ `MAX_BTN` panel se badalta hai — isliye call ke waqt padho, import ke waqt nahi
+    if max_results is None:
+        max_results = int(env_manager.get("MAX_BTN") or 8)
+
     # Validate input
     q = query.strip()
     if len(q) < 2:
@@ -230,7 +233,7 @@ async def get_search_results(
             regex = re.compile(escaped_query, re.IGNORECASE)
             
             # Build filter based on caption setting
-            if USE_CAPTION_FILTER:
+            if env_manager.get("USE_CAPTION_FILTER"):
                 rg_filter = {"$or": [{"file_name": regex}, {"caption": regex}]}
             else:
                 rg_filter = {"file_name": regex}

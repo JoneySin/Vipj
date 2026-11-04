@@ -4,7 +4,7 @@ import platform
 
 from hydrogram import Client, filters, enums
 from utils import temp
-from info import IS_PREMIUM
+from env_store import env_manager
 
 
 # ======================================================
@@ -119,7 +119,7 @@ async def bot_info(client, message):
         f"🐍 Python: <code>{sys.version.split()[0]}</code>\n"
         f"⚙️ Platform: <code>{platform.system()}</code>\n"
         f"📦 Library: <code>Hydrogram</code>\n"
-        f"💎 Premium System: <code>{'ON' if IS_PREMIUM else 'OFF'}</code>\n"
+        f"💎 Premium System: <code>{'ON' if env_manager.get('IS_PREMIUM') else 'OFF'}</code>\n"
         f"🚀 Mode: <code>Ultra-Pro</code>"
     )
 

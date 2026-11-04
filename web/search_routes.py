@@ -13,13 +13,9 @@ from urllib.parse import quote
 
 from aiohttp import web
 
-from info import (
-    BIN_CHANNEL,
-    MAX_WEB_RESULTS,
-    WEB_STREAM_TTL,
-    THUMB_BROWSER_CACHE,
-)
-from utils import temp, get_size
+from info import BIN_CHANNEL
+from env_store import env_manager
+from utils import temp
 from database.ia_filterdb import (
     get_search_results,
     get_recent_files,
@@ -110,9 +106,10 @@ async def api_search(req):
     except ValueError:
         offset = 0
     try:
-        limit = max(1, min(int(req.query.get("limit", MAX_WEB_RESULTS)), MAX_WEB_RESULTS))
+        max_web = int(env_manager.get("MAX_WEB_RESULTS") or 21)
+        limit = max(1, min(int(req.query.get("limit", max_web)), max_web))
     except ValueError:
-        limit = MAX_WEB_RESULTS
+        limit = int(env_manager.get("MAX_WEB_RESULTS") or 21)
 
     group_mode = (req.query.get("group") or "all").strip().lower()
     if group_mode not in ("all", "group", "ungroup"):
@@ -159,7 +156,7 @@ async def api_thumb(req):
     # in the browser's own memory/disk cache; changing `v` changes the ETag.
     etag = f'"{req.query.get("v") or thumb_version(fid)}"'
     cache_headers = {
-        "Cache-Control": f"private, max-age={THUMB_BROWSER_CACHE}",
+        "Cache-Control": f"private, max-age={int(env_manager.get('THUMB_BROWSER_CACHE') or 0)}",
         "ETag": etag,
     }
     if req.headers.get("If-None-Match") == etag and not retry:
@@ -208,7 +205,7 @@ async def _tunnel_stream(fid: str, doc: dict) -> dict:
             raise RuntimeError("Bot is still starting, please retry in a moment")
         msg = await bot.send_cached_media(chat_id=BIN_CHANNEL, file_id=fid)
         msg_id = int(msg.id)
-        expiry = now + WEB_STREAM_TTL
+        expiry = now + int(env_manager.get("WEB_STREAM_TTL") or 6 * 3600)
         _STREAM_CACHE[fid] = (msg_id, expiry)
         _prune_stream_cache()
 

@@ -9,7 +9,7 @@ from urllib.parse import quote, urlencode
 
 from aiohttp import web
 
-from info import ALLOW_UNSIGNED_LINKS
+from env_store import env_manager
 from utils import temp
 from web.utils.custom_dl import TGCustomYield, chunk_size, offset_fix
 from web.utils.media_info import get_media_info
@@ -47,7 +47,7 @@ def _allowed(request, message_id: int) -> bool:
     if verify(message_id, e, s):
         return True
     # Opt-in switch for old unsigned links (issued before this deployment)
-    return ALLOW_UNSIGNED_LINKS and not e and not s
+    return bool(env_manager.get("ALLOW_UNSIGNED_LINKS")) and not e and not s
 
 
 def _signed_query(request) -> str:

@@ -6,7 +6,8 @@ from datetime import datetime, timedelta
 from hydrogram import Client, filters
 from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
-from info import IS_STREAM, PM_FILE_DELETE_TIME, PROTECT_CONTENT, ADMINS
+from info import ADMINS
+from env_store import env_manager
 from database.ia_filterdb import get_file_details
 from database.users_chats_db import db
 from utils import temp
@@ -27,7 +28,10 @@ active_tasks = {}
 # ======================================================
 async def has_premium_or_grace(user_id: int) -> bool:
     """Check if user is admin or has premium with grace period"""
-    if user_id in ADMINS:
+    if user_id in ADMINS and env_manager.get("ADMIN_MODE"):
+        return True
+    # 💎 Premium OFF = sab free
+    if not env_manager.get("IS_PREMIUM"):
         return True
 
     plan = await db.get_plan(user_id)
@@ -212,12 +216,12 @@ async def schedule_file_deletion(client, sent_msg, uid, file_id):
     temp.FILES[msg_id] = {
         "owner": uid,
         "file_id": file_id,
-        "expire": int(time.time()) + PM_FILE_DELETE_TIME
+        "expire": int(time.time()) + int(env_manager.get("PM_FILE_DELETE_TIME") or 3600)
     }
     
     try:
         # Wait for expiry
-        await asyncio.sleep(PM_FILE_DELETE_TIME)
+        await asyncio.sleep(int(env_manager.get("PM_FILE_DELETE_TIME") or 3600))
         
         # Remove from tracking
         data = temp.FILES.pop(msg_id, None)
@@ -301,7 +305,7 @@ async def deliver_file(client, uid, grp_id, file_id):
 
         # Build buttons
         buttons = []
-        if IS_STREAM:
+        if env_manager.get("IS_STREAM"):
             buttons.append([
                 InlineKeyboardButton(
                     "▶️ Watch / Download",
@@ -319,7 +323,7 @@ async def deliver_file(client, uid, grp_id, file_id):
             chat_id=uid,
             file_id=file_id,
             caption=caption,
-            protect_content=PROTECT_CONTENT,
+            protect_content=bool(env_manager.get("PROTECT_CONTENT")),
             reply_markup=markup
         )
 
