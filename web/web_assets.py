@@ -20,8 +20,11 @@ styled button + custom options menu में upgrade कर देता है
 बाद में आने वाले selects भी)। Native select hidden रहकर `value`/`change` बनाए
 रखता है, इसलिए पुराना JS बिल्कुल नहीं बदलना पड़ता। **Dropdown का पूरा UI इसी एक
 जगह है** — बदलाव एक file में करो, `/search`, `/posts`, `/actors`, editor modals
-सब में दिखेगा। Mobile पर दोनों toolbar एक ही `.filters` row इस्तेमाल करते हैं:
-search bar ऊपर, दो बराबर filter buttons उसके ठीक नीचे।
+सब में दिखेगा। **Filter buttons की options/specs भी यहीं** `FILTER_OPTIONS` +
+`SEARCH_FILTERS`/`CATALOG_FILTERS` + `filter_buttons()` में — कोई page अपना
+`<option>` नहीं लिखता, `sel.value=` लिखते ही label अपने आप sync हो जाता है
+(किसी page पर अलग `ddSet()` code नहीं)। Mobile पर दोनों toolbar एक ही
+`.filters` row + एक ही `@media` नियम: search bar ऊपर, दो बराबर buttons नीचे।
 
 🎴 `VIDEO_CARD_CSS` एक **shared video card** है — `/search` की grid और
 Post/Actor Videos tabs बिल्कुल वही `.vcard`/`.vgrid` markup वाली cards,
@@ -343,15 +346,10 @@ FILE_EDIT_JS = r"""<script>
         const f=d.file;
         q('#feName').value=f.name; q('#feCaption').value=f.caption;
         q('#feDuration').value=f.duration; q('#feRes').value=f.res;
-        if(window.FilterDD && window.FilterDD.ensure){
-          if(f.quality) window.FilterDD.ensure('feQuality',f.quality,f.quality);
-          ddSet('feQuality',f.quality||'');
-        }else{
-          const sel=q('#feQuality');
-          if(f.quality && !Array.prototype.some.call(sel.options,o=>o.value===f.quality))
-            sel.add(new Option(f.quality,f.quality));
-          sel.value=f.quality||'';
-        }
+        const sel=q('#feQuality');
+        if(f.quality && !Array.prototype.some.call(sel.options,o=>o.value===f.quality))
+          sel.add(new Option(f.quality,f.quality));
+        sel.value=f.quality||'';
         q('#feStatus').textContent='✏️ ID: '+esc(f.file_id)+' · '+esc(f.size)+' · '+esc(f.quality||'—');
         setPoster(f);
       }).catch(e=>{ q('#feStatus').textContent='Load error: '+String(e.message||e); });
@@ -546,18 +544,17 @@ cursor:pointer;text-align:left;transition:background .12s,color .12s}
 width:1px!important;height:1px!important;padding:0!important;border:0!important;
 opacity:0!important;pointer-events:none!important;clip:rect(0,0,0,0)!important;
 overflow:hidden!important}
-/* container layout भी यहीं — एक जगह बदलाव सब pages पर दिखे */
+/* container layout भी यहीं — filter row की base + mobile CSS एक ही ब्लॉक में */
+.filters{display:flex;gap:10px;align-items:center;flex:0 0 auto}
 .filters .fdd{min-width:132px}
-/* 📱 mobile: /search और /posts–/actors दोनों में बिल्कुल एक ही पैटर्न —
-   search bar अपनी लाइन पर, उसी `.filters` row में दोनों filter buttons
-   नीचे एक ही लाइन पर बराबर चौड़ाई के। Catalog का card chrome भी हटाओ
-   ताकि वह main page की search-zone जैसा ही लगे। */
+/* 📱 mobile: /search और /posts–/actors **एक ही नियम** — search bar अपनी लाइन,
+   filter buttons उसी `.filters` row में ठीक नीचे, बराबर चौड़ाई के। */
 @media(max-width:760px){
+.qwrap,.cat-toolbar .cat-search{flex:1 1 100%}
+.filters{flex:1 1 100%}
 .filters .fdd{flex:1 1 0;min-width:0}
-/* ⚠️ CATALOG_CSS का <style> head के बाद आता है — इसलिए specificity (0,2,0)
-   चाहिए, वरना catalog की base `.cat-toolbar/.cat-search` rules जीत जाती हैं। */
+/* ⚠️ CATALOG_CSS का <style> head के बाद आता है → specificity (0,2,0) ज़रूरी */
 .cat-toolbar.cat-toolbar{background:transparent;border:0;border-radius:0;padding:0;gap:10px}
-.cat-toolbar .cat-search{flex:1 1 100%}
 }
 @media(prefers-reduced-motion:reduce){.fdd-menu{animation:none}.fdd-btn,.fdd-arrow{transition:none}}
 """
@@ -624,6 +621,22 @@ FILTER_JS = r"""
     d.sel.dispatchEvent(new Event('change',{bubbles:true}));
     render(d);close(d);d.btn.focus();
   }
+  /* कोई भी page `sel.value = x` लिखे → button label अपने आप sync.
+     इसलिए किसी page पर ddSet()/refresh() बुलाने वाला अलग code नहीं चाहिए। */
+  function watchValue(sel,d){
+    var desc=null,pObj=Object.getPrototypeOf(sel);
+    while(pObj&&!desc){
+      var x=Object.getOwnPropertyDescriptor(pObj,'value');
+      if(x&&x.get&&x.set){desc=x;break;}
+      pObj=Object.getPrototypeOf(pObj);
+    }
+    if(!desc)return;
+    try{
+      Object.defineProperty(sel,'value',{configurable:true,enumerable:true,
+        get:function(){return desc.get.call(this);},
+        set:function(v){desc.set.call(this,v);if(d.menu)buildMenu(d);}});
+    }catch(err){}
+  }
   function build(sel){
     if(sel.getAttribute('data-fdd')) return null;
     sel.setAttribute('data-fdd','1');
@@ -640,6 +653,7 @@ FILTER_JS = r"""
     sel.classList.add('fdd-native');
     var d={sel:sel,wrap:wrap,btn:btn,menu:menu};
     ALL.push(d);
+    watchValue(sel,d);
     btn.addEventListener('click',function(ev){ev.stopPropagation();
       if(wrap.classList.contains('open'))close(d);else open(d);});
     btn.addEventListener('keydown',function(ev){
@@ -704,6 +718,60 @@ FILTER_JS = r"""
 """
 
 
+# ─────────────────────────────────────────────────────────────
+# 🎛️ FILTER BUTTONS — एकमात्र definition (options, labels, markup)
+#   "Poster/Text" जैसे options अब दोनों pages पर अलग-अलग नहीं लिखे जाते।
+#   नया button जोड़ना हो / label बदलना हो → सिर्फ़ यहाँ बदलो।
+# ─────────────────────────────────────────────────────────────
+FILTER_OPTIONS = {
+    "view":  (("poster", "🖼️ Poster"), ("text", "📄 Text")),
+    "group": (("all", "All"), ("group", "Group"), ("ungroup", "UnGroup")),
+}
+
+# (id, options, caption, aria/title label, onchange)
+SEARCH_FILTERS = (
+    {"id": "modeSel",  "options": "view",  "cap": "View mode",     "label": "Mode",   "onchange": "setMode(this.value)"},
+    {"id": "groupSel", "options": "group", "cap": "Result filter", "label": "Filter", "onchange": "setGroup(this.value)"},
+)
+CATALOG_FILTERS = (
+    {"id": "catCategory", "options": None,   "cap": "Category",  "label": "Category"},  # options = dynamic per kind
+    {"id": "catMode",     "options": "view", "cap": "View mode", "label": "Mode"},
+)
+
+
+def filter_select(sel_id, *, options, cap, label, onchange="", full=False):
+    """एक filter button का markup। `options` = FILTER_OPTIONS key | (value,label)
+    pairs | पहले से बना `<option>` HTML (जैसे catalog की dynamic categories)।"""
+    if options is None:
+        options = ()
+    if isinstance(options, str) and options in FILTER_OPTIONS:
+        options = FILTER_OPTIONS[options]
+    if isinstance(options, str):
+        opts = options
+    else:
+        opts = "".join(
+            '<option value="%s">%s</option>'
+            % (html.escape(str(v), quote=True), html.escape(str(l)))
+            for v, l in options)
+    e = lambda x: html.escape(str(x), quote=True)
+    extra = ' data-fdd-full="1"' if full else ""
+    cb = ' onchange="%s"' % e(onchange) if onchange else ""
+    return (f'<select class="filter-dd" id="{e(sel_id)}" data-fdd-cap="{e(cap)}"'
+            f' aria-label="{e(label)}" title="{e(label)}"{extra}{cb}>{opts}</select>')
+
+
+def filter_buttons(specs, dynamic=None):
+    """पूरी `.filters` row — `/search` और `/posts`–`/actors` दोनों यहीं से।
+    `dynamic` = {select_id: `<option>` HTML} (catalog categories)।"""
+    dynamic = dynamic or {}
+    out = ["      " + filter_select(
+        sp["id"], options=dynamic.get(sp["id"], sp.get("options")),
+        cap=sp.get("cap", sp["id"]), label=sp.get("label", sp["id"]),
+        onchange=sp.get("onchange", ""), full=sp.get("full", False))
+        for sp in specs]
+    return '<div class="filters">\n' + "\n".join(out) + "\n    </div>"
+
+
 SITE_CSS = """
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0b0b0f;--bg2:#14141c;--bg3:#1e1e2a;--card:#16161f;--line:#2a2a38;
@@ -735,8 +803,6 @@ width:17px;height:17px;border:2px solid var(--line);border-top-color:var(--red);
 border-radius:50%;animation:spin .6s linear infinite}
 .srow.loading .spin{display:block}
 @keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
-/* ── filter dropdowns: desktop पर search bar के साथ, mobile पर ठीक नीचे एक लाइन ── */
-.filters{display:flex;gap:10px;align-items:center;flex:0 0 auto}
 .main{padding:18px 4% 60px;max-width:1700px;margin:0 auto}
 .more{display:none;margin:28px auto 0;padding:11px 30px;border-radius:8px;
 background:var(--bg3);border:1px solid var(--line);color:var(--txt);font-weight:800;
@@ -785,11 +851,7 @@ padding:15px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;m
 font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 .links a:hover{color:var(--red)}
 .hr{border:0;border-top:1px solid var(--line);margin:24px 0}
-/* 📱 mobile/tablet: search bar अपनी लाइन पर, दोनों filter buttons नीचे एक ही लाइन में */
-@media(max-width:760px){
-.qwrap{flex:1 1 100%}
-.filters{flex:1 1 100%}
-}
+/* 📱 mobile filter row (search + दोनों buttons) → FILTER_CSS में एक ही नियम */
 @media(max-width:520px){.spin{display:none!important}
 .auth-card{padding:24px}.vgrid{gap:8px}}
 
@@ -1088,17 +1150,7 @@ SEARCH_BODY = """<div class="search-zone">
       <input class="sinput" id="q" type="search" placeholder="Movie / series / file name खोजें..." autocomplete="off">
       <div class="spin"></div>
     </div>
-    <div class="filters">
-      <select class="filter-dd" id="modeSel" data-fdd-cap="View mode" aria-label="Mode" title="Mode" onchange="setMode(this.value)">
-        <option value="poster">🖼️ Poster</option>
-        <option value="text">📄 Text</option>
-      </select>
-      <select class="filter-dd" id="groupSel" data-fdd-cap="Result filter" aria-label="Filter" title="Filter" onchange="setGroup(this.value)">
-        <option value="all">All</option>
-        <option value="group">Group</option>
-        <option value="ungroup">UnGroup</option>
-      </select>
-    </div>
+    __FILTER_BUTTONS__
   </div>
 </div>
 
@@ -1123,8 +1175,8 @@ if(!['all','group','ungroup'].includes(groupMode))groupMode='all';
 function applyMode(){
   const text=viewMode==='text';
   $('#grid').classList.toggle('mode-text',text);
-  ddSet('modeSel',viewMode);
-  ddSet('groupSel',groupMode);
+  $('#modeSel').value=viewMode;
+  $('#groupSel').value=groupMode;
   if(!text){
     // Poster mode पर लौटने तब तक कोई thumbnail request न गई हो → अब लाओ
     document.querySelectorAll('#grid img[data-src]').forEach(img=>{
@@ -1235,6 +1287,7 @@ def search_page(tg_id: int, role: str):
     """
     admin = role == "admin"
     body = (SEARCH_BODY
+            .replace("__FILTER_BUTTONS__", filter_buttons(SEARCH_FILTERS))
             .replace("__PLAYER_MODAL__", PLAYER_MODAL_HTML)
             .replace("__PLAYER_JS__", PLAYER_JS)
             .replace("__FILE_EDIT_HTML__", FILE_EDIT_HTML if admin else "")

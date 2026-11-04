@@ -67,7 +67,8 @@ import re
 from urllib.parse import quote
 
 from web.web_assets import (app_page, PLAYER_MODAL_HTML, PLAYER_JS,
-                            FILE_EDIT_HTML, FILE_EDIT_JS)
+                            FILE_EDIT_HTML, FILE_EDIT_JS,
+                            filter_buttons, CATALOG_FILTERS)
 
 # ─────────────────────────────────────────────────────────────
 # ⚙️ DATA-DRIVEN CONFIG — नया catalog जोड़ना हो तो सिर्फ़ यहाँ entry
@@ -874,7 +875,7 @@ async function openEditor(id, focus){
   }
   $('#catMTitle').textContent = id ? '✏️ Edit '+CFG.singular : '✨ New '+CFG.singular;
   $('#fTitle').value = it ? (it.title||'') : '';
-  ddSet('fCat', it ? (it.category||CFG.categories[0].value) : CFG.categories[0].value);
+  $('#fCat').value = it ? (it.category||CFG.categories[0].value) : CFG.categories[0].value;
   $('#fBody').value = it ? (it.body||'') : '';
   $('#fTags').value = it ? (it.tags||[]).join(', ') : '';
   $('#fImage').value = it ? (it.image||'') : '';
@@ -1033,7 +1034,7 @@ $('#catMode').addEventListener('change', e => {
 });
 $('#catPrev').onclick = () => { if(state.offset>0){ state.offset=Math.max(0,state.offset-LIMIT); state.page--; load(false); window.scrollTo(0,0); } };
 $('#catNext').onclick = () => { if(state.hasNext){ state.offset+=LIMIT; state.page++; load(false); window.scrollTo(0,0); } };
-ddSet('catMode', state.mode);
+$('#catMode').value = state.mode;
 $('#catGrid').className = 'cat-grid' + (state.mode==='text'?' mode-text':'');
 load(true).then(()=>{
   const p = new URLSearchParams(location.search);
@@ -1273,6 +1274,10 @@ def _listing_body(kind: str, role: str) -> str:
         '<button class="cat-btn" onclick="openEditor(\'\')">✨ New ' + html.escape(cfg["singular"]) + "</button>"
         if admin else ""
     )
+    # 🎛️ filter buttons की परिभाषा web_assets.FILTER_OPTIONS/CATALOG_FILTERS में —
+    #    सिर्फ़ categories dynamic हैं, बाकी markup कहीं दोहराया नहीं गया।
+    filters_html = filter_buttons(CATALOG_FILTERS,
+                                  {"catCategory": _category_options(kind)})
     return f"""<div class="main"><div class="cat-wrap">
   <div class="cat-head">
     <div class="cat-title">{html.escape(cfg['icon'])} {html.escape(cfg['page'])}</div>
@@ -1284,12 +1289,7 @@ def _listing_body(kind: str, role: str) -> str:
       <input type="search" id="catQ" placeholder="{html.escape(cfg['placeholder'])}" autocomplete="off">
       <div class="cat-spin"></div>
     </div>
-    <div class="filters">
-      <select class="filter-dd" id="catCategory" data-fdd-cap="Category" aria-label="Category" title="Category">{_category_options(kind)}</select>
-      <select class="filter-dd" id="catMode" data-fdd-cap="View mode" aria-label="Mode" title="Mode">
-        <option value="poster">🖼️ Poster</option><option value="text">📄 Text</option>
-      </select>
-    </div>
+    {filters_html}
   </div>
   <div class="cat-grid" id="catGrid"></div>
   <div class="cat-pg" id="catPg">
