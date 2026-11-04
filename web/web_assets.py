@@ -506,10 +506,11 @@ function card(f){
   const q=f.quality&&f.quality!=='unknown'?`<span class="tg blue">${esc(f.quality)}</span>`:'';
   const res=f.res?`<span class="tg">${esc(f.res)}</span>`:'';
   // Text mode में thumbnail request ही न जाए — src तभी लगाओ जब Poster mode हो
-  const imgAttr=viewMode==='poster'?`src="${encodeURI(f.thumb)}"`:`data-src="${encodeURI(f.thumb)}"`;
+  const thumbUrl=encodeURI(f.thumb);
+  const imgAttr=viewMode==='poster'?`src="${thumbUrl}"`:`data-src="${thumbUrl}"`;
   return `<div class="card">
     <div class="poster" id="pb-${fid}">
-      <img ${imgAttr} alt="" loading="lazy"
+      <img ${imgAttr} alt="" loading="lazy" data-thumb="${thumbUrl}" data-retry="0"
            onload="this.classList.add('on')" onerror="thumbFail(this)">
       <div class="ph"><b>▶</b><span>NO THUMBNAIL</span></div>
       <div class="chips"><span class="tg">${esc(f.type)}</span>${q}${res}${dur}</div>
@@ -521,7 +522,22 @@ function card(f){
       <div class="tinfo"><span class="tg">${esc(f.type)}</span>${q}${res}${dur}<span class="tsize">${esc(f.size)}</span></div>
     </div></div>`;
 }
+// v5 के reloadThumb(fileId) जैसा: पहली बार poster serial warmup queue में
+// एक-एक करके निकलता है, इसलिए 404 पर `retry=true&t=...` से धीरे-धीरे दोबारा
+// माँगो — जैसे-जैसे ID DB में lock होती है, posters अपने आप दिखते जाते हैं।
 function thumbFail(img){
+  const delays=[1500,2500,4000,6000,9000,12000,16000,20000];
+  const n=Number(img.dataset.retry||0);
+  if(n<delays.length&&!img.classList.contains('hidden')){
+    img.dataset.retry=String(n+1);
+    setTimeout(()=>{
+      if(!img.isConnected||img.classList.contains('on'))return;
+      const base=img.dataset.thumb||img.getAttribute('src')||'';
+      if(!base)return;
+      img.src=base+(base.includes('?')?'&':'?')+'retry=true&t='+Date.now();
+    },delays[n]);
+    return;
+  }
   img.classList.add('hidden');
   const p=img.closest('.poster');if(p)p.classList.add('no-thumb');
 }

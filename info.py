@@ -118,8 +118,17 @@ WEB_STREAM_TTL = int(environ.get('WEB_STREAM_TTL', 6 * 3600))
 # Server पर कोई RAM cache नहीं (Koyeb free 512MB); browser अपने HTTP cache में
 # poster रखेगा — ETag + max-age नीचे।
 THUMB_BROWSER_CACHE = int(environ.get('THUMB_BROWSER_CACHE', 7 * 24 * 3600))
-# एक साथ कितने Telegram thumbnail downloads चलें (FloodWait से बचाव)
+# एक साथ कितने Telegram thumbnail downloads चलें (सिर्फ़ known TG_ID वाली फाइलें)
 THUMB_FETCH_CONCURRENCY = max(1, min(int(environ.get('THUMB_FETCH_CONCURRENCY', '6')), 20))
+
+# ── 🖼️ FIRST-TIME THUMBNAIL EXTRACTION (JoneySin/v5 के warmup engine जैसा) ──
+# पहली बार 21 नई फाइलें एक साथ खुलने पर Telegram FLOOD_WAIT न लगे, इसलिए
+# probes एक-एक करके चलते हैं और हर file के बीच random gap रहता है।
+THUMB_PROBE_GAP_MIN = float(environ.get('THUMB_PROBE_GAP_MIN', '1.2'))
+THUMB_PROBE_GAP_MAX = max(THUMB_PROBE_GAP_MIN, float(environ.get('THUMB_PROBE_GAP_MAX', '3.0')))
+THUMB_PROBE_ATTEMPTS = max(1, min(int(environ.get('THUMB_PROBE_ATTEMPTS', '5')), 10))
+# FLOOD_WAIT में Telegram के बताए seconds + यह extra buffer
+THUMB_FLOOD_EXTRA = max(0, int(environ.get('THUMB_FLOOD_EXTRA', '10')))
 
 # Purane (unsigned) /watch/<id> links deploy se pehle bheje gaye ho sakte hain.
 # Default False = sirf signed links chalengi. True karke backward compatibility on karo.

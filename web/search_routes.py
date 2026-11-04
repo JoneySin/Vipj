@@ -29,7 +29,7 @@ from database.ia_filterdb import (
 )
 from stream_security import sign_params
 from web.web_assets import get_auth, search_page
-from web.thumb_engine import get_thumb, image_content_type, thumb_version
+from web.thumb_engine import get_thumb, image_content_type, thumb_version, thumb_state
 
 logger = logging.getLogger(__name__)
 search_routes = web.RouteTableDef()
@@ -229,8 +229,13 @@ async def api_thumb(req):
 
     data = await get_thumb(fid, retry=retry)
     if not data:
-        # thumbnail न मिले तो गलती से 404 cache न हो जाए
-        return web.Response(status=404, headers={"Cache-Control": "no-store"})
+        # 🆕 v5 जैसा serial warmup: पहली बार ID अभी निकल रही है (एक-एक करके)।
+        # 404 cache न हो, browser को पता चले कि थोड़ी देर बाद retry करना है।
+        state = await thumb_state(fid)
+        headers = {"Cache-Control": "no-store", "X-Thumb-State": state}
+        if state in ("queued", "missing"):
+            headers["Retry-After"] = "2"
+        return web.Response(status=404, headers=headers)
 
     return web.Response(
         body=data,

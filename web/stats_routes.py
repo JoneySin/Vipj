@@ -19,6 +19,7 @@ from utils import temp
 from database.ia_filterdb import db_count_documents, get_recent_files, collection
 from database.users_chats_db import db as user_db, web_db
 from web.web_assets import get_auth, app_page
+from web.thumb_engine import thumb_queue_state
 
 logger = logging.getLogger(__name__)
 stats_routes = web.RouteTableDef()
@@ -76,6 +77,8 @@ async def _stats_numbers():
     thumbnails = await _safe(
         asyncio.to_thread(_count, collection, {"thumb_url": {"$exists": True}}), 0
     )
+    # 🖼️ v5-style serial warmup queue (पहली बार thumbnail एक-एक करके)
+    queue = thumb_queue_state()
     return {
         "total_files": total_files,
         "recent_files": recent_files,
@@ -83,6 +86,7 @@ async def _stats_numbers():
         "premium_users": premium_users,
         "web_accounts": web_accounts,
         "thumbnails": thumbnails,
+        "thumb_queue": queue,
     }
 
 
@@ -148,6 +152,11 @@ async def stats_page(req):
       <div class="st-label">🟢 Server Uptime</div>
       <div class="st-val" style="color:#28a745;font-size:22px">{_uptime()}</div>
       <div class="st-sub">Port {PORT} · worker operational</div></div>
+
+    <div class="st-card anim-card"><div class="st-bar" style="background:var(--red)"></div>
+      <div class="st-label">⏳ Thumb Warmup Queue</div>
+      <div class="st-val" style="color:var(--red)" data-count="{s['thumb_queue']['queued']}" data-delay="400">{s['thumb_queue']['queued']:,}</div>
+      <div class="st-sub">पहली बार posters <b>एक-एक करके</b> निकल रहे हैं · {s['thumb_queue']['ok']:,} locked · {s['thumb_queue']['no_thumb']:,} NO_THUMB</div></div>
   </div>
 </div>{_STATS_JS}'''
 
