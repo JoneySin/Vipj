@@ -33,7 +33,7 @@ import info as _info
 from info import BIN_CHANNEL
 from utils import temp, get_size
 from database import ia_filterdb as ia
-from web.web_assets import get_auth
+from web.web_assets import get_auth, vcard_is_video
 from web.thumb_engine import thumb_version, invalidate_thumb, enqueue_probe
 
 logger = logging.getLogger(__name__)
@@ -116,6 +116,7 @@ def _public_file(doc) -> dict:
         "name": str(doc.get("file_name") or "Untitled"),
         "caption": str(doc.get("caption") or "")[:1000],
         "quality": str(doc.get("quality") or ""),
+        "type": "VIDEO" if vcard_is_video(doc) else "FILE",
         "duration": _fmt_duration(doc.get("duration")),
         "duration_seconds": int(doc.get("duration") or 0),
         "res": f"{w}×{h}" if w and h else "",

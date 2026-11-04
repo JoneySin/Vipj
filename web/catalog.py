@@ -68,7 +68,8 @@ from urllib.parse import quote
 
 from web.web_assets import (app_page, PLAYER_MODAL_HTML, PLAYER_JS,
                             FILE_EDIT_HTML, FILE_EDIT_JS,
-                            filter_buttons, CATALOG_FILTERS)
+                            filter_buttons, CATALOG_FILTERS,
+                            render_vcard, vcard_chips, vcard_size)
 
 # ─────────────────────────────────────────────────────────────
 # ⚙️ DATA-DRIVEN CONFIG — नया catalog जोड़ना हो तो सिर्फ़ यहाँ entry
@@ -171,28 +172,23 @@ _MEDIA_ID_RE = re.compile(r"^[A-Za-z0-9_\-=]{2,256}$")
 
 
 
-def video_card_html(fid: str, name: str, poster: str, chips: str = "") -> str:
-    '''🎴 SHARED VIDEO CARD — `web.web_assets.VIDEO_CARD_CSS` का `.vcard` contract.
+def video_card_html(fid: str, name: str, poster: str,
+                    chips: str = "", data: dict = None) -> str:
+    '''🎴 SHARED VIDEO CARD — `web.web_assets.VCARD_TEMPLATE` का एकमात्र wrapper.
 
-    यही markup `/search` की `card(f)` JS और Actor के `mediaCard(f)` JS भी
-    बनाती हैं → हर जगह video card बिल्कुल एक जैसा, नाम के नीचे compact space.
+    `/search` की `card(f)` JS, Actor की `mediaCard(f)` JS और ये Python helper
+    तीनों उसी template + उसी `VCARD_CHIP_SPEC` से chips/size बनाते हैं।
+    `data` = वही fields जो `vcard_meta()` देता है (size/quality/res/duration/type)।
     '''
     e = html.escape
-    onload = "onload=\"this.classList.add('on')\""
-    onerror = ("onerror=\"this.classList.add('hidden');"
-               "this.closest('.vposter').classList.add('no-thumb')\"")
-    return (
-        f'<div class="vcard enter" role="button" tabindex="0" data-label="1" '
-        f'data-fid="{e(fid, quote=True)}" data-name="{e(name, quote=True)}" '
-        f'aria-label="Play {e(name, quote=True)}">'
-        f'<div class="vposter">'
-        f'<img class="vimg" src="{e(poster, quote=True)}" alt="" loading="lazy" '
-        f'{onload} {onerror}>'
-        f'<div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>'
-        f'<div class="vchips">{chips}</div><span class="vplay">▶</span>'
-        f'<div class="vadmin"><button class="va-edit" data-fid="{e(fid)}">✏️ Edit</button>'
-        f'<button class="va-del" data-fid="{e(fid)}">🗑️ Delete</button></div></div>'
-        f'<div class="vbody"><div class="vtitle">{e(name)}</div></div></div>'
+    return render_vcard(
+        CARD_CLASS=" enter", EXTRA_ATTRS=' data-label="1"',
+        FID=e(fid, quote=True), RAW_FID=e(fid, quote=True),
+        NAME=e(name, quote=True),
+        IMG_ATTRS='src="' + e(poster, quote=True) + '"',
+        IMG_ERROR="this.classList.add('hidden');"
+                  "this.closest('.vposter').classList.add('no-thumb')",
+        CHIPS=chips or vcard_chips(data), SIZE=vcard_size(data),
     )
 
 def clean_media_id(value) -> str:
@@ -240,11 +236,19 @@ def normalize(kind: str, raw: dict) -> dict:
         for row in (rows or [])[:50]:
             if not isinstance(row, dict):
                 continue
+            row_in = row
             label = str(row.get("label") or "").strip()[:80]
             fid = clean_media_id(row.get("file_id") or row.get("value"))
             if not fid:
                 continue
-            out.append({"label": label or "Video", "file_id": fid})
+            row = {"label": label or "Video", "file_id": fid}
+            # 🎴 card metadata वही shared vcard_meta fields — renderer इन्हें
+            #    VCARD_CHIP_SPEC से दिखाता है, कोई अलग chip markup नहीं।
+            for key in ("size", "quality", "duration", "res", "type"):
+                val = str(row_in.get(key) or "").strip()[:120]
+                if val:
+                    row[key] = val
+            out.append(row)
         return out
 
     raw_links = raw.get("links") or []
@@ -1085,25 +1089,15 @@ function stagger(sel){
 }
 
 /* ── 🏷️ v5 का tag-driven Linked Media, पर fsv1 की JSON API से ── */
+/* 🎴 /search वाला ही shared card — markup/chips/size web_assets.VCARD_* से */
 function mediaCard(f){
-  const chips=[f.quality&&f.quality!=='unknown'
-      ? '<span class="vtag blue">'+esc(f.quality)+'</span>' : '',
-    f.res?'<span class="vtag">'+esc(f.res)+'</span>':'',
-    f.duration?'<span class="vtag gold">'+esc(f.duration)+'</span>':''].join('');
-  return '<div class="vcard enter" role="button" tabindex="0" data-fid="'+esc(f.file_id)+'" '
-    + 'data-name="'+esc(f.name)+'" aria-label="Play '+esc(f.name)+'">'
-    + '<div class="vposter">'
-    + '<img class="vimg" src="'+esc(f.thumb)+'" alt="" loading="lazy" '
-    + `onload="this.classList.add('on')" `
-    + `onerror="this.classList.add('hidden');this.closest('.vposter')`
-    + `.classList.add('no-thumb')">`
-    + '<div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>'
-    + '<div class="vchips">'+chips+'</div>'
-    + (f.size?'<span class="vsize">'+esc(f.size)+'</span>':'')
-    + '<span class="vplay">▶</span>'
-    + '<div class="vadmin"><button class="va-edit" data-fid="'+esc(f.file_id)+'">✏️ Edit</button>'
-    + '<button class="va-del" data-fid="'+esc(f.file_id)+'">🗑️ Delete</button></div></div>'
-    + '<div class="vbody"><div class="vtitle">'+esc(f.name)+'</div></div></div>';
+  return vcardHTML({
+    CARD_CLASS:' enter', EXTRA_ATTRS:' data-label="1"',
+    FID:esc(f.file_id), RAW_FID:esc(f.file_id), NAME:esc(f.name),
+    IMG_ATTRS:'src="'+esc(f.thumb)+'"',
+    IMG_ERROR:"this.classList.add('hidden');this.closest('.vposter').classList.add('no-thumb')",
+    CHIPS:vcardChips(f), SIZE:vcardSize(f)
+  });
 }
 /* ▶ main page जैसा ही shared player — नाम/card पर click → छोटा modal */
 function playCard(c){
@@ -1354,10 +1348,7 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
             fid = str(v.get("file_id") or "")
             poster = "/api/thumb?file_id=" + quote(fid, safe="") + "&v=1"
             label = str(v.get("label") or f"Video {i+1}")
-            vids_html += video_card_html(
-                fid, label, poster,
-                chips=f'<span class="vtag">#{i+1}</span>',
-            )
+            vids_html += video_card_html(fid, label, poster, data=v)
     else:
         vids_html = (
             '<div class="cat-vempty">🎬 अभी कोई video attach नहीं है।'

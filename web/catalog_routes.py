@@ -23,9 +23,11 @@ v5 में इसके लिए अलग `post_routes.py` (publish/update/d
 server-generated HTML string नहीं (client render करता है)।
 """
 
+import inspect
 import io
 import logging
 import re
+import sys as _sys
 from urllib.parse import quote
 
 from aiohttp import web
@@ -37,7 +39,7 @@ from database.ia_filterdb import get_search_results
 
 # Optional dedicated channel (info.py में default = BIN_CHANNEL)।
 _STORAGE_CHANNEL = getattr(_info, "CATALOG_STORAGE_CHANNEL", BIN_CHANNEL)
-from web.web_assets import get_auth
+from web.web_assets import get_auth, vcard_meta
 from web.catalog import (
     CATALOGS,
     normalize,
@@ -67,45 +69,47 @@ def _clean_id(value) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "", str(value or ""))[:32]
 
 
-def _human_size(value) -> str:
-    try:
-        n = float(value or 0)
-    except (TypeError, ValueError):
-        return ""
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if n < 1024 or unit == "TB":
-            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
-        n /= 1024
-    return ""
-
-
-def _fmt_dur(value) -> str:
-    try:
-        s = int(value or 0)
-    except (TypeError, ValueError):
-        return ""
-    if s <= 0:
-        return ""
-    h, rem = divmod(s, 3600)
-    m, sec = divmod(rem, 60)
-    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
-
-
 def _media_row(doc: dict) -> dict:
-    """Library doc → Videos tab का card payload (server से HTML नहीं)।"""
-    fid = str(doc.get("_id") or "")
-    w = int(doc.get("width") or 0)
-    h = int(doc.get("height") or 0)
-    return {
-        "file_id": fid,
-        "name": str(doc.get("file_name") or "Untitled"),
-        "size": _human_size(doc.get("file_size")),
-        "quality": str(doc.get("quality") or ""),
-        "duration": _fmt_dur(doc.get("duration")),
-        "res": f"{w}×{h}" if w and h else "",
-        "thumb": "/api/thumb?file_id=" + quote(fid, safe="") + "&v=1",
-        "watch": "/setup_stream?file_id=" + quote(fid, safe="") + "&mode=watch",
-    }
+    """🎴 Library doc → Videos tab card payload — वही shared `vcard_meta()`."""
+    out = vcard_meta(doc)
+    fid = out["file_id"]
+    out["thumb"] = "/api/thumb?file_id=" + quote(fid, safe="") + "&v=1"
+    out["watch"] = "/setup_stream?file_id=" + quote(fid, safe="") + "&mode=watch"
+    return out
+
+
+async def _file_details(fid: str):
+    """Attached video का Library doc — stub/demo में `get_file_details` न हो
+    तो `collection.find_one` fallback (page कभी भी टूटता नहीं)।"""
+    ia = _sys.modules.get("database.ia_filterdb")
+    if ia is None:
+        return None
+    try:
+        fn = getattr(ia, "get_file_details", None)
+        if fn is not None:
+            res = fn(fid)
+            return await res if inspect.isawaitable(res) else res
+        col = getattr(ia, "collection", None)
+        return col.find_one({"_id": fid}) if col is not None else None
+    except Exception as exc:
+        logger.debug("attached video meta skipped (%s): %s", fid, exc)
+        return None
+
+
+async def _enrich_attached_videos(item: dict):
+    """📌 Post/Actor attached videos को भी वही size/duration/quality/res/type
+    chips दो जो `/search` और tag-results पर हैं — सब `vcard_meta()` से।"""
+    for v in (item.get("videos") or [])[:50]:
+        fid = str(v.get("file_id") or "")
+        if not fid or str(v.get("quality") or ""):
+            continue
+        doc = await _file_details(fid)
+        if not doc:
+            continue
+        meta = vcard_meta(doc)
+        for key in ("size", "quality", "duration", "res", "type"):
+            if meta.get(key):
+                v[key] = meta[key]
 
 
 async def _tag_media(item: dict, custom_q: str, offset: int, limit: int):
@@ -237,7 +241,9 @@ async def _detail(req, kind, item_id):
     item = await store.get_item(kind, _clean_id(item_id))
     if not item:
         return web.Response(text="❌ Entry not found", status=404)
-    return build_detail_page(kind, role, tg_id, _safe_item(kind, item))
+    item = _safe_item(kind, item)
+    await _enrich_attached_videos(item)   # 🎴 सभी video cards एक जैसे chips
+    return build_detail_page(kind, role, tg_id, item)
 
 
 @catalog_routes.get("/posts")

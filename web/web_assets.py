@@ -26,18 +26,25 @@ styled button + custom options menu में upgrade कर देता है
 (किसी page पर अलग `ddSet()` code नहीं)। Mobile पर दोनों toolbar एक ही
 `.filters` row + एक ही `@media` नियम: search bar ऊपर, दो बराबर buttons नीचे।
 
+🎴 `VCARD_TEMPLATE` + `VCARD_CHIP_SPEC` + `vcard_meta()` — **video card का
+एकमात्र source**: markup, chips (size/duration/quality/res/type) और data
+normalization सब यहीं। Python `render_vcard()` और JS `vcardHTML()` उसी एक
+template/spec को भरते हैं; `/search`, Post attached videos, Actor tag-results
+तीनों बिल्कुल एक जैसे cards दिखाते हैं। बदलाव = सिर्फ़ यहाँ।
+
 🎴 `VIDEO_CARD_CSS` एक **shared video card** है — `/search` की grid और
 Post/Actor Videos tabs बिल्कुल वही `.vcard`/`.vgrid` markup वाली cards,
 वही 1/2/3 responsive grid और नाम के नीचे वही compact padding दिखाती हैं।
 """
 
 import html
+import json
 import time
 
 from aiohttp import web
 
 from info import ADMINS
-from utils import temp
+from utils import temp, get_size
 from database.users_chats_db import web_db
 
 
@@ -178,6 +185,143 @@ transition:none!important;opacity:1!important;transform:none!important}
 
 # 🎨 SHARED CSS
 # ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# 🎴 SHARED VIDEO CARD — markup + chips + data का **एकमात्र source**
+#   `/search`, Post attached videos, Actor tag-results तीनों यहीं से बनते हैं:
+#     Python  → render_vcard() / vcard_chips() / vcard_size()
+#     JS      → vcardHTML()    / vcardChips() / vcardSize()  (SITE_JS में नीचे)
+#   Template और chip spec दोनों एक बार लिखे हैं — JS को यही Python values
+#   json.dumps करके दी जाती हैं। chip जोड़ना/हटाना/क्रम बदलना/रंग बदलना
+#   हो → सिर्फ़ VCARD_CHIP_SPEC बदलो, तीनों जगह एक साथ बदलेगा।
+# ─────────────────────────────────────────────────────────────
+VCARD_CHIP_SPEC = (
+    ("type",     "vtag",      ()),
+    ("quality",  "vtag blue", ("unknown",)),
+    ("res",      "vtag",      ()),
+    ("duration", "vtag gold", ()),
+)
+
+VCARD_TEMPLATE = (
+    '<div class="vcard{CARD_CLASS}" role="button" tabindex="0"{EXTRA_ATTRS} '
+    'data-fid="{FID}" data-name="{NAME}" aria-label="Play {NAME}">'
+    '<div class="vposter"{POSTER_ID}>'
+    '<img class="vimg" {IMG_ATTRS} alt="" loading="lazy" '
+    'onload="this.classList.add(\'on\')" onerror="{IMG_ERROR}">'
+    '<div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>'
+    '<div class="vchips">{CHIPS}</div>{SIZE}'
+    '<span class="vplay">▶</span>'
+    '<div class="vadmin"><button class="va-edit" data-fid="{RAW_FID}">✏️ Edit</button>'
+    '<button class="va-del" data-fid="{RAW_FID}">🗑️ Delete</button></div>'
+    '</div><div class="vbody"><div class="vtitle">{NAME}</div></div></div>'
+)
+
+_VIDEO_EXT = (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts",
+              ".wmv", ".flv", ".mpeg", ".mpg")
+
+
+def vcard_is_video(doc) -> bool:
+    """Library doc video है या नहीं — सभी card payloads यहीं से `type` लेते हैं।"""
+    doc = doc or {}
+    name = str(doc.get("file_name") or "").lower()
+    mime = str(doc.get("mime_type") or "").lower()
+    return (doc.get("file_type") == "video" or mime.startswith("video/")
+            or name.endswith(_VIDEO_EXT))
+
+
+def _vcard_duration(value) -> str:
+    try:
+        sec = int(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    if sec <= 0:
+        return ""
+    h, rem = divmod(sec, 3600)
+    m, sec = divmod(rem, 60)
+    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
+
+
+def vcard_meta(doc) -> dict:
+    """🎴 एकमात्र card-data normalizer — `/api/search`, `/api/catalog/{kind}/media`
+    और attached-video enrichment सब यही size/duration/res/quality/type लेते हैं,
+    इसलिए तीनों जगह chips का text भी बिल्कुल एक जैसा होता है।"""
+    doc = doc or {}
+    fid = str(doc.get("_id") or "")
+    try:
+        w = int(doc.get("width") or 0)
+    except (TypeError, ValueError):
+        w = 0
+    try:
+        h = int(doc.get("height") or 0)
+    except (TypeError, ValueError):
+        h = 0
+    return {
+        "file_id": fid,
+        "name": str(doc.get("file_name") or "Untitled"),
+        "size": get_size(doc.get("file_size") or 0),
+        "quality": str(doc.get("quality") or ""),
+        "type": "VIDEO" if vcard_is_video(doc) else "FILE",
+        "duration": _vcard_duration(doc.get("duration")),
+        "res": f"{w}×{h}" if w and h else "",
+    }
+
+
+def vcard_chips(data) -> str:
+    """सभी `.vchips` — order/class/skip rules सिर्फ़ VCARD_CHIP_SPEC में।"""
+    data = data or {}
+    out = []
+    for field, cls, skip in VCARD_CHIP_SPEC:
+        val = str(data.get(field) or "").strip()
+        if not val or val.lower() in skip:
+            continue
+        out.append(f'<span class="{cls}">{html.escape(val)}</span>')
+    return "".join(out)
+
+
+def vcard_size(data) -> str:
+    val = str((data or {}).get("size") or "").strip()
+    return f'<span class="vsize">{html.escape(val)}</span>' if val else ""
+
+
+def render_vcard(**kw) -> str:
+    """Python-side card render — उसी VCARD_TEMPLATE से जो JS इस्तेमाल करता है।"""
+    tokens = {k: "" for k in (
+        "CARD_CLASS", "EXTRA_ATTRS", "POSTER_ID", "IMG_ATTRS", "IMG_ERROR",
+        "CHIPS", "SIZE", "FID", "NAME", "RAW_FID")}
+    tokens.update({k: str(v) for k, v in kw.items()})
+    return VCARD_TEMPLATE.format(**tokens)
+
+
+_VCARD_JS_TPL = r"""/* 🎴 SHARED VIDEO CARD — template + chip spec web_assets.py से (Python → JS) */
+(function(){
+  var TPL=__VCARD_TEMPLATE__, SPEC=__VCARD_CHIP_SPEC__;
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function chips(f){
+    f=f||{};
+    return SPEC.map(function(c){
+      var v=String(f[c[0]]==null?'':f[c[0]]).trim();
+      if(!v||c[2].indexOf(v.toLowerCase())>=0)return '';
+      return '<span class="'+c[1]+'">'+esc(v)+'</span>';
+    }).join('');
+  }
+  function vsize(f){
+    var s=String((f||{}).size==null?'':f.size).trim();
+    return s?'<span class="vsize">'+esc(s)+'</span>':'';
+  }
+  function html(t){
+    t=t||{};
+    return TPL.replace(/\{([A-Z_]+)\}/g,function(m,k){
+      return Object.prototype.hasOwnProperty.call(t,k)?String(t[k]):'';
+    });
+  }
+  window.vcardChips=chips;window.vcardSize=vsize;window.vcardHTML=html;
+})();
+"""
+VCARD_JS = (_VCARD_JS_TPL
+            .replace("__VCARD_TEMPLATE__", json.dumps(VCARD_TEMPLATE))
+            .replace("__VCARD_CHIP_SPEC__",
+                     json.dumps([list(x) for x in VCARD_CHIP_SPEC])))
+
 FILE_EDIT_HTML = r"""<style>
 /* ✏️ Shared FILE EDITOR — v5 "Edit Title Metadata" का fsv1 रूप (कोई CDN नहीं) */
 .femodal{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.88);display:none;
@@ -285,15 +429,11 @@ FILE_EDIT_JS = r"""<script>
         const t=c.querySelector('.vtitle'); if(t) t.textContent=f.name;
         c.dataset.name=f.name; c.setAttribute('aria-label','Play '+f.name);
       }
+      // chips + size भी उसी shared spec से — edit के बाद card अलग न दिखे
       const chips=c.querySelector('.vchips');
-      if(chips){
-        const keep=Array.prototype.filter.call(chips.querySelectorAll('.vtag'),
-          n=>/^#\d+$/.test(n.textContent)).map(n=>n.outerHTML).join('');
-        chips.innerHTML=keep+
-          (f.quality?'<span class="vtag blue">'+esc(f.quality)+'</span>':'')+
-          (f.res?'<span class="vtag">'+esc(f.res)+'</span>':'')+
-          (f.duration?'<span class="vtag gold">'+esc(f.duration)+'</span>':'');
-      }
+      if(chips) chips.innerHTML=vcardChips(f);
+      const sz=c.querySelector('.vsize');
+      if(sz) sz.outerHTML=vcardSize(f);
       const im=c.querySelector('.vimg');
       if(im && f.thumb){ im.src=f.thumb; im.classList.remove('hidden'); }
     });
@@ -974,6 +1114,7 @@ function closeSidebar(){var s=document.getElementById('sidebar'),o=document.getE
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSidebar()});
 """
 SITE_JS += FILTER_JS
+SITE_JS += VCARD_JS
 
 # v5 के NAV_MENU जैसा — Database Stats admin-only है
 NAV_MENU = (
@@ -1192,27 +1333,19 @@ $('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(debounce
 $('#q').addEventListener('input',()=>{clearTimeout(debounce);debounce=setTimeout(()=>{
   const v=$('#q').value.trim();if(v.length>=2||v==='')doSearch()},420)});
 
+/* 🎴 card का markup/chips/size सब web_assets.VCARD_TEMPLATE + VCARD_CHIP_SPEC से —
+   Post/Actor Videos tabs भी बिल्कुल यही vcardHTML()/vcardChips()/vcardSize() चलाते हैं। */
 function card(f){
-  const fid=encodeURIComponent(f.file_id);
-  const type=f.type?`<span class="vtag">${esc(f.type)}</span>`:'';
-  const dur=f.duration?`<span class="vtag gold">${esc(f.duration)}</span>`:'';
-  const q=f.quality&&f.quality!=='unknown'?`<span class="vtag blue">${esc(f.quality)}</span>`:'';
-  const res=f.res?`<span class="vtag">${esc(f.res)}</span>`:'';
-  // Text mode में thumbnail request ही न जाए — src तभी लगाओ जब Poster mode हो
   const thumbUrl=f.thumb?encodeURI(f.thumb):'';
-  const imgAttr=viewMode==='poster'?`src="${thumbUrl}"`:`data-src="${thumbUrl}"`;
-  const size=f.size?`<span class="vsize">${esc(f.size)}</span>`:'';
-  return `<div class="vcard" role="button" tabindex="0" data-fid="${fid}" `
-    + `data-name="${esc(f.name)}" aria-label="Play ${esc(f.name)}">
-    <div class="vposter" id="pb-${fid}">
-      <img class="vimg" ${imgAttr} alt="" loading="lazy" data-thumb="${thumbUrl}" data-retry="0"
-           onload="this.classList.add('on')" onerror="thumbFail(this)">
-      <div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>
-      <div class="vchips">${type}${q}${res}${dur}</div>${size}
-      <span class="vplay">▶</span>
-      <div class="vadmin"><button class="va-edit" data-fid="${esc(f.file_id)}">✏️ Edit</button><button class="va-del" data-fid="${esc(f.file_id)}">🗑️ Delete</button></div>
-    </div>
-    <div class="vbody"><div class="vtitle">${esc(f.name)}</div></div></div>`;
+  const fid=encodeURIComponent(f.file_id);
+  // Text mode में thumbnail request ही न जाए — src तभी लगाओ जब Poster mode हो
+  const imgAttr=(viewMode==='poster'?`src="${thumbUrl}"`:`data-src="${thumbUrl}"`)
+    + ` data-thumb="${thumbUrl}" data-retry="0"`;
+  return vcardHTML({
+    FID:fid, RAW_FID:esc(f.file_id), NAME:esc(f.name), POSTER_ID:` id="pb-${fid}"`,
+    IMG_ATTRS:imgAttr, IMG_ERROR:'thumbFail(this)',
+    CHIPS:vcardChips(f), SIZE:vcardSize(f)
+  });
 }
 // v5 के reloadThumb(fileId) जैसा: पहली बार poster serial warmup queue में
 // एक-एक करके निकलता है, इसलिए 404 पर `retry=true&t=...` से धीरे-धीरे दोबारा

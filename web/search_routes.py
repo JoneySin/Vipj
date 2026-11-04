@@ -28,7 +28,7 @@ from database.ia_filterdb import (
     get_file_details,
 )
 from stream_security import sign_params
-from web.web_assets import get_auth, search_page
+from web.web_assets import get_auth, search_page, vcard_meta
 from web.thumb_engine import get_thumb, image_content_type, thumb_version, thumb_state
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,6 @@ search_routes = web.RouteTableDef()
 # file_id -> (BIN_CHANNEL message_id, expiry). Ek hi file par baar-baar
 # click karne par nayi message na bhej kar purani signed link re-sign होती है।
 _STREAM_CACHE = {}
-_VIDEO_EXT = (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts", ".wmv", ".flv", ".mpeg", ".mpg")
 
 # ── Group / UnGroup filter (v5 जैसा) ────────────────────────────────
 # fsv1 के files doc में group_id नहीं है, इसलिए "ग्रुप" का मतलब: एक ही
@@ -99,28 +98,6 @@ async def _group_page(q: str, offset: int, limit: int, mode: str):
     return page, next_offset, total
 
 
-def _fmt_duration(seconds) -> str:
-    try:
-        s = int(seconds or 0)
-    except (TypeError, ValueError):
-        return ""
-    if s <= 0:
-        return ""
-    h, rem = divmod(s, 3600)
-    m, sec = divmod(rem, 60)
-    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
-
-
-def _is_video(doc) -> bool:
-    name = str(doc.get("file_name") or "").lower()
-    mime = str(doc.get("mime_type") or "").lower()
-    return (
-        doc.get("file_type") == "video"
-        or mime.startswith("video/")
-        or name.endswith(_VIDEO_EXT)
-    )
-
-
 def _thumb_url(doc) -> str:
     fid = str(doc.get("_id") or "")
     # v5 की तरह पूरे thumb_url ("TG_ID:...") का hash — ID बदले तो URL भी बदले
@@ -130,22 +107,11 @@ def _thumb_url(doc) -> str:
 
 
 def _result(doc) -> dict:
-    fid = str(doc.get("_id") or "")
-    w = int(doc.get("width") or 0)
-    h = int(doc.get("height") or 0)
-    res = f"{w}×{h}" if w and h else ""
-    size = get_size(doc.get("file_size") or 0)
-    return {
-        "file_id": fid,
-        "name": str(doc.get("file_name") or "Untitled"),
-        "size": size,
-        "quality": str(doc.get("quality") or ""),
-        "type": "VIDEO" if _is_video(doc) else "FILE",
-        "duration": _fmt_duration(doc.get("duration")),
-        "res": res,
-        "thumb": _thumb_url(doc),
-        "caption": str(doc.get("caption") or "")[:300],
-    }
+    """🎴 card payload = shared `vcard_meta()` + इस page के extra fields."""
+    out = vcard_meta(doc)
+    out["thumb"] = _thumb_url(doc)
+    out["caption"] = str(doc.get("caption") or "")[:300]
+    return out
 
 
 def _unauthorized():
