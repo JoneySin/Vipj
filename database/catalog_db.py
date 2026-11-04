@@ -25,7 +25,7 @@ except Exception:                                  # pragma: no cover - preview/
 logger = logging.getLogger(__name__)
 
 KINDS = ("posts", "actors")
-_FIELDS = ("title", "category", "body", "tags", "image", "gallery", "links")
+_FIELDS = ("title", "category", "body", "tags", "image", "gallery", "links", "videos")
 
 
 def _now() -> int:

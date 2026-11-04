@@ -13,6 +13,7 @@ v5 में इसके लिए अलग `post_routes.py` (publish/update/d
 | GET | `/api/catalog/{kind}` | list (`q`, `category`, `offset`, `limit`) या `?id=` single |
 | POST | `/api/catalog/{kind}/save` | create + edit — **एक ही endpoint** (admin) |
 | POST | `/api/catalog/{kind}/delete` | delete (admin) |
+| POST | `/api/catalog/{kind}/gallery_delete` | एक gallery image बिना reload हटाएँ (admin) |
 | POST | `/api/catalog/upload` | image → Telegram → `TG_ID:` (admin) |
 | GET | `/api/catalog/photo` | `TG_ID:` image bytes (वही serial-safe download engine) |
 
@@ -247,6 +248,38 @@ async def api_save(req):
     if not item:
         return _json({"ok": False, "error": "Entry नहीं मिली"}, 404)
     return _json({"ok": True, "item": _safe_item(kind, item)})
+
+
+@catalog_routes.post("/api/catalog/{kind}/gallery_delete")
+async def api_gallery_delete(req):
+    """🖼️ Detail के Gallery tab से एक image बिना page reload हटाएँ (admin)।
+
+    v5 में `/api/actor/gallery_delete` के बाद `window.location.reload()` होता था;
+    यहाँ सिर्फ़ gallery array update होती है और client DOM से card हटा देता है।
+    """
+    role, _ = await get_auth(req)
+    if role != "admin":
+        return _json({"ok": False, "error": "Admins only"}, 403)
+    kind = _kind(req)
+    if not kind:
+        return _json({"ok": False, "error": "Unknown catalog"}, 404)
+    payload = await _read_payload(req)
+    item_id = _clean_id(payload.get("id"))
+    try:
+        idx = int(payload.get("index"))
+    except (TypeError, ValueError):
+        return _json({"ok": False, "error": "Bad index"}, 400)
+    item = await store.get_item(kind, item_id)
+    if not item:
+        return _json({"ok": False, "error": "Entry नहीं मिली"}, 404)
+    gallery = list(item.get("gallery") or [])
+    if idx < 0 or idx >= len(gallery):
+        return _json({"ok": False, "error": "Index out of range"}, 400)
+    gallery.pop(idx)
+    clean = normalize(kind, item)
+    clean["gallery"] = gallery
+    updated = await store.save_item(kind, clean, item_id)
+    return _json({"ok": True, "item": _safe_item(kind, updated)})
 
 
 @catalog_routes.post("/api/catalog/{kind}/delete")

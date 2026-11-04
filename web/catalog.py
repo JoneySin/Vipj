@@ -11,8 +11,17 @@ server से raw HTML strings भेजती थी।
 * **JSON API + client-side render** (`textContent`-safe escaping) — server से HTML
   strings नहीं, इसलिए markup एक ही जगह और XSS का रास्ता बंद।
 * **Inline edit modal** listing पर ही: create + edit + delete बिना page reload,
-  live poster preview, image upload, linked-media picker, dirty-state guard,
-  `Ctrl/Cmd+S` save, `Esc` close, **Undo** वाला delete toast (v5 में नहीं था)।
+  live poster preview, image upload, dirty-state guard, `Ctrl/Cmd+S` save,
+  `Esc` close, **Undo** वाला delete toast (v5 में नहीं था)।
+* **🎬 Multi-video editor** — `videos[]` दोनों kinds पर, 50 तक; Library picker एक
+  search में कई files जोड़ता है (बंद नहीं होता), ▲▼ reorder, per-row delete,
+  duplicate guard. पुराने posts के `links`-में-रखे episodes auto-migrate होते हैं।
+  **🖼️ Visual gallery** — multiple image upload (Telegram पर एक-एक करके),
+  thumbnails/remove, कोई plain textarea नहीं।
+* **🗂️ Detail tabs** — `ℹ️ Overview | 🎬 Videos | 🖼️ Gallery` दोनों pages पर
+  (v5 में सिर्फ़ actor detail पर थे), count badges, `?tab=` deep-link, arrow-key
+  nav, lazy Library search, staggered panels, lightbox, और **बिना reload**
+  gallery image delete.
 * **Animations**: staggered card entrance (IntersectionObserver), 3D hover +
   poster zoom + press feedback, shimmer skeleton, modal spring-pop, button
   ripple, toast slide-in, save-flash, lightbox zoom, hero fade-up — और
@@ -44,9 +53,12 @@ CATALOGS = {
         "imageLabel": "Cover Image",
         "galleryLabel": "Screenshots",
         "linkKind": "media",
-        "linkLabel": "Linked Media / Episodes",
-        "linkLabelField": "Label (e.g. Ep 1 · 1080p)",
-        "linkValueField": "File ID",
+        "linkLabel": "🔗 External / Social Links",
+        "linkLabelField": "Label (Trailer / IMDb / Instagram)",
+        "linkValueField": "https://…",
+        "videoLabel": "🎬 Videos / Episodes",
+        "videoHint": "जितने चाहें उतने episodes जोड़ें — Library picker से एक-एक करके चुनें",
+        "legacyLinksAsVideos": True,   # पुराने posts में `links` ही episodes थे
         "placeholder": "Movies, series, posts खोजें…",
         "empty": "🗂️ अभी कोई Post नहीं है।",
         "categories": [
@@ -69,9 +81,12 @@ CATALOGS = {
         "imageLabel": "Profile Photo / Icon",
         "galleryLabel": "Gallery",
         "linkKind": "url",
-        "linkLabel": "Social Links",
+        "linkLabel": "🔗 Social / Website Links",
         "linkLabelField": "Label (Instagram / YouTube / X)",
         "linkValueField": "https://…",
+        "videoLabel": "🎬 Videos (Filmography)",
+        "videoHint": "इस नाम की Library files जोड़ें — कितनी भी videos attach कर सकते हैं",
+        "legacyLinksAsVideos": False,  # actors के `links` URLs हैं, videos नहीं
         "placeholder": "Actor, app, website खोजें…",
         "empty": "📇 अभी कोई Profile नहीं है।",
         "categories": [
@@ -141,19 +156,39 @@ def normalize(kind: str, raw: dict) -> dict:
         gal_raw = gal_raw.splitlines()
     gallery = [u for u in (clean_url(g) for g in gal_raw) if u][:12]
 
+    # 🎬 Videos — दोनों kinds के लिए, *कितने भी* (50 तक)।
+    # `file_id` सिर्फ़ Telegram का base64url token होना चाहिए; URLs/जंक reject।
+    def _video_rows(rows):
+        out = []
+        for row in (rows or [])[:50]:
+            if not isinstance(row, dict):
+                continue
+            label = str(row.get("label") or "").strip()[:80]
+            fid = clean_media_id(row.get("file_id") or row.get("value"))
+            if not fid:
+                continue
+            out.append({"label": label or "Video", "file_id": fid})
+        return out
+
+    raw_links = raw.get("links") or []
+    if raw.get("videos") is not None:
+        videos = _video_rows(raw.get("videos"))
+        url_rows = raw_links
+    elif cfg.get("legacyLinksAsVideos"):
+        # 🔄 पुराने posts जिन्होंने episodes `links` में save किए थे — auto-migrate
+        videos = _video_rows(raw_links)
+        url_rows = []
+    else:
+        videos = []
+        url_rows = raw_links
+
     links = []
-    for row in (raw.get("links") or [])[:20]:
+    for row in url_rows[:20]:
         if not isinstance(row, dict):
             continue
         label = str(row.get("label") or "").strip()[:60]
-        value = str(row.get("value") or "").strip()[:300]
+        value = clean_url(row.get("value"), allow_tg=False)
         if not label or not value:
-            continue
-        if cfg["linkKind"] == "url":
-            value = clean_url(value, allow_tg=False)
-        else:
-            value = clean_media_id(value)
-        if not value:
             continue
         links.append({"label": label, "value": value})
 
@@ -165,6 +200,7 @@ def normalize(kind: str, raw: dict) -> dict:
         "image": clean_url(raw.get("image")),
         "gallery": gallery,
         "links": links,
+        "videos": videos,
     }
 
 
@@ -351,10 +387,102 @@ border:1px solid var(--line);border-radius:8px;padding:10px 13px;font-size:12px;
 .cat-related a:hover{border-color:var(--red)}
 @keyframes catSpin{to{transform:translateY(-50%) rotate(360deg)}}
 @keyframes catPop{0%{transform:scale(1)}45%{transform:scale(1.16)}100%{transform:scale(1)}}
+
+/* ─────────────── 🗂️ DETAIL TABS: Overview / Videos / Gallery ─────────────── */
+.cat-tabs{display:flex;align-items:stretch;gap:2px;flex-wrap:wrap;border-bottom:2px solid var(--line);
+margin:22px 0 20px;position:relative}
+.cat-tab{background:none;border:0;color:var(--mut);font-family:inherit;font-weight:800;font-size:13px;
+padding:12px 16px;cursor:pointer;position:relative;white-space:nowrap;transition:color .18s,transform .18s}
+.cat-tab:hover{color:var(--txt);transform:translateY(-2px)}
+.cat-tab.active{color:var(--red)}
+.cat-tab::after{content:'';position:absolute;left:12px;right:12px;bottom:-2px;height:2px;
+background:var(--red);transform:scaleX(0);transition:transform .28s cubic-bezier(.34,1.4,.64,1)}
+.cat-tab.active::after{transform:scaleX(1)}
+.cat-tab-n{display:inline-block;min-width:19px;margin-left:6px;padding:1px 6px;border-radius:20px;
+background:var(--bg3);border:1px solid var(--line);font-size:10px;font-weight:800;color:var(--mut);
+vertical-align:middle;transition:background .2s,color .2s}
+.cat-tab.active .cat-tab-n{background:var(--red);border-color:var(--red);color:#fff}
+.cat-tabspace{flex:1;min-width:8px}
+.cat-tabedit{align-self:center;margin-bottom:6px;padding:7px 13px;font-size:11px}
+.cat-panel{display:none;animation:catPanelIn .42s cubic-bezier(.25,.8,.25,1) both}
+.cat-panel.active{display:block}
+@keyframes catPanelIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.cat-panel .cat-card.enter{opacity:1!important}
+
+/* 🎬 Video tab */
+.cat-vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+.cat-vcard{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;
+overflow:hidden;text-decoration:none;color:var(--txt);position:relative;opacity:0;
+transform:translateY(18px) scale(.97);transition:transform .28s,border-color .22s,box-shadow .28s}
+.cat-vcard.in{animation:catIn .5s cubic-bezier(.34,1.2,.64,1) forwards}
+.cat-vcard:hover{transform:translateY(-5px) scale(1.015);border-color:var(--red);
+box-shadow:0 14px 34px rgba(0,0,0,.45)}
+.cat-vposter{position:relative;aspect-ratio:16/9;background:var(--bg3);overflow:hidden}
+.cat-vposter img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .35s,transform .35s}
+.cat-vposter img.on{opacity:1}.cat-vcard:hover .cat-vposter img{transform:scale(1.06)}
+.cat-vph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+font-size:32px;color:var(--mut)}
+.cat-vplay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+font-size:30px;background:linear-gradient(transparent,rgba(0,0,0,.5));opacity:0;transition:opacity .2s}
+.cat-vcard:hover .cat-vplay{opacity:1}
+.cat-vnum{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.7);color:#fff;
+border-radius:6px;padding:3px 8px;font-size:10px;font-weight:800}
+.cat-vinfo{padding:11px 12px}
+.cat-vtitle{font-size:12.5px;font-weight:800;line-height:1.35;
+display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cat-vsub{font-size:10px;color:var(--mut);margin-top:5px;font-weight:700}
+.cat-vempty,.cat-gempty{background:var(--card);border:1px dashed var(--line);border-radius:12px;
+padding:34px 18px;text-align:center;color:var(--mut);font-size:13px;font-weight:700}
+
+/* 🖼️ Gallery tab */
+.cat-galgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+@media(min-width:700px){.cat-galgrid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}}
+.cat-galitem{position:relative;aspect-ratio:1;border-radius:11px;overflow:hidden;border:1px solid var(--line);
+background:var(--bg3);cursor:zoom-in;opacity:0;transform:scale(.94)}
+.cat-galitem.in{animation:catIn .48s cubic-bezier(.34,1.2,.64,1) forwards}
+.cat-galitem img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .35s,transform .3s}
+.cat-galitem img.on{opacity:1}.cat-galitem:hover img{transform:scale(1.06)}
+.cat-galdel{position:absolute;top:7px;right:7px;background:rgba(160,8,8,.9);border:0;color:#fff;
+border-radius:6px;padding:4px 8px;font-size:10px;font-weight:800;cursor:pointer;opacity:0;
+transition:opacity .2s}.cat-galitem:hover .cat-galdel{opacity:1}
+.cat-lib{margin-top:26px}
+.cat-lib-title{font-size:14px;font-weight:900;margin-bottom:12px;letter-spacing:-.2px}
+
+/* ✏️ Editor: multi-video rows + visual gallery + sticky picker */
+.cat-hint{display:block;font-size:10.5px;font-weight:600;color:var(--mut);margin-top:4px}
+.cat-vrow{display:flex;gap:6px;align-items:center;margin-bottom:7px;animation:catRowIn .3s ease both}
+@keyframes catRowIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+.cat-vrow .cat-input{flex:1;min-width:0;margin:0}
+.cat-vrow .v-fid{flex:1.3}
+.cat-vbtn{background:var(--bg3);border:1px solid var(--line);color:var(--txt);border-radius:7px;
+width:29px;height:34px;flex:0 0 29px;font-size:11px;cursor:pointer;font-family:inherit;
+transition:background .15s,border-color .15s}
+.cat-vbtn:hover{background:var(--bg2);border-color:var(--red)}
+.cat-pickbar{display:flex;gap:8px;align-items:center;margin-top:9px;flex-wrap:wrap}
+.cat-pickbar .cat-input{flex:1 1 220px;margin:0}
+.cat-picker.max{position:static;max-height:230px;overflow:auto;margin-top:8px;
+border:1px solid var(--line);border-radius:9px;background:var(--bg2)}
+.cat-picker.max .cat-pick{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.cat-pick .pick-add{font-size:10px;font-weight:800;color:var(--red);white-space:nowrap}
+.cat-pick.added{background:var(--bg3);color:var(--mut)}
+.cat-pick.added .pick-add{color:#2ecc71}
+.cat-galedit{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px;margin-bottom:9px}
+.cat-galedit:empty{display:none}
+.cat-gthumb{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--line);
+background:var(--bg3);animation:catRowIn .3s ease both}
+.cat-gthumb img{width:100%;height:100%;object-fit:cover}
+.cat-gthumb button{position:absolute;top:3px;right:3px;background:rgba(160,8,8,.92);border:0;color:#fff;
+border-radius:5px;width:20px;height:20px;font-size:10px;cursor:pointer;line-height:1}
+.cat-galadd{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cat-galadd .cat-input{flex:1 1 190px;margin:0}
+.cat-sec-h{font-size:11px;font-weight:900;color:var(--mut);letter-spacing:.6px;text-transform:uppercase;
+margin:16px 0 8px;border-top:1px solid var(--line);padding-top:14px}
+
 /* ♿ v5 में नहीं था: reduced-motion वालों के लिए सारे animations बंद */
 @media(prefers-reduced-motion:reduce){
 .cat-card,.cat-card.enter,.cat-card.enter.in,.cat-hero,.cat-modal,.cat-mcard,.cat-toast,
-.cat-lightbox,.cat-lightbox img,.cat-gal img,.cat-poster,.cat-skel,.cat-poster-wrap{
+.cat-lightbox,.cat-lightbox img,.cat-gal img,.cat-poster,.cat-skel,.cat-poster-wrap,
+.cat-panel,.cat-vcard,.cat-galitem,.cat-vrow,.cat-gthumb,.cat-tab,.cat-tab::after{
 animation:none!important;transition:none!important;opacity:1!important;transform:none!important}
 .cat-card.enter{opacity:1!important}
 }
@@ -373,7 +501,8 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state = {q:'', cat:'all', mode:localStorage.getItem('ff_cat_mode_'+CFG.kind)||'poster',
-             offset:0, page:1, hasNext:false, req:0, items:{}, editing:null, dirty:false, flash:null};
+             offset:0, page:1, hasNext:false, req:0, items:{}, editing:null, dirty:false,
+             flash:null, gallery:[]};
 
 function imgSrc(v){
   if(!v) return '';
@@ -520,13 +649,34 @@ function editorHTML(){
       <label class="cat-upload">📂 Upload image
         <input type="file" id="fUpload" accept="image/*" onchange="uploadImage(this)"></label>
       <span id="fUploadNote" style="font-size:11px;color:var(--mut);margin-left:8px"></span></div>
-    <div class="cat-field"><label class="cat-label">${esc(CFG.galleryLabel)} URLs (one per line)</label>
-      <textarea class="cat-textarea" id="fGallery" style="min-height:64px"></textarea></div>
-    <div class="cat-field"><label class="cat-label">${esc(CFG.linkLabel)}</label>
+    <div class="cat-sec-h">${esc(CFG.videoLabel)}</div>
+    <div class="cat-field"><label class="cat-label">Videos / Episodes
+      <span class="cat-hint">${esc(CFG.videoHint)}</span></label>
+      <div id="fVideos"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:7px;align-items:center">
+        <button class="cat-btn ghost" type="button" onclick="addVideo('','')" style="padding:7px 13px;font-size:11px">➕ Add Video</button>
+        <span class="cat-hint" id="fVideoCount" style="margin:0"></span></div>
+      <div class="cat-pickbar">
+        <input class="cat-input" id="fPickerQ" placeholder="🔍 Library में file खोजें — कई videos एक साथ चुन सकते हैं…"
+          oninput="clearTimeout(window.__pk);window.__pk=setTimeout(pickMedia,320)">
+        <button class="cat-btn ghost" type="button" onclick="donePicking()" style="padding:7px 13px;font-size:11px">✓ Done</button>
+      </div>
+      <div class="cat-picker max" id="fPicker"></div></div>
+    <div class="cat-sec-h">🖼️ ${esc(CFG.galleryLabel)}</div>
+    <div class="cat-field">
+      <div class="cat-galedit" id="fGalList"></div>
+      <div class="cat-galadd">
+        <label class="cat-upload">📂 Upload images (multiple)
+          <input type="file" id="fGalUpload" accept="image/*" multiple onchange="uploadGallery(this)"></label>
+        <input class="cat-input" id="fGalUrl" placeholder="https://… या TG_ID:…">
+        <button class="cat-btn ghost" type="button" onclick="addGalleryUrl()" style="padding:7px 13px;font-size:11px">➕ Add URL</button>
+      </div>
+      <span class="cat-hint" id="fGalNote"></span></div>
+    <div class="cat-sec-h">${esc(CFG.linkLabel)}</div>
+    <div class="cat-field">
       <div id="fLinks"></div>
       <button class="cat-btn ghost" type="button" onclick="addLink('','')" style="padding:7px 13px;font-size:11px">➕ Add row</button>
-      __MEDIA_PICKER__
-      <div class="cat-picker" id="fPicker"></div></div>
+    </div>
     <div class="cat-mfoot">
       <span class="cat-dirty" id="fDirty" style="display:none">● Unsaved changes</span>
       <button class="cat-btn ghost" type="button" id="fDelete" onclick="deleteFromEditor()" style="display:none">🗑 Delete</button>
@@ -545,13 +695,82 @@ function linkRow(label, value){
   wrap.append(a,b,x);
   $('#fLinks').appendChild(wrap);
 }
-function addLink(l,v){ linkRow(l,v); }
+function addLink(l,v){ linkRow(l,v); markDirty(); }
+
+/* 🎬 MULTI-VIDEO: हर row = {label, file_id}. कोई hardcoded limit नहीं (UI 50 तक)।
+   ▲▼ से order बदलें, ✕ से हटाएँ, Library picker से एक के बाद एक कई चुनें। */
+function videoRow(label, fid){
+  const wrap = document.createElement('div'); wrap.className = 'cat-vrow';
+  const a = document.createElement('input'); a.className='cat-input v-label';
+  a.placeholder='Label (Ep 1 · 1080p)'; a.value=label||'';
+  const b = document.createElement('input'); b.className='cat-input v-fid';
+  b.placeholder='Telegram File ID'; b.value=fid||'';
+  const up=document.createElement('button'), dn=document.createElement('button'), x=document.createElement('button');
+  for(const btn of [up,dn,x]){ btn.className='cat-vbtn'; btn.type='button'; }
+  up.textContent='▲'; up.title='ऊपर ले जाएँ'; dn.textContent='▼'; dn.title='नीचे ले जाएँ';
+  x.textContent='✕'; x.title='ये video हटाएँ';
+  up.onclick=()=>{ if(wrap.previousElementSibling){ $('#fVideos').insertBefore(wrap,wrap.previousElementSibling); markDirty(); } };
+  dn.onclick=()=>{ if(wrap.nextElementSibling){ $('#fVideos').insertBefore(wrap.nextElementSibling,wrap); markDirty(); } };
+  x.onclick=()=>{ wrap.remove(); updateVideoCount(); markDirty(); };
+  a.oninput=b.oninput=markDirty;
+  wrap.append(a,b,up,dn,x);
+  $('#fVideos').appendChild(wrap);
+  updateVideoCount();
+  return wrap;
+}
+function addVideo(l,v){ const w=videoRow(l,v); w.querySelector('input').focus(); }
+function updateVideoCount(){
+  const n=$('#fVideos').children.length;
+  $('#fVideoCount').textContent = n
+    ? `${n} video${n>1?'s':''} attached — और जोड़ सकते हैं` : 'कोई video नहीं — ऊपर से जोड़ें';
+}
+function attachedIds(){
+  return Array.from(document.querySelectorAll('#fVideos .v-fid')).map(i=>i.value.trim()).filter(Boolean);
+}
+/* 🖼️ Gallery — visual thumbnails + remove, textarea की जगह */
+function renderGallery(){
+  const box=$('#fGalList'); box.innerHTML='';
+  state.gallery.forEach((val,i)=>{
+    const d=document.createElement('div'); d.className='cat-gthumb';
+    const im=document.createElement('img'); im.src=imgSrc(val); im.onerror=()=>im.remove();
+    const x=document.createElement('button'); x.type='button'; x.textContent='✕'; x.title='हटाएँ';
+    x.onclick=()=>{ state.gallery.splice(i,1); renderGallery(); markDirty(); };
+    d.append(im,x); box.appendChild(d);
+  });
+}
+function addGalleryUrl(){
+  const el=$('#fGalUrl'), v=el.value.trim();
+  if(!v) return;
+  if(state.gallery.length>=12) return toast('Maximum 12 images','err');
+  state.gallery.push(v); el.value=''; renderGallery(); markDirty(); toast('🖼️ Image जोड़ी गई');
+}
+async function uploadGallery(input){
+  const files=Array.from(input.files||[]); if(!files.length) return;
+  const note=$('#fGalNote');
+  /* Telegram rate-limit से बचने के लिए uploads भी एक-एक करके (जैसे thumbnails) */
+  for(let i=0;i<files.length && state.gallery.length<12;i++){
+    note.textContent=`⏳ Uploading ${i+1}/${files.length} — एक-एक करके…`;
+    const fd=new FormData(); fd.append('image',files[i]);
+    try{
+      const r=await fetch('/api/catalog/upload',{method:'POST',body:fd});
+      const d=await r.json();
+      if(!d.ok) throw new Error(d.error||'Upload failed');
+      state.gallery.push(d.value); renderGallery(); markDirty();
+    }catch(e){ note.textContent='⚠️ '+e.message+' (URL paste करें)'; break; }
+  }
+  note.textContent=`✅ ${state.gallery.length} images ready — Save दबाएँ`;
+  input.value='';
+}
+function donePicking(){
+  const b=$('#fPicker'); b.classList.remove('show'); b.innerHTML='';
+  toast('✓ Videos जोड़े गए — अब Save दबाएँ');
+}
 function markDirty(){ state.dirty = true; $('#fDirty').style.display='inline'; }
 function setPreview(v){
   const p = $('#fPreview'), src = imgSrc(v);
   p.innerHTML = src ? `<img src="${esc(src)}" onerror="this.remove()">` : '<span>कोई image नहीं</span>';
 }
-async function openEditor(id){
+async function openEditor(id, focus){
   state.editing = id || null; state.dirty = false;
   let it = id ? state.items[id] : null;
   if(id && !it){
@@ -567,7 +786,17 @@ async function openEditor(id){
   $('#fBody').value = it ? (it.body||'') : '';
   $('#fTags').value = it ? (it.tags||[]).join(', ') : '';
   $('#fImage').value = it ? (it.image||'') : '';
-  $('#fGallery').value = it ? (it.gallery||[]).join('\n') : '';
+  /* 🎬 videos — पुराने posts के `links` को API पहले ही migrate कर देती है */
+  $('#fVideos').innerHTML = '';
+  const vids = (it && it.videos) || [];
+  if(vids.length) vids.forEach(v=>videoRow(v.label, v.file_id));
+  else if(!id) videoRow('','');   /* नया entry → एक खाली row से शुरू, multiple साफ़ दिखे */
+  updateVideoCount();
+  state.gallery = it ? [...(it.gallery||[])] : [];
+  renderGallery();
+  $('#fGalNote').textContent = '';
+  $('#fGalUrl').value = '';
+  $('#fPickerQ').value = ''; $('#fPicker').innerHTML = ''; $('#fPicker').classList.remove('show');
   $('#fLinks').innerHTML = '';
   (it && it.links || []).forEach(l=>linkRow(l.label,l.value));
   $('#fDelete').style.display = id ? 'inline-block' : 'none';
@@ -575,7 +804,10 @@ async function openEditor(id){
   setPreview($('#fImage').value);
   const m = $('#catModal'); m.classList.add('open');
   requestAnimationFrame(()=>m.classList.add('show'));
-  setTimeout(()=>$('#fTitle').focus(), 120);
+  setTimeout(()=>{
+    const el = focus==='videos' ? $('#fPickerQ') : focus==='gallery' ? $('#fGalUrl') : $('#fTitle');
+    if(el){ el.focus(); if(focus) el.scrollIntoView({block:'center',behavior:'smooth'}); }
+  }, 150);
 }
 function closeEditor(force){
   if(!force && state.dirty && !confirm('बदलाव save नहीं हुए हैं। फिर भी बंद करें?')) return;
@@ -595,8 +827,12 @@ function collect(){
     body: $('#fBody').value.trim(),
     tags: $('#fTags').value,
     image: $('#fImage').value.trim(),
-    gallery: $('#fGallery').value,
-    links
+    gallery: state.gallery.slice(),
+    links,
+    videos: Array.from(document.querySelectorAll('#fVideos .cat-vrow')).map(r=>({
+      label: r.querySelector('.v-label').value.trim(),
+      file_id: r.querySelector('.v-fid').value.trim()
+    })).filter(v=>v.file_id)
   };
 }
 async function saveEditor(){
@@ -655,19 +891,29 @@ async function pickMedia(){
   if(q.length < 2){ box.classList.remove('show'); return; }
   box.classList.add('show'); box.innerHTML = '<div class="cat-pick">🔍 Searching…</div>';
   try{
-    const r = await fetch('/api/search?q='+encodeURIComponent(q)+'&limit=8');
+    const r = await fetch('/api/search?q='+encodeURIComponent(q)+'&limit=12');
     const d = await r.json();
+    const have = new Set(attachedIds());
     box.innerHTML = (d.results||[]).length
-      ? d.results.map(f=>`<div class="cat-pick" data-fid="${esc(f.file_id)}" data-name="${esc(f.name)}">${esc(f.name)}</div>`).join('')
+      ? d.results.map(f=>{
+          const fid=esc(f.file_id), name=esc(f.name), added=have.has(f.file_id);
+          return `<div class="cat-pick${added?' added':''}" data-fid="${fid}" data-name="${name}">`
+               + `<span>${name}</span><span class="pick-add">${added?'✓ Added':'+ Add'}</span></div>`;
+        }).join('')
       : '<div class="cat-pick">कोई file नहीं मिली</div>';
   }catch(e){ box.innerHTML = '<div class="cat-pick">⚠️ Error</div>'; }
 }
+/* ⚠️ picker खुला रहता है — एक search से कई videos जोड़े जा सकते हैं */
 document.addEventListener('click', e => {
   const p = e.target.closest('#fPicker .cat-pick');
   if(!p || !p.dataset.fid) return;
-  linkRow((p.dataset.name||'Media').slice(0,60), p.dataset.fid);
-  $('#fPicker').classList.remove('show');
-  markDirty(); toast('📎 Linked: '+(p.dataset.name||'').slice(0,40));
+  const fid = p.dataset.fid;
+  if(attachedIds().includes(fid)) return toast('ये video पहले से जोड़ा है');
+  if($('#fVideos').children.length >= 50) return toast('Maximum 50 videos','err');
+  videoRow((p.dataset.name||'Video').slice(0,70), fid);
+  p.classList.add('added');
+  const tag=p.querySelector('.pick-add'); if(tag) tag.textContent='✓ Added';
+  markDirty(); toast(`📎 ${$('#fVideos').children.length} videos — और चुन सकते हैं`);
 });
 document.addEventListener('keydown', e => {
   if(!$('#catModal') || !$('#catModal').classList.contains('open')) return;
@@ -700,7 +946,7 @@ $('#catGrid').className = 'cat-grid' + (state.mode==='text'?' mode-text':'');
 load(true).then(()=>{
   const p = new URLSearchParams(location.search);
   if(p.get('new') && ADMIN) openEditor('');
-  else if(p.get('edit') && ADMIN) openEditor(p.get('edit'));
+  else if(p.get('edit') && ADMIN) openEditor(p.get('edit'), p.get('focus'));
 });
 </script>
 """
@@ -708,27 +954,98 @@ load(true).then(()=>{
 DETAIL_JS = r"""
 <script>
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-document.querySelectorAll('.cat-gal img').forEach((img,i)=>{
-  img.addEventListener('load',()=>{ img.style.transitionDelay=(Math.min(i,10)*0.06)+'s'; img.classList.add('on'); });
-  img.addEventListener('click',()=>openLight(img.src));
+const D = __DETAIL_CFG__;
+let relatedLoaded = false;
+
+/* 🗂️ v5 के actor-tab-bar जैसा, पर deep-link + lazy search + keyboard nav के साथ */
+function switchTab(name, init){
+  if(!['overview','videos','gallery'].includes(name)) name='overview';
+  document.querySelectorAll('.cat-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  document.querySelectorAll('.cat-panel').forEach(p=>p.classList.toggle('active',p.id==='cp-'+name));
+  if(name==='videos'){ stagger('#catVideos .cat-vcard'); if(!relatedLoaded) loadRelated(); }
+  if(name==='gallery') stagger('#catGallery .cat-galitem');
+  if(!init){
+    const u=new URL(location.href); u.searchParams.set('tab',name);
+    history.replaceState(null,'',u.pathname+u.search);
+  }
+}
+function stagger(sel){
+  const els=Array.from(document.querySelectorAll(sel)).filter(e=>!e.classList.contains('in'));
+  const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  els.forEach((e,i)=>{
+    if(!reduce) e.style.animationDelay=(Math.min(i,12)*0.06)+'s';
+    e.classList.add('in');
+  });
+}
+async function loadRelated(){
+  relatedLoaded=true;
+  const box=document.getElementById('catRelated'); if(!box) return;
+  box.innerHTML='<span style="color:var(--mut);font-size:12px">खोजा जा रहा है…</span>';
+  try{
+    const r=await fetch('/api/search?q='+encodeURIComponent(D.q)+'&limit=8');
+    const d=await r.json();
+    const rows=(d.results||[]).map(f=>'<a href="/setup_stream?file_id='+encodeURIComponent(f.file_id)
+      +'&mode=watch" target="_blank" rel="noopener"><span>'+esc(f.name)+'</span><span>'+esc(f.size||'')+'</span></a>');
+    box.innerHTML = rows.length ? rows.join('')
+      : '<span style="color:var(--mut);font-size:12px">इस नाम से कोई file नहीं मिली।</span>';
+  }catch(e){ box.innerHTML='<span style="color:var(--mut);font-size:12px">Load नहीं हुआ।</span>'; }
+}
+document.querySelectorAll('.cat-vposter img,.cat-galitem img').forEach(img=>{
+  img.addEventListener('load',()=>img.classList.add('on'));
 });
 function openLight(src){
-  const l = document.getElementById('catLight');
-  l.querySelector('img').src = src; l.classList.add('open');
+  const l=document.getElementById('catLight');
+  l.querySelector('img').src=src; l.classList.add('open');
   requestAnimationFrame(()=>l.classList.add('show'));
 }
-function closeLight(){ const l=document.getElementById('catLight'); l.classList.remove('show'); setTimeout(()=>l.classList.remove('open'),250); }
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeLight(); });
-document.addEventListener('pointerdown', e=>{
+function closeLight(){
+  const l=document.getElementById('catLight'); l.classList.remove('show');
+  setTimeout(()=>l.classList.remove('open'),250);
+}
+/* 🖼️ v5 reload करता था; यहाँ बिना reload image हटती है और tab count update होता है */
+async function deleteGallery(idx){
+  if(!confirm('ये image gallery से हटाएँ?')) return;
+  try{
+    const r=await fetch('/api/catalog/'+D.kind+'/gallery_delete',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:D.id,index:Number(idx)})});
+    const d=await r.json();
+    if(!d.ok) return alert(d.error||'Delete failed');
+    const el=document.querySelector('#catGallery [data-idx="'+idx+'"]');
+    if(el){ el.style.transition='opacity .25s,transform .25s'; el.style.opacity='0'; el.style.transform='scale(.8)';
+      setTimeout(()=>el.remove(),240); }
+    const n=document.querySelector('.cat-tab[data-tab="gallery"] .cat-tab-n');
+    if(n) n.textContent=Math.max(0,parseInt(n.textContent||'0',10)-1);
+  }catch(e){ alert('Delete failed'); }
+}
+async function deleteDetail(id){
+  if(!confirm('Delete करें?')) return;
+  const r=await fetch('/api/catalog/'+D.kind+'/delete',{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify({id})});
+  const d=await r.json();
+  if(d.ok) location.href=D.base; else alert('Delete failed');
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') closeLight();
+  const tag=(document.activeElement||{}).tagName;
+  if(tag==='INPUT'||tag==='TEXTAREA') return;
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+    const names=['overview','videos','gallery'];
+    const cur=document.querySelector('.cat-tab.active');
+    let i=names.indexOf(cur?cur.dataset.tab:'overview');
+    i=(i+(e.key==='ArrowRight'?1:names.length-1))%names.length;
+    switchTab(names[i]);
+  }
+});
+document.addEventListener('pointerdown',e=>{
   const b=e.target.closest('.cat-btn'); if(!b)return;
   const r=b.getBoundingClientRect(),i=document.createElement('i'),d=Math.max(r.width,r.height);
   i.style.cssText=`width:${d}px;height:${d}px;left:${e.clientX-r.left-d/2}px;top:${e.clientY-r.top-d/2}px`;
   b.classList.add('cat-ripple'); b.appendChild(i); setTimeout(()=>i.remove(),520);
 });
-__RELATED_JS__
+const _initTab=new URLSearchParams(location.search).get('tab');
+switchTab(_initTab||'overview',true);
 </script>
 """
-
 
 def _category_options(kind: str, include_all: bool = True) -> str:
     cfg = CATALOGS[kind]
@@ -782,12 +1099,6 @@ def build_listing_page(kind: str, role: str, tg_id: int):
         CATALOG_JS
         .replace("__CFG__", json.dumps(cfg, ensure_ascii=False))
         .replace("__ADMIN__", "true" if role == "admin" else "false")
-        .replace("__MEDIA_PICKER__", (
-            '<div style="display:flex;gap:8px;margin-top:10px">'
-            '<input class="cat-input" id="fPickerQ" placeholder="🔍 Library में file खोजें…" '
-            'oninput="clearTimeout(window.__pk);window.__pk=setTimeout(pickMedia,320)"></div>'
-            if cfg["linkKind"] == "media" else ""
-        ))
         # editor modal को JS से inject करें ताकि markup एक ही जगह रहे
         .replace("/* ── wiring ── */", "/* ── wiring ── */\n$('#catModalHost').innerHTML = editorHTML();")
     )
@@ -799,10 +1110,12 @@ def build_listing_page(kind: str, role: str, tg_id: int):
 
 
 def _detail_body(kind: str, role: str, item: dict) -> str:
+    """🗂️ Overview / 🎬 Videos / 🖼️ Gallery — v5 के tabs, पर दोनों kinds पर एक ही engine।"""
     cfg = CATALOGS[kind]
     esc = html.escape
+    admin = role == "admin"
     src = image_src(item.get("image"))
-    title = esc(item.get("title") or "Untitled")
+    title = esc(str(item.get("title") or "Untitled"))
     cat_label = next(
         (c["label"] for c in cfg["categories"] if c["value"] == item.get("category")),
         esc(str(item.get("category") or "—")),
@@ -811,89 +1124,128 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
         f'<span class="cat-chip">#{esc(str(t))}</span>' for t in (item.get("tags") or [])[:12]
     )
     body = esc(str(item.get("body") or ""))
-    gallery = [image_src(g) for g in (item.get("gallery") or [])]
-    gal_html = "".join(
-        f'<img src="{esc(u)}" alt="" loading="lazy" onerror="this.remove()">' for u in gallery if u
+    item_id = esc(str(item.get("id") or ""))
+
+    # 🔗 Overview: external / social links (दोनों kinds पर URLs ही हैं)
+    links_html = "".join(
+        f'<a href="{esc(str(l.get("value") or ""))}" target="_blank" rel="noopener noreferrer">'
+        f'🔗 {esc(str(l.get("label") or "Link"))}</a>'
+        for l in (item.get("links") or [])[:20] if l.get("value")
     )
 
-    links_html = ""
-    for l in (item.get("links") or []):
-        label, value = esc(str(l.get("label") or "Link")), str(l.get("value") or "")
-        if cfg["linkKind"] == "media":
-            href = "/setup_stream?file_id=" + quote(value, safe="") + "&mode=watch"
-            links_html += f'<a href="{esc(href)}" target="_blank" rel="noopener">▶ {label}</a>'
-        else:
-            links_html += f'<a href="{esc(value)}" target="_blank" rel="noopener noreferrer">🔗 {label}</a>'
+    # 🎬 Videos tab — कितने भी, हर एक का अपना poster + watch link
+    videos = [v for v in (item.get("videos") or [])[:50] if v.get("file_id")]
+    if videos:
+        vids_html = ""
+        for i, v in enumerate(videos):
+            fid = str(v.get("file_id") or "")
+            href = "/setup_stream?file_id=" + quote(fid, safe="") + "&mode=watch"
+            poster = "/api/thumb?file_id=" + quote(fid, safe="") + "&v=1"
+            label = esc(str(v.get("label") or f"Video {i+1}"))
+            vids_html += (
+                f'<a class="cat-vcard" href="{esc(href)}" target="_blank" rel="noopener">'
+                f'<div class="cat-vposter"><div class="cat-vph">🎬</div>'
+                f'<img src="{esc(poster)}" alt="" loading="lazy" onerror="this.remove()">'
+                f'<span class="cat-vnum">#{i+1}</span><span class="cat-vplay">▶</span></div>'
+                f'<div class="cat-vinfo"><div class="cat-vtitle">{label}</div>'
+                f'<div class="cat-vsub">▶ Watch / Stream · Library file</div></div></a>'
+            )
+    else:
+        vids_html = (
+            '<div class="cat-vempty">🎬 अभी कोई video attach नहीं है।<br>'
+            '<span style="font-size:11px;font-weight:600">Admin: ऊपर "Add Videos" से कितने भी जोड़ें।</span></div>'
+        )
+
+    # 🖼️ Gallery tab
+    gallery = [image_src(g) for g in (item.get("gallery") or [])[:12]]
+    if gallery:
+        gal_html = ""
+        for i, u in enumerate(gallery):
+            if not u:
+                continue
+            del_btn = (
+                f'<button class="cat-galdel" title="हटाएँ" '
+                f'onclick="event.stopPropagation();deleteGallery(this.closest(\'.cat-galitem\').dataset.idx)">✕</button>'
+                if admin else ""
+            )
+            gal_html += (
+                f'<div class="cat-galitem" data-idx="{i}" data-src="{esc(u)}" '
+                f'onclick="openLight(this.dataset.src)">'
+                f'<img src="{esc(u)}" alt="" loading="lazy" onerror="this.remove()">{del_btn}</div>'
+            )
+    else:
+        gal_html = (
+            '<div class="cat-gempty">🖼️ Gallery खाली है।<br>'
+            '<span style="font-size:11px;font-weight:600">Editor में multiple images upload करें।</span></div>'
+        )
 
     admin_bar = ""
-    if role == "admin":
+    if admin:
         admin_bar = (
-            f'<div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">'
-            f'<a class="cat-btn" href="{cfg["base"]}?edit={esc(item.get("id", ""))}">✏️ Edit</a>'
-            f'<button class="cat-btn ghost" data-id="{esc(item.get("id", ""))}" onclick="deleteDetail(this.dataset.id)">🗑 Delete</button>'
-            f'</div>'
+            '<div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">'
+            f'<a class="cat-btn" href="{cfg["base"]}?edit={item_id}">✏️ Edit</a>'
+            f'<button class="cat-btn ghost" data-id="{item_id}" '
+            'onclick="deleteDetail(this.dataset.id)">🗑 Delete</button></div>'
         )
-
-    related = ""
-    if cfg["linkKind"] == "url":
-        related = (
-            '<div class="cat-sec-title">🎬 Linked Media in Library</div>'
-            '<div class="cat-related" id="catRelated"><span style="color:var(--mut);font-size:12px">खोजा जा रहा है…</span></div>'
-        )
+    add_videos_btn = (
+        f'<a class="cat-btn ghost cat-tabedit" href="{cfg["base"]}?edit={item_id}&focus=videos">'
+        '🎬 Add Videos</a>' if admin else ""
+    )
 
     hero_img = (
         f'<img class="cat-hero-img" src="{esc(src)}" alt="" onerror="this.style.visibility=\'hidden\'">'
-        if src else '<div class="cat-hero-img" style="display:flex;align-items:center;justify-content:center;font-size:44px">🖼️</div>'
+        if src else '<div class="cat-hero-img" style="display:flex;align-items:center;'
+                    'justify-content:center;font-size:44px">🖼️</div>'
     )
 
     return f"""<div class="main"><div class="cat-wrap">
   <div style="margin-bottom:16px"><a class="cat-btn ghost" href="{cfg['base']}">← Back to {esc(cfg['label'])}</a></div>
-  <div class="cat-hero">
-    {hero_img}
-    <div class="cat-hero-info">
-      <div class="cat-hero-title">{title}</div>
-      <div class="cat-chips"><span class="cat-chip red">{esc(cat_label)}</span>{chips}</div>
-      <div class="cat-body-txt">{body or '<span style="color:var(--mut)">कोई description नहीं।</span>'}</div>
-      <div class="cat-links">{links_html or '<span style="color:var(--mut);font-size:12px">कोई link नहीं।</span>'}</div>
-      {admin_bar}
-    </div>
+  <div class="cat-tabs" role="tablist">
+    <button class="cat-tab active" data-tab="overview" onclick="switchTab('overview')">ℹ️ Overview</button>
+    <button class="cat-tab" data-tab="videos" onclick="switchTab('videos')">🎬 Videos <span class="cat-tab-n">{len(videos)}</span></button>
+    <button class="cat-tab" data-tab="gallery" onclick="switchTab('gallery')">🖼️ Gallery <span class="cat-tab-n">{len(gallery)}</span></button>
+    <span class="cat-tabspace"></span>{add_videos_btn}
   </div>
-  {f'<div class="cat-sec-title">🖼️ {esc(cfg["galleryLabel"])}</div><div class="cat-gal">{gal_html}</div>' if gal_html else ''}
-  {related}
+
+  <section class="cat-panel active" id="cp-overview">
+    <div class="cat-hero">
+      {hero_img}
+      <div class="cat-hero-info">
+        <div class="cat-hero-title">{title}</div>
+        <div class="cat-chips"><span class="cat-chip red">{esc(cat_label)}</span>{chips}</div>
+        <div class="cat-body-txt">{body or '<span style="color:var(--mut)">कोई description नहीं।</span>'}</div>
+        <div class="cat-links">{links_html or '<span style="color:var(--mut);font-size:12px">🔗 कोई external link नहीं।</span>'}</div>
+        {admin_bar}
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+      <button class="cat-btn ghost" onclick="switchTab('videos')">🎬 {len(videos)} Videos देखें →</button>
+      <button class="cat-btn ghost" onclick="switchTab('gallery')">🖼️ {len(gallery)} Images देखें →</button>
+    </div>
+  </section>
+
+  <section class="cat-panel" id="cp-videos">
+    <div class="cat-vgrid" id="catVideos">{vids_html}</div>
+    <div class="cat-lib"><div class="cat-lib-title">🔍 इस नाम की और files (Library)</div>
+      <div class="cat-related" id="catRelated"><span style="color:var(--mut);font-size:12px">Videos tab खोलते ही search…</span></div></div>
+  </section>
+
+  <section class="cat-panel" id="cp-gallery">
+    <div class="cat-galgrid" id="catGallery">{gal_html}</div>
+  </section>
 </div></div>
 <div class="cat-lightbox" id="catLight" onclick="if(event.target===this)closeLight()"><img src="" alt=""></div>"""
 
-
 def build_detail_page(kind: str, role: str, tg_id: int, item: dict):
     cfg = CATALOGS[kind]
-    related_js = ""
-    if cfg["linkKind"] == "url":
-        q = str(item.get("title") or "")
-        related_js = f"""
-(async () => {{
-  const box = document.getElementById('catRelated');
-  try {{
-    const r = await fetch('/api/search?q={quote(q, safe="")}&limit=6');
-    const d = await r.json();
-    const rows = (d.results||[]).map(f => `<a href="/setup_stream?file_id=${{encodeURIComponent(f.file_id)}}&mode=watch" target="_blank" rel="noopener"><span>${{esc(f.name)}}</span><span>${{esc(f.size||'')}}</span></a>`);
-    box.innerHTML = rows.length ? rows.join('') : '<span style="color:var(--mut);font-size:12px">इस नाम से कोई file नहीं मिली।</span>';
-  }} catch(e) {{ box.innerHTML = '<span style="color:var(--mut);font-size:12px">Load नहीं हुआ।</span>'; }}
-}})();"""
-    delete_js = ""
-    if role == "admin":
-        delete_js = f"""
-async function deleteDetail(id){{
-  if(!confirm('Delete करें?')) return;
-  const r = await fetch('/api/catalog/{kind}/delete', {{method:'POST',
-    headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{id}})}});
-  const d = await r.json();
-  if(d.ok) location.href = '{cfg['base']}';
-  else alert('Delete failed');
-}}"""
-    js = (
-        DETAIL_JS
-        .replace("__RELATED_JS__", related_js + delete_js)
-    )
+    detail_cfg = {
+        "kind": kind,
+        "id": str(item.get("id") or ""),
+        "q": str(item.get("title") or ""),
+        "base": cfg["base"],
+        "admin": role == "admin",
+    }
+    js = DETAIL_JS.replace("__DETAIL_CFG__", json.dumps(detail_cfg, ensure_ascii=False))
     return app_page(
         f"{item.get('title') or cfg['singular']} - Fast Finder",
         f"<style>{CATALOG_CSS}</style>" + _detail_body(kind, role, item) + js,
