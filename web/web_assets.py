@@ -45,6 +45,7 @@ from web.group_assets import (
     GROUP_CSS, GROUP_JS, GROUP_ADMIN_HTML, GROUP_ADMIN_JS,
 )
 from web.mode_assets import VIEW_MODE_OPTIONS, MODE_CSS, MODE_JS
+from web.reveal_assets import REVEAL_CSS, REVEAL_JS
 
 from aiohttp import web
 
@@ -119,9 +120,7 @@ text-decoration:none;transition:transform .22s,border-color .22s,box-shadow .28s
 .vcard:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 @media(hover:hover){.vcard:hover{transform:translateY(-4px);border-color:rgba(229,9,20,.65);
 box-shadow:0 14px 34px rgba(0,0,0,.45)}}
-.vcard.enter{opacity:0}
-.vcard.enter.in{animation:vIn .48s cubic-bezier(.34,1.2,.64,1) forwards}
-@keyframes vIn{0%{opacity:0;transform:translateY(18px) scale(.97)}100%{opacity:1;transform:none}}
+/* ✨ Entrance animation lives in web/reveal_assets.py — cards opt in with `rv-enter`. */
 @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .vposter{position:relative;aspect-ratio:16/9;overflow:hidden;
 background:linear-gradient(90deg,var(--bg3) 0,#2b2b3a 50%,var(--bg3) 100%);
@@ -174,7 +173,7 @@ font-size:13px;font-weight:700;line-height:1.35;cursor:pointer;transition:color 
 .state{grid-column:1/-1;text-align:center;padding:70px 20px;color:var(--mut);
 font-weight:600;line-height:1.7}
 @media(prefers-reduced-motion:reduce){
-.vcard,.vcard.enter,.vcard.enter.in,.vposter{animation:none!important;
+.vcard,.rv-enter,.rv-enter.in,.vposter{animation:none!important;
 transition:none!important;opacity:1!important;transform:none!important}
 }
 """
@@ -1007,6 +1006,8 @@ font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 SITE_CSS += VIDEO_CARD_CSS
 SITE_CSS += FILTER_CSS
 SITE_CSS += GROUP_CSS
+# ✨ One shared staggered result entrance, before the Poster/Text rules
+SITE_CSS += REVEAL_CSS
 # ⚠️ MODE_CSS comes last — the only rule-set for Poster/Text; everything above is base only
 SITE_CSS += MODE_CSS
 
@@ -1126,6 +1127,7 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSidebar
 SITE_JS += FILTER_JS
 SITE_JS += VCARD_JS
 SITE_JS += GROUP_JS
+SITE_JS += REVEAL_JS
 SITE_JS += MODE_JS
 
 # Like v5's NAV_MENU — Database Stats is admin-only
@@ -1341,23 +1343,31 @@ function imgAttrs(f){
   // only ViewMode (web/mode_assets.py) decides between src ⇄ data-src
   return ViewMode.imgAttrs(f.thumb?encodeURI(f.thumb):'');
 }
-function cardTokens(f){
+function cardTokens(f,topLevel){
   const fid=encodeURIComponent(f.file_id);
   return {
     FID:fid, RAW_FID:esc(f.file_id), NAME:esc(f.name), POSTER_ID:` id="pb-${fid}"`,
-    IMG_ATTRS:imgAttrs(f), IMG_ERROR:'thumbFail(this)',
-    CHIPS:vcardChips(f), SIZE:vcardSize(f)
+    CARD_CLASS:topLevel?' rv-enter':'', IMG_ATTRS:imgAttrs(f),
+    IMG_ERROR:'thumbFail(this)', CHIPS:vcardChips(f), SIZE:vcardSize(f)
   };
 }
 /* 🎴 One entry point: a group card (`web/group_assets.py`) or the shared vcard.
    Every variant inside a group is also built by this cardHTML() → vcardHTML(),
-   so cards look identical on /search, Post and Actor. */
-function cardHTML(f){
-  if(f.group)return groupHTML(f,imgAttrs(f),'thumbFail(this)');
-  return vcardHTML(cardTokens(f));
+   so cards look identical on /search, Post and Actor. Only top-level results opt
+   into the entrance animation; nested variants must be visible on expand. */
+function cardHTML(f,topLevel){
+  if(f.group)return groupHTML(f,imgAttrs(f),'thumbFail(this)',topLevel);
+  return vcardHTML(cardTokens(f,topLevel));
 }
 window.cardHTML=cardHTML;
-function card(f){return cardHTML(f)}
+function card(f){return cardHTML(f,true)}
+/* Shimmer placeholders while a fresh result batch is being fetched — the GitHub
+   reference shows a shimmering poster box, then reveals the real cards in a wave. */
+function skeletons(){
+  return Array.from({length:6},()=>'<div class="vcard rv-skel vm-card">'
+    +'<div class="vposter vm-poster"></div><div class="vbody vm-body">'
+    +'<div class="rv-line"></div><div class="rv-line short"></div></div></div>').join('');
+}
 // Like v5's reloadThumb(fileId): first-time posters come from a serial warmup queue
 // one at a time, so on a 404 we retry gradually with `retry=true&t=...` —
 // as ids are locked into the DB, the posters appear automatically.
@@ -1380,7 +1390,7 @@ function thumbFail(img){
 
 async function load(reset){
   if(loading)return;
-  if(reset){offset=0;hasMore=false;seenGroups={};$('#grid').innerHTML='';}
+  if(reset){offset=0;hasMore=false;seenGroups={};$('#grid').innerHTML=skeletons();}
   loading=true;$('#srow').classList.add('loading');
   try{
     const r=await fetch(`/api/search?q=${encodeURIComponent(curQ)}&offset=${offset}&group=${groupMode}`,{credentials:'same-origin'});
@@ -1394,7 +1404,10 @@ async function load(reset){
       if(seenGroups[k])return false;
       seenGroups[k]=1;return true;
     });
-    $('#grid').insertAdjacentHTML('beforeend',list.map(card).join(''));
+    const html=list.map(card).join('');
+    if(reset) $('#grid').innerHTML=html;
+    else $('#grid').insertAdjacentHTML('beforeend',html);
+    RevealCards.reveal($('#grid'));   /* one shared staggered spring on every batch */
     hasMore=!!d.next_offset;
     offset=hasMore?Number(d.next_offset):0;
     $('#more').classList.toggle('show',hasMore);

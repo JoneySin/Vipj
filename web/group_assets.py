@@ -212,7 +212,9 @@ _GROUP_JS_TPL = r"""/* 🗂️ SHARED GROUP CARD — template from web/group_ass
     .replace(/</g,'&lt;').replace(/>/g,'&gt;');}
   function fill(t){return TPL.replace(/\{([A-Z_]+)\}/g,function(m,k){
     return Object.prototype.hasOwnProperty.call(t,k)?String(t[k]):'';});}
-  function html(g,imgAttrs,imgError){
+  /* html(g, imgAttrs, imgError, topLevel) — only top-level result cards opt into
+     the shared `rv-enter` entrance; variants inside an open group stay visible. */
+  function html(g,imgAttrs,imgError,topLevel){
     if(!g||!g.group)return '';
     GD[String(g.key)]=g;
     var isEp=g.kind==='episodes';
@@ -251,7 +253,7 @@ _GROUP_JS_TPL = r"""/* 🗂️ SHARED GROUP CARD — template from web/group_ass
       return window.cardHTML?window.cardHTML(v):'';
     }).join('');
     return fill({
-      CARD_CLASS:'', GKEY:esc(g.key), GID:esc(g.gid||''),
+      CARD_CLASS:topLevel?' rv-enter':'', GKEY:esc(g.key), GID:esc(g.gid||''),
       NAME:esc(g.name), COUNT:esc(g.count||0),
       IMG_ATTRS:imgAttrs||'', IMG_ERROR:imgError||'thumbFail(this)',
       TOPCHIPS:top, QCHIPS:chips,

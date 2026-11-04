@@ -185,7 +185,7 @@ def video_card_html(fid: str, name: str, poster: str,
     '''
     e = html.escape
     return render_vcard(
-        CARD_CLASS=" enter", EXTRA_ATTRS=' data-label="1"',
+        CARD_CLASS=" rv-enter", EXTRA_ATTRS=' data-label="1"',
         FID=e(fid, quote=True), RAW_FID=e(fid, quote=True),
         NAME=e(name, quote=True),
         IMG_ATTRS='src="' + e(poster, quote=True) + '"',
@@ -335,11 +335,8 @@ cursor:pointer;position:relative;transition:transform .28s cubic-bezier(.25,.8,.
 .cat-card:hover{transform:translateY(-6px) scale(1.015);border-color:rgba(229,9,20,.65);
 box-shadow:0 16px 38px rgba(0,0,0,.5),0 0 18px rgba(229,9,20,.22);z-index:2}
 .cat-card:active{transform:scale(.97);transition:transform .1s}
-.cat-card.enter{opacity:0}
-.cat-card.enter.in{animation:catIn .55s cubic-bezier(.34,1.2,.64,1) forwards}
+/* ✨ Entrance animation comes from web/reveal_assets.py — cards opt in with `rv-enter`. */
 .cat-card.flash{animation:catFlash .8s ease-out}
-@keyframes catIn{0%{opacity:0;transform:translateY(32px) scale(.93)}
-60%{opacity:1;transform:translateY(-5px) scale(1.015)}100%{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes catFlash{0%{box-shadow:0 0 0 0 rgba(229,9,20,.6)}100%{box-shadow:0 0 0 20px rgba(229,9,20,0)}}
 .cat-poster-wrap{position:relative;aspect-ratio:2/3;overflow:hidden;
 background:linear-gradient(90deg,var(--bg3) 0,#2b2b3a 50%,var(--bg3) 100%);
@@ -491,7 +488,7 @@ vertical-align:middle;transition:background .2s,color .2s}
 .cat-panel{display:none;animation:catPanelIn .42s cubic-bezier(.25,.8,.25,1) both}
 .cat-panel.active{display:block}
 @keyframes catPanelIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
-.cat-panel .cat-card.enter{opacity:1!important}
+.cat-panel .cat-card.rv-enter{opacity:1!important}
 
 /* 🎬 Video tab */
 /* 🎬 Videos tab: the grid + card design now come from `web.web_assets.VIDEO_CARD_CSS`
@@ -503,8 +500,7 @@ padding:34px 18px;text-align:center;color:var(--mut);font-size:13px;font-weight:
 .cat-galgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
 @media(min-width:700px){.cat-galgrid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}}
 .cat-galitem{position:relative;aspect-ratio:1;border-radius:11px;overflow:hidden;border:1px solid var(--line);
-background:var(--bg3);cursor:zoom-in;opacity:0;transform:scale(.94)}
-.cat-galitem.in{animation:catIn .48s cubic-bezier(.34,1.2,.64,1) forwards}
+background:var(--bg3);cursor:zoom-in}
 .cat-galitem img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .35s,transform .3s}
 .cat-galitem img.on{opacity:1}.cat-galitem:hover img{transform:scale(1.06)}
 .cat-galdel{position:absolute;top:7px;right:7px;background:rgba(160,8,8,.9);border:0;color:#fff;
@@ -582,12 +578,11 @@ border:1px dashed var(--line);border-radius:12px;padding:14px;margin-bottom:16px
 
 /* ♿ Not in v5: disable all animations for reduced-motion users */
 @media(prefers-reduced-motion:reduce){
-.cat-card,.cat-card.enter,.cat-card.enter.in,.cat-hero,.cat-modal,.cat-mcard,.cat-toast,
+.cat-card,.cat-card.rv-enter,.cat-card.rv-enter.in,.cat-hero,.cat-modal,.cat-mcard,.cat-toast,
 .cat-lightbox,.cat-lightbox img,.cat-gal img,.cat-poster,.cat-skel,.cat-poster-wrap,
-.cat-panel,.vcard,.vcard.enter,.vcard.enter.in,.cat-galitem,.cat-vrow,.cat-gthumb,.cat-tab,.cat-tab::after,
+.cat-panel,.vcard,.vcard.rv-enter,.vcard.rv-enter.in,.cat-galitem,.cat-vrow,.cat-gthumb,.cat-tab,.cat-tab::after,
 .cat-toast,.cat-tagpill{
 animation:none!important;transition:none!important;opacity:1!important;transform:none!important}
-.cat-card.enter{opacity:1!important}
 }
 """
 
@@ -633,7 +628,7 @@ function cardHTML(it){
     ? `<img class="cat-poster vm-img" ${ViewMode.imgAttrs(esc(src))} alt="" loading="lazy"
           onload="this.classList.add('on')" onerror="this.remove()">`
     : '<div class="cat-ph vm-ph vm-overlay">🖼️</div>';
-  return `<div class="cat-card enter vm-card" data-id="${id}" onclick="openDetail(this.dataset.id)">
+  return `<div class="cat-card rv-enter vm-card" data-id="${id}" onclick="openDetail(this.dataset.id)">
     <div class="cat-poster-wrap vm-poster">
       ${img}
       <div class="cat-badge vm-chip">${esc(catLabel(it.category))}</div>
@@ -650,28 +645,13 @@ function skeletons(){
 }
 function emptyHTML(){ return `<div class="cat-empty">${esc(CFG.empty)}<br><span style="font-size:12px">Try another keyword or category.</span></div>`; }
 
-/* ✨ staggered entrance — like v5's staggerCards, but reduced-motion aware */
-function reveal(grid){
-  const cards = Array.from(grid.querySelectorAll('.cat-card.enter'));
-  if(!cards.length) return;
-  if(!('IntersectionObserver' in window) || matchMedia('(prefers-reduced-motion: reduce)').matches){
-    cards.forEach(c=>c.classList.remove('enter')); return;
-  }
-  let seen = 0;
-  const obs = new IntersectionObserver(entries => entries.forEach(e => {
-    if(!e.isIntersecting) return;
-    const c = e.target, delay = Math.min(seen++, 10) * 0.07;
-    c.style.animationDelay = delay+'s';
-    c.classList.add('in');
-    setTimeout(()=>{ c.classList.remove('enter','in'); c.style.animationDelay=''; }, (0.55+delay)*1000);
-    obs.unobserve(c);
-  }), {threshold:.08});
-  cards.forEach(c=>obs.observe(c));
-  if(state.flash){
-    const el = grid.querySelector(`[data-id="${state.flash}"]`);
-    if(el) el.classList.add('flash');
-    state.flash = null;
-  }
+/* ✨ Staggered entrance comes from web/reveal_assets.py — one engine for /search,
+   /posts, /actors and the detail tabs. Only the save-flash is catalog-specific. */
+function flashSaved(grid){
+  if(!state.flash) return;
+  const el = grid.querySelector(`[data-id="${state.flash}"]`);
+  if(el) el.classList.add('flash');
+  state.flash = null;
 }
 function bump(){
   const el = $('#catCount'); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
@@ -699,7 +679,7 @@ async function load(reset){
     ViewMode.apply();   /* mode-text + data-src→src on the new cards, from one place */
     state.hasNext = !!d.has_next;
     $('#catCount').textContent = (d.total||0) + ' entries';
-    bump(); updatePg(); reveal(grid);
+    bump(); updatePg(); RevealCards.reveal(grid); flashSaved(grid);
   }catch(e){ grid.innerHTML = '<div class="cat-empty">⚠️ Could not load results. '+esc(e.message||e)+'</div>'; }
   finally{ if(my === state.req) search.classList.remove('loading'); }
 }
@@ -1078,27 +1058,18 @@ function switchTab(name, init){
   if(!['overview','videos','gallery'].includes(name)) name='overview';
   document.querySelectorAll('.cat-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
   document.querySelectorAll('.cat-panel').forEach(p=>p.classList.toggle('active',p.id==='cp-'+name));
-  if(name==='videos'){ stagger('#catVideos .vcard'); if(D.tagMedia && !mediaLoaded) loadMedia(0); }
-  if(name==='gallery') stagger('#catGallery .cat-galitem');
+  if(name==='videos'){ RevealCards.stagger('#catVideos .vcard'); if(D.tagMedia && !mediaLoaded) loadMedia(0); }
+  if(name==='gallery') RevealCards.stagger('#catGallery .cat-galitem');
   if(!init){
     const u=new URL(location.href); u.searchParams.set('tab',name);
     history.replaceState(null,'',u.pathname+u.search);
   }
 }
-function stagger(sel){
-  const els=Array.from(document.querySelectorAll(sel)).filter(e=>!e.classList.contains('in'));
-  const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
-  els.forEach((e,i)=>{
-    if(!reduce) e.style.animationDelay=(Math.min(i,12)*0.06)+'s';
-    e.classList.add('in');
-  });
-}
-
 /* ── 🏷️ v5's tag-driven Linked Media, served by fsv1's JSON API ── */
 /* 🎴 the same shared card as /search — markup/chips/size from web_assets.VCARD_* */
 function mediaCard(f){
   return vcardHTML({
-    CARD_CLASS:' enter', EXTRA_ATTRS:' data-label="1"',
+    CARD_CLASS:' rv-enter', EXTRA_ATTRS:' data-label="1"',
     FID:esc(f.file_id), RAW_FID:esc(f.file_id), NAME:esc(f.name),
     IMG_ATTRS:'src="'+esc(f.thumb)+'"',
     IMG_ERROR:"this.classList.add('hidden');this.closest('.vposter').classList.add('no-thumb')",
@@ -1148,7 +1119,7 @@ async function loadMedia(offset){
       const lbl=document.getElementById('catMediaPage');
       if(lbl) lbl.textContent='Page '+(Math.floor(mediaOffset/D.limit)+1);
     }
-    stagger('#catMediaResults .vcard');
+    RevealCards.stagger('#catMediaResults .vcard');
   }catch(e){ if(info) info.textContent='⚠️ Could not load results'; }
 }
 function mediaPage(step){
@@ -1162,7 +1133,7 @@ function mediaPage(step){
 function renderGallery(){
   const box=document.getElementById('catGallery'); if(!box) return;
   box.innerHTML=GALLERY.length ? GALLERY.map((src,i)=>
-      '<div class="cat-galitem in" data-idx="'+i+'" data-src="'+esc(src)+'" '
+      '<div class="cat-galitem rv-enter" data-idx="'+i+'" data-src="'+esc(src)+'" '
       +'onclick="openLight(this.dataset.src)">'
       +'<img src="'+esc(src)+'" alt="" loading="lazy" '
       +'onload="this.classList.add(\'on\')" onerror="this.remove()">'
@@ -1172,6 +1143,7 @@ function renderGallery(){
     : '<div class="cat-gempty">'+esc(D.galleryEmpty)+'</div>';
   const n=document.querySelector('.cat-tab[data-tab="gallery"] .cat-tab-n');
   if(n) n.textContent=GALLERY.length;
+  RevealCards.stagger('#catGallery .cat-galitem');
 }
 async function uploadGalleryFiles(input){
   const files=Array.from(input.files||[]); if(!files.length) return;
@@ -1403,7 +1375,7 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
                 if admin else ""
             )
             gal_html += (
-                f'<div class="cat-galitem" data-idx="{i}" data-src="{esc(u)}" '
+                f'<div class="cat-galitem rv-enter" data-idx="{i}" data-src="{esc(u)}" '
                 f'onclick="openLight(this.dataset.src)">'
                 f'<img src="{esc(u)}" alt="" loading="lazy" onerror="this.remove()">{del_btn}</div>'
             )
