@@ -22,12 +22,17 @@ server से raw HTML strings भेजती थी।
   `📸 Screenshots` (Post). v5 में tabs सिर्फ़ actor detail पर थे। Count badges,
   `?tab=` deep-link (Post `?tab=screenshots`), arrow-key nav, staggered panels,
   lightbox, **बिना reload** image delete/upload.
-* **🏷️ Tag-driven Videos** — v5 का `get_actor_search_results(name|tags)`: Videos
-  tab का main हिस्सा entry के **Search Tags** से Library में खोजकर आता है,
-  ऊपर search box में custom `q` टाइप करते ही tags ignore (बिल्कुल v5 जैसा)।
-  fsv1 की अपनी `$text` + regex-fallback pipeline को हर term पर चलाकर results
-  merge/dedupe/paginate करते हैं — कोई नया raw-regex layer नहीं। साथ में
-  manually attached `videos[]` भी अलग section में बने रहते हैं।
+* **🏷️ Tag-driven Videos — सिर्फ़ Actor पर** (`tagMedia` config flag) — v5 का
+  `get_actor_search_results(name|tags)`: Actor के Videos tab का दूसरा हिस्सा
+  **Search Tags** से Library में खोजकर आता है, ऊपर search box में custom `q`
+  टाइप करते ही tags ignore (बिल्कुल v5 जैसा)। fsv1 की अपनी `$text` +
+  regex-fallback pipeline को हर term पर चलाकर results merge/dedupe/paginate
+  करते हैं। **Post पर यह block बिल्कुल नहीं है** — वहाँ Videos tab में सिर्फ़
+  attached `videos[]` दिखते हैं (API भी `disabled` लौटाता है)।
+* **📐 Fixed grid** — `.cat-grid` (listing) + `.cat-vgrid` (Videos tab): 📱 mobile
+  **1 card/row**, tablet 2, 🖥️ desktop (≥1024px) **बिल्कुल 3 cards/row** —
+  `#catVideos` और `#catMediaResults` दोनों पर, Actor + Post दोनों kinds पर।
+  Search page के 1/2/3 pattern के साथ consistent; पुरानी 4-column rule हटाई।
 * **🖼️ Direct gallery upload** — v5 का `<input multiple>` form अब detail tab पर
   ही; JSON response + in-place render (v5 reload करता था), uploads Telegram पर
   एक-एक करके anti-flood.
@@ -73,6 +78,9 @@ CATALOGS = {
         "linkValueField": "https://…",
         "videoLabel": "🎬 Videos / Episodes",
         "videoHint": "जितने चाहें उतने episodes जोड़ें — Library picker से एक-एक करके चुनें",
+        "tagMedia": False,             # Post पर सिर्फ़ attached videos, कोई search-text results नहीं
+        "videosHeading": "🎬 Videos",
+        "videoEmptyHint": "Admin: ऊपर Add Videos से कितने भी videos जोड़ें।",
         "legacyLinksAsVideos": True,   # पुराने posts में `links` ही episodes थे
         "placeholder": "Movies, series, posts खोजें…",
         "empty": "🗂️ अभी कोई Post नहीं है।",
@@ -107,6 +115,9 @@ CATALOGS = {
         "linkValueField": "https://…",
         "videoLabel": "🎬 Videos (Filmography)",
         "videoHint": "इस नाम की Library files जोड़ें — कितनी भी videos attach कर सकते हैं",
+        "tagMedia": True,              # Actor: Search Tags से Library videos (v5 जैसा)
+        "videosHeading": "📌 Attached Videos",
+        "videoEmptyHint": "नीचे Search Tags से Library की videos अपने आप दिखेंगी।",
         "legacyLinksAsVideos": False,  # actors के `links` URLs हैं, videos नहीं
         "placeholder": "Actor, app, website खोजें…",
         "empty": "📇 अभी कोई Profile नहीं है।",
@@ -256,9 +267,9 @@ border-radius:50%;animation:catSpin .65s linear infinite}
 padding:11px 12px;font:700 12px inherit;font-family:inherit;cursor:pointer;outline:none}
 .cat-select:focus{border-color:var(--red)}
 /* ── grid + cards ── */
-.cat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-@media(min-width:700px){.cat-grid{grid-template-columns:repeat(3,1fr);gap:16px}}
-@media(min-width:1100px){.cat-grid{grid-template-columns:repeat(4,1fr);gap:18px}}
+.cat-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+@media(min-width:620px){.cat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
+@media(min-width:1024px){.cat-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}
 .cat-grid.mode-text{display:flex;flex-direction:column;gap:8px}
 .cat-card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;
 cursor:pointer;position:relative;transition:transform .28s cubic-bezier(.25,.8,.25,1),border-color .22s,box-shadow .28s}
@@ -391,8 +402,6 @@ font-size:11px;font-weight:800;color:var(--mut)}
 font-size:12px;font-weight:800;color:var(--txt);transition:transform .16s,border-color .16s,color .16s}
 .cat-links a:hover{transform:translateY(-2px);border-color:var(--red);color:var(--red)}
 .cat-sec-title{font-size:15px;font-weight:900;margin:26px 0 14px;letter-spacing:.3px}
-.cat-gal{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-@media(min-width:700px){.cat-gal{grid-template-columns:repeat(4,1fr)}}
 .cat-gal img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:10px;border:1px solid var(--line);
 cursor:zoom-in;opacity:0;transition:opacity .35s,transform .25s}
 .cat-gal img.on{opacity:1}.cat-gal img:hover{transform:scale(1.03)}
@@ -431,7 +440,10 @@ vertical-align:middle;transition:background .2s,color .2s}
 .cat-panel .cat-card.enter{opacity:1!important}
 
 /* 🎬 Video tab */
-.cat-vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+.cat-vgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+@media(min-width:620px){.cat-vgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
+@media(min-width:1024px){.cat-vgrid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}
+.cat-vgrid>.cat-vempty{grid-column:1/-1}
 .cat-vcard{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;
 overflow:hidden;text-decoration:none;color:var(--txt);position:relative;opacity:0;
 transform:translateY(18px) scale(.97);transition:transform .28s,border-color .22s,box-shadow .28s}
@@ -1034,7 +1046,7 @@ function switchTab(name, init){
   if(!['overview','videos','gallery'].includes(name)) name='overview';
   document.querySelectorAll('.cat-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
   document.querySelectorAll('.cat-panel').forEach(p=>p.classList.toggle('active',p.id==='cp-'+name));
-  if(name==='videos'){ stagger('#catVideos .cat-vcard'); if(!mediaLoaded) loadMedia(0); }
+  if(name==='videos'){ stagger('#catVideos .cat-vcard'); if(D.tagMedia && !mediaLoaded) loadMedia(0); }
   if(name==='gallery') stagger('#catGallery .cat-galitem');
   if(!init){
     const u=new URL(location.href); u.searchParams.set('tab',name);
@@ -1061,6 +1073,7 @@ function mediaCard(f){
     + '<div class="cat-vsub">'+esc(meta||'▶ Watch / Stream')+'</div></div></a>';
 }
 async function loadMedia(offset){
+  if(!D.tagMedia) return;                 /* Post पर search-text results नहीं चाहिए */
   const box=document.getElementById('catMediaResults'); if(!box) return;
   mediaLoaded=true; mediaOffset=Math.max(0,offset||0);
   const q=(document.getElementById('catMediaQ')||{}).value||'';
@@ -1097,6 +1110,7 @@ async function loadMedia(offset){
   }catch(e){ if(info) info.textContent='⚠️ Load नहीं हुआ'; }
 }
 function mediaPage(step){
+  if(!D.tagMedia) return;
   const next=mediaOffset+step*D.limit;
   if(next<0 || (step>0&&!mediaNext)) return;
   loadMedia(next);
@@ -1275,6 +1289,8 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
     body = esc(str(item.get("body") or ""))
     item_id = esc(str(item.get("id") or ""))
     gallery_tab = esc(cfg["galleryTab"])
+    videos_heading = esc(cfg["videosHeading"])
+    video_empty_hint = esc(cfg["videoEmptyHint"])
 
     links_html = "".join(
         f'<a href="{esc(str(l.get("value") or ""))}" target="_blank" rel="noopener noreferrer">'
@@ -1301,15 +1317,33 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
             )
     else:
         vids_html = (
-            '<div class="cat-vempty">📌 कोई video manually attach नहीं है।'
-            '<br><span style="font-size:11px;font-weight:600">नीचे Search Tags से Library की videos अपने आप दिखेंगी।</span></div>'
+            '<div class="cat-vempty">🎬 अभी कोई video attach नहीं है।'
+            f'<br><span style="font-size:11px;font-weight:600">{video_empty_hint}</span></div>'
         )
 
     # 🏷️ v5 जैसा: Videos tab का मुख्य हिस्सा "Search Tags" से आता है
     tags = [str(t).strip() for t in (item.get("tags") or []) if str(t).strip()][:12]
-    tag_pills = "".join(f'<span class="cat-tagpill">🏷️ <b>#{esc(t)}</b></span>' for t in tags)
-    if not tag_pills:
-        tag_pills = '<span class="cat-tagpill">🏷️ कोई Search Tag नहीं — <b>Title</b> से खोजेंगे</span>'
+    tag_section = ""
+    if cfg["tagMedia"]:
+        tag_pills = "".join(f'<span class="cat-tagpill">🏷️ <b>#{esc(t)}</b></span>' for t in tags)
+        if not tag_pills:
+            tag_pills = '<span class="cat-tagpill">🏷️ कोई Search Tag नहीं — <b>Title</b> से खोजेंगे</span>'
+        tag_section = f"""
+    <div class="cat-subhead"><h3>🏷️ Library से — Search Tags के आधार पर</h3>
+      <span class="cat-hint">जैसे v5 का actor Linked Media tab</span></div>
+    <div class="cat-tagline" id="catTagPills">{tag_pills}</div>
+    <div class="cat-mediabar">
+      <div class="cat-search"><input type="search" id="catMediaQ" autocomplete="off"
+        placeholder="Search inside this profile… (खाली = Tags से auto)"></div>
+      <button class="cat-btn ghost" style="padding:9px 14px;font-size:11px" onclick="loadMedia(0)">🔍 Search</button>
+    </div>
+    <div class="cat-mediainfo" id="catMediaInfo">Videos tab खोलते ही Tags से search…</div>
+    <div class="cat-vgrid" id="catMediaResults"></div>
+    <div class="cat-mediapg" id="catMediaPg" style="display:none">
+      <button id="catMediaPrev" onclick="mediaPage(-1)">◀ Prev</button>
+      <span id="catMediaPage">Page 1</span>
+      <button id="catMediaNext" onclick="mediaPage(1)">Next ▶</button>
+    </div>"""
 
     # 🖼️ / 📸 tab
     gallery = [image_src(g) for g in (item.get("gallery") or [])[:12]]
@@ -1386,24 +1420,9 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
   </section>
 
   <section class="cat-panel" id="cp-videos">
-    <div class="cat-subhead"><h3>📌 Attached Videos</h3><span class="cat-hint">Editor से जोड़े गए · {len(videos)}</span></div>
+    <div class="cat-subhead"><h3>{videos_heading}</h3><span class="cat-hint">Editor से जोड़े गए · {len(videos)}</span></div>
     <div class="cat-vgrid" id="catVideos">{vids_html}</div>
-
-    <div class="cat-subhead"><h3>🏷️ Library से — Search Tags के आधार पर</h3>
-      <span class="cat-hint">जैसे v5 का actor Linked Media tab</span></div>
-    <div class="cat-tagline" id="catTagPills">{tag_pills}</div>
-    <div class="cat-mediabar">
-      <div class="cat-search"><input type="search" id="catMediaQ" autocomplete="off"
-        placeholder="Search inside this profile… (खाली = Tags से auto)"></div>
-      <button class="cat-btn ghost" style="padding:9px 14px;font-size:11px" onclick="loadMedia(0)">🔍 Search</button>
-    </div>
-    <div class="cat-mediainfo" id="catMediaInfo">Videos tab खोलते ही Tags से search…</div>
-    <div class="cat-vgrid" id="catMediaResults"></div>
-    <div class="cat-mediapg" id="catMediaPg" style="display:none">
-      <button id="catMediaPrev" onclick="mediaPage(-1)">◀ Prev</button>
-      <span id="catMediaPage">Page 1</span>
-      <button id="catMediaNext" onclick="mediaPage(1)">Next ▶</button>
-    </div>
+    {tag_section}
   </section>
 
   <section class="cat-panel" id="cp-gallery">
@@ -1430,6 +1449,7 @@ def build_detail_page(kind: str, role: str, tg_id: int, item: dict):
         "galleryTab": cfg["galleryTab"],
         "galleryEmpty": cfg["galleryEmpty"],
         "tabAlias": cfg["tabAlias"],
+        "tagMedia": cfg["tagMedia"],
         "limit": 12,
     }
     js = DETAIL_JS.replace("__DETAIL_CFG__", json.dumps(detail_cfg, ensure_ascii=False))

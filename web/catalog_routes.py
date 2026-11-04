@@ -13,7 +13,7 @@ v5 में इसके लिए अलग `post_routes.py` (publish/update/d
 | GET | `/api/catalog/{kind}` | list (`q`, `category`, `offset`, `limit`) या `?id=` single |
 | POST | `/api/catalog/{kind}/save` | create + edit — **एक ही endpoint** (admin) |
 | POST | `/api/catalog/{kind}/delete` | delete (admin) |
-| GET | `/api/catalog/{kind}/media` | **Search Tags** से Library videos (`q` override, `offset`/`limit`) — v5 actor Linked Media |
+| GET | `/api/catalog/{kind}/media` | **सिर्फ़ Actor**: **Search Tags** से Library videos (`q` override, `offset`/`limit`) — v5 actor Linked Media. Post पर `source: disabled` (सिर्फ़ attached videos) |
 | POST | `/api/catalog/{kind}/gallery_upload` | Tab से सीधे multiple photos/screenshots (admin, serial Telegram upload) |
 | POST | `/api/catalog/{kind}/gallery_delete` | एक image बिना reload हटाएँ (admin) |
 | POST | `/api/catalog/upload` | image → Telegram → `TG_ID:` (admin) |
@@ -347,6 +347,10 @@ async def api_media(req):
     kind = _kind(req)
     if not kind:
         return _json({"results": [], "terms": [], "total": 0}, 404)
+    # 📝 Post पर search-text results नहीं चाहिए — सिर्फ़ attached videos।
+    if not CATALOGS[kind].get("tagMedia"):
+        return _json({"results": [], "terms": [], "total": 0,
+                      "source": "disabled", "offset": 0, "next_offset": ""})
     item = await store.get_item(kind, _clean_id(req.query.get("id")))
     if not item:
         return _json({"results": [], "terms": [], "total": 0}, 404)
