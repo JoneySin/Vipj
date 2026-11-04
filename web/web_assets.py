@@ -87,30 +87,30 @@ padding:5px 10px;border-radius:20px;white-space:nowrap}
 .tbtn{background:transparent;border:1px solid var(--line);color:var(--txt);border-radius:6px;
 padding:7px 13px;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit}
 .tbtn:hover{border-color:var(--red)}
-.tbtn.red{background:var(--red);border-color:var(--red);color:#fff}
 .search-zone{padding:18px 4% 14px;background:var(--bg);border-bottom:1px solid var(--line)}
-.srow{display:flex;gap:10px;max-width:760px;position:relative}
-.sinput{flex:1;min-width:0;background:var(--bg2);border:1.5px solid var(--line);
-border-radius:10px;padding:13px 16px;color:var(--txt);font-size:15px;font-weight:600;
-font-family:inherit;outline:none;transition:border-color .18s}
+/* 🖥️ desktop: search input + दोनों filter dropdowns एक ही लाइन में */
+.srow{display:flex;gap:10px;max-width:1100px;align-items:center;flex-wrap:wrap}
+.qwrap{position:relative;flex:1 1 320px;min-width:0}
+.sinput{display:block;width:100%;min-width:0;box-sizing:border-box;background:var(--bg2);
+border:1.5px solid var(--line);border-radius:10px;padding:13px 16px;color:var(--txt);
+font-size:15px;font-weight:600;font-family:inherit;outline:none;transition:border-color .18s}
 .sinput:focus{border-color:var(--red)}
 .spin{display:none;position:absolute;right:16px;top:50%;transform:translateY(-50%);
 width:17px;height:17px;border:2px solid var(--line);border-top-color:var(--red);
 border-radius:50%;animation:spin .6s linear infinite}
 .srow.loading .spin{display:block}
 @keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
-/* ── filter dropdowns (search bar के नीचे) ── */
-.filters{margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-.fwrap{position:relative;display:inline-flex;align-items:center;gap:7px}
+/* ── filter dropdowns: desktop पर search bar के साथ, mobile पर ठीक नीचे एक लाइन ── */
+.filters{display:flex;gap:10px;align-items:center;flex:0 0 auto}
+.fwrap{position:relative;display:inline-flex;align-items:center;gap:7px;min-width:0}
 .flabel{font-size:10px;color:var(--mut);font-weight:900;letter-spacing:.7px;text-transform:uppercase}
 .fsel{-webkit-appearance:none;appearance:none;background:var(--bg3);border:1px solid var(--line);
 color:var(--txt);border-radius:8px;padding:9px 30px 9px 12px;font-family:inherit;
-font-size:12px;font-weight:800;cursor:pointer;min-width:134px;outline:none}
+font-size:12px;font-weight:800;cursor:pointer;min-width:120px;outline:none}
 .fsel:hover,.fsel:focus{border-color:var(--red)}
 .fwrap::after{content:'▾';position:absolute;right:11px;top:50%;transform:translateY(-50%);
 pointer-events:none;color:var(--mut);font-size:11px;font-weight:900}
 .main{padding:18px 4% 60px;max-width:1700px;margin:0 auto}
-.meta{font-size:13px;color:var(--mut);font-weight:700;margin-bottom:14px}
 /* 📱 mobile: 1 video/row  ·  📟 tablet: 2  ·  🖥️ desktop: 3 (fix, बड़ी screen पर भी 3 ही) */
 .grid{display:grid;grid-template-columns:1fr;gap:12px}
 @media(min-width:600px){.grid{grid-template-columns:repeat(2,1fr);gap:14px}}
@@ -209,8 +209,15 @@ padding:15px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;m
 font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 .links a:hover{color:var(--red)}
 .hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+/* 📱 mobile/tablet: search bar अपनी लाइन पर, दोनों filter buttons नीचे एक ही लाइन में */
+@media(max-width:760px){
+.qwrap{flex:1 1 100%}
+.filters{flex:1 1 100%}
+.fwrap{flex:1 1 0}
+.fsel{flex:1;width:100%;min-width:0}
+}
 @media(max-width:520px){.spin{display:none!important}
-.auth-card{padding:24px}.grid{gap:8px}.fwrap{width:100%}.fsel{flex:1}}
+.auth-card{padding:24px}.grid{gap:8px}}
 """
 
 
@@ -340,8 +347,8 @@ def identity_badge(tg_id: int, role: str) -> str:
 
 
 def nav_shell(tg_id: int, role: str, active_tab: str = "") -> str:
-    """v5 जैसा sidebar + topbar. Sign Out sidebar footer में (और पुराना
-    topbar वाला red Sign Out button भी 'जैसा है वैसा' बना रहता है)।"""
+    """v5 जैसा sidebar + topbar. Sign Out सिर्फ़ sidebar footer में है —
+    main/topbar पर दोबारा नहीं दिखता।"""
     links = "".join(
         f'<a href="{href}" class="sb-link {"active" if active_tab == tab else ""}">{label}</a>'
         for tab, href, label in NAV_MENU
@@ -367,7 +374,6 @@ def nav_shell(tg_id: int, role: str, active_tab: str = "") -> str:
           f'<span class="tbadge">{badge}</span>'
           '<div class="topbar-right">'
             '<button class="tbtn" onclick="toggleTheme()">Theme</button>'
-            '<a class="tbtn red" href="/logout">Sign Out</a>'
           '</div>'
         '</div>'
     )
@@ -427,30 +433,31 @@ def form_page(title: str, inner: str, err: str = "", msg: str = "", heading: str
 # ─────────────────────────────────────────────────────────────
 SEARCH_BODY = """<div class="search-zone">
   <div class="srow" id="srow">
-    <input class="sinput" id="q" type="search" placeholder="Movie / series / file name खोजें..." autocomplete="off">
-    <div class="spin"></div>
-  </div>
-  <div class="filters">
-    <div class="fwrap">
-      <span class="flabel">Mode</span>
-      <select class="fsel" id="modeSel" onchange="setMode(this.value)">
-        <option value="poster">🖼️ Poster</option>
-        <option value="text">📄 Text</option>
-      </select>
+    <div class="qwrap">
+      <input class="sinput" id="q" type="search" placeholder="Movie / series / file name खोजें..." autocomplete="off">
+      <div class="spin"></div>
     </div>
-    <div class="fwrap">
-      <span class="flabel">Filter</span>
-      <select class="fsel" id="groupSel" onchange="setGroup(this.value)">
-        <option value="all">All</option>
-        <option value="group">Group</option>
-        <option value="ungroup">UnGroup</option>
-      </select>
+    <div class="filters">
+      <div class="fwrap">
+        <span class="flabel">Mode</span>
+        <select class="fsel" id="modeSel" onchange="setMode(this.value)">
+          <option value="poster">🖼️ Poster</option>
+          <option value="text">📄 Text</option>
+        </select>
+      </div>
+      <div class="fwrap">
+        <span class="flabel">Filter</span>
+        <select class="fsel" id="groupSel" onchange="setGroup(this.value)">
+          <option value="all">All</option>
+          <option value="group">Group</option>
+          <option value="ungroup">UnGroup</option>
+        </select>
+      </div>
     </div>
   </div>
 </div>
 
 <div class="main">
-  <div class="meta" id="meta">नई फाइलें लोड हो रही हैं…</div>
   <div class="grid" id="grid"></div>
   <button class="more" id="more" onclick="load(false)">और दिखाओ ⬇</button>
 </div>
@@ -555,10 +562,8 @@ async function load(reset){
     hasMore=!!d.next_offset;
     offset=hasMore?Number(d.next_offset):0;
     $('#more').classList.toggle('show',hasMore);
-    const gtag=groupMode==='group'?' · Group':groupMode==='ungroup'?' · UnGroup':'';
-    $('#meta').innerHTML=curQ
-      ? `<b>"${esc(curQ)}"</b> — ${esc(d.total||list.length)} results${gtag}`
-      : `🆕 Recently Added${gtag}__STATS_LINK__`;
+    // ℹ️ "Recently Added / Database Stats" वाली meta लाइन हटा दी गई —
+    //    गिनती सिर्फ़ sidebar के "Database Stats" पेज पर दिखती है।
     if(!$('#grid').children.length){
       $('#grid').innerHTML=`<div class="state">🔍 कोई फाइल नहीं मिली।<br>दूसरा नाम / keyword ट्राय करें।</div>`;
     }
@@ -616,15 +621,13 @@ load(true);
 def search_page(tg_id: int, role: str):
     """v5 जैसा sidebar वाला app shell + search body.
 
-    "🆕 Recently Added — N files" वाला count अब यहाँ नहीं दिखता; v5 की तरह
-    वही गिनती `/stats` (Database Stats) पेज पर है, उसका लिंक meta में रहता है।
+    * Sign Out सिर्फ़ sidebar footer में (topbar पर नहीं)।
+    * Mode/Filter dropdowns desktop पर search bar के साथ एक लाइन में,
+      mobile पर उसके ठीक नीचे एक ही लाइन में।
+    * "Recently Added / Database Stats" वाली meta लाइन हटा दी गई —
+      गिनती सिर्फ़ `/stats` (Database Stats) पेज पर।
     """
-    stats_link = (
-        ' · <a href="/stats" style="color:var(--red)">Database Stats →</a>'
-        if role == "admin" else ""
-    )
     return app_page(
-        "FAST FINDER — Search Files",
-        SEARCH_BODY.replace("__STATS_LINK__", stats_link),
+        "FAST FINDER — Search Files", SEARCH_BODY,
         tg_id=tg_id, role=role, active_tab="dash",
     )
