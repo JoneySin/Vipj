@@ -9,6 +9,10 @@ Profile Settings / Sign Out), stats cards और profile settings, पर fsv1 �
 `/api/stream` flow और यही signed watch/download actions इस्तेमाल करते हैं।
 JS एक IIFE में `window.play/closePlayer/copyLink` expose करता है, इसलिए हर
 page के अपने `$` / `esc` / `const` से कोई नाम-टकराव नहीं होता।
+
+🎴 `VIDEO_CARD_CSS` एक **shared video card** है — `/search` की grid और
+Post/Actor Videos tabs बिल्कुल वही `.vcard`/`.vgrid` markup वाली cards,
+वही 1/2/3 responsive grid और नाम के नीचे वही compact padding दिखाती हैं।
 """
 
 import html
@@ -71,6 +75,77 @@ def is_secure_request(req):
 
 
 # ─────────────────────────────────────────────────────────────
+VIDEO_CARD_CSS = r"""
+/* ─────────────────────────────────────────────────────────────
+   ▶ SHARED VIDEO CARD — /search + /post/<id> + /actor/<id> Videos tabs
+   सब एक ही `.vcard` markup, एक ही `.vgrid` (📱 1 / 📟 2 / 🖥️ 3) और
+   नाम के नीचे minimum padding इस्तेमाल करते हैं।
+   ───────────────────────────────────────────────────────────── */
+.vgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+@media(min-width:620px){.vgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
+@media(min-width:1024px){.vgrid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}
+.vgrid>.vempty,.vgrid>.state,.vgrid>.cat-vempty{grid-column:1/-1}
+.vcard{display:block;position:relative;overflow:hidden;background:var(--card);
+border:1px solid var(--line);border-radius:10px;color:var(--txt);cursor:pointer;
+text-decoration:none;transition:transform .22s,border-color .22s,box-shadow .28s}
+.vcard:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+@media(hover:hover){.vcard:hover{transform:translateY(-4px);border-color:rgba(229,9,20,.65);
+box-shadow:0 14px 34px rgba(0,0,0,.45)}}
+.vcard.enter{opacity:0}
+.vcard.enter.in{animation:vIn .48s cubic-bezier(.34,1.2,.64,1) forwards}
+@keyframes vIn{0%{opacity:0;transform:translateY(18px) scale(.97)}100%{opacity:1;transform:none}}
+@keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.vposter{position:relative;aspect-ratio:16/9;overflow:hidden;
+background:linear-gradient(90deg,var(--bg3) 0,#2b2b3a 50%,var(--bg3) 100%);
+background-size:200% 100%;animation:sh 1.5s infinite linear}
+.vposter.no-thumb{animation:none;background:none}
+.vimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;
+transition:opacity .3s,transform .35s}
+.vimg.on{opacity:1}.vimg.hidden{display:none}
+.vcard:hover .vimg.on{transform:scale(1.05)}
+.vph{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+flex-direction:column;gap:4px;color:var(--mut);font-size:11px;font-weight:800;
+letter-spacing:1px;background:linear-gradient(135deg,#1b1b28,#101018)}
+.vposter.no-thumb .vph{display:flex}
+.vph b{font-size:30px;color:var(--red)}
+.vchips{position:absolute;top:0;left:0;right:0;z-index:2;display:flex;gap:5px;
+padding:7px;flex-wrap:wrap;pointer-events:none}
+.vtag{background:rgba(0,0,0,.78);backdrop-filter:blur(6px);color:#fff;border-radius:5px;
+padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255,.14)}
+.vtag.gold{color:var(--gold);border-color:rgba(255,209,102,.4)}
+.vtag.blue{color:#93c5fd;border-color:rgba(147,197,253,.35)}
+.vsize{position:absolute;right:7px;bottom:7px;z-index:2;pointer-events:none;
+background:rgba(0,0,0,.78);backdrop-filter:blur(6px);color:#fff;border-radius:5px;
+padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255,.14)}
+.vplay{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;
+font-size:30px;background:linear-gradient(transparent,rgba(0,0,0,.5));
+opacity:0;transition:opacity .2s;pointer-events:none}
+.vcard:hover .vplay{opacity:1}
+/* ✅ नाम के नीचे का extra space हटाया — सिर्फ़ उतनी ही padding जितनी ज़रूरी */
+.vbody{padding:8px 11px 9px}
+.vtitle{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+font-size:13px;font-weight:700;line-height:1.35;cursor:pointer;transition:color .18s}
+.vcard:hover .vtitle{color:var(--red)}
+.vsub{font-size:10px;color:var(--mut);font-weight:700;margin-top:3px;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.state{grid-column:1/-1;text-align:center;padding:70px 20px;color:var(--mut);
+font-weight:600;line-height:1.7}
+/* Text mode: सिर्फ़ नाम + meta वाली कॉम्पैक्ट लिस्ट, कोई thumbnail नहीं */
+.vgrid.mode-text{display:block}
+.vgrid.mode-text .vcard{display:flex;align-items:center;gap:6px;padding:8px 11px;
+margin-bottom:8px;border-radius:8px}
+.vgrid.mode-text .vposter{display:none}
+.vgrid.mode-text .vbody{display:flex;align-items:center;gap:10px;padding:0;flex:1;min-width:0}
+.vgrid.mode-text .vtitle{display:block;flex:1;min-width:0;white-space:nowrap;overflow:hidden;
+text-overflow:ellipsis;-webkit-line-clamp:1}
+.vgrid.mode-text .vsub{display:none}
+@media(prefers-reduced-motion:reduce){
+.vcard,.vcard.enter,.vcard.enter.in,.vposter{animation:none!important;
+transition:none!important;opacity:1!important;transform:none!important}
+}
+"""
+
+
 # 🎨 SHARED CSS
 # ─────────────────────────────────────────────────────────────
 SITE_CSS = """
@@ -88,8 +163,6 @@ box-shadow:0 4px 20px rgba(0,0,0,.35)}
 .logo{font-size:19px;font-weight:900;letter-spacing:1px;color:var(--red);display:flex;
 align-items:center;gap:8px;flex:1}
 .nfi{background:var(--red);color:#fff;border-radius:4px;padding:2px 8px;font-size:17px}
-.tbadge{font-size:12px;color:var(--mut);background:var(--bg3);border:1px solid var(--line);
-padding:5px 10px;border-radius:20px;white-space:nowrap}
 .tbtn{background:transparent;border:1px solid var(--line);color:var(--txt);border-radius:6px;
 padding:7px 13px;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit}
 .tbtn:hover{border-color:var(--red)}
@@ -109,7 +182,6 @@ border-radius:50%;animation:spin .6s linear infinite}
 /* ── filter dropdowns: desktop पर search bar के साथ, mobile पर ठीक नीचे एक लाइन ── */
 .filters{display:flex;gap:10px;align-items:center;flex:0 0 auto}
 .fwrap{position:relative;display:inline-flex;align-items:center;gap:7px;min-width:0}
-.flabel{font-size:10px;color:var(--mut);font-weight:900;letter-spacing:.7px;text-transform:uppercase}
 .fsel{-webkit-appearance:none;appearance:none;background:var(--bg3);border:1px solid var(--line);
 color:var(--txt);border-radius:8px;padding:9px 30px 9px 12px;font-family:inherit;
 font-size:12px;font-weight:800;cursor:pointer;min-width:120px;outline:none}
@@ -117,57 +189,6 @@ font-size:12px;font-weight:800;cursor:pointer;min-width:120px;outline:none}
 .fwrap::after{content:'▾';position:absolute;right:11px;top:50%;transform:translateY(-50%);
 pointer-events:none;color:var(--mut);font-size:11px;font-weight:900}
 .main{padding:18px 4% 60px;max-width:1700px;margin:0 auto}
-/* 📱 mobile: 1 video/row  ·  📟 tablet: 2  ·  🖥️ desktop: 3 (fix, बड़ी screen पर भी 3 ही) */
-.grid{display:grid;grid-template-columns:1fr;gap:12px}
-@media(min-width:600px){.grid{grid-template-columns:repeat(2,1fr);gap:14px}}
-@media(min-width:1024px){.grid{grid-template-columns:repeat(3,1fr);gap:18px}}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
-overflow:hidden;transition:transform .2s,border-color .2s}
-@media(hover:hover){.card:hover{transform:translateY(-3px);border-color:rgba(229,9,20,.6)}}
-.poster{position:relative;aspect-ratio:16/9;background:linear-gradient(90deg,var(--bg3) 0,#2b2b3a 50%,var(--bg3) 100%);
-background-size:200% 100%;animation:sh 1.5s infinite linear;overflow:hidden}
-@keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
-.poster img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
-opacity:0;transition:opacity .3s}
-.poster img.on{opacity:1}
-.poster img.hidden{display:none}
-.ph{display:none;position:absolute;inset:0;align-items:center;justify-content:center;
-flex-direction:column;gap:4px;color:var(--mut);font-size:11px;font-weight:800;
-letter-spacing:1px;background:linear-gradient(135deg,#1b1b28,#101018)}
-.poster.no-thumb .ph{display:flex}
-.poster.no-thumb{animation:none;background:none}
-.ph b{font-size:30px;color:var(--red)}
-.chips{position:absolute;top:0;left:0;right:0;display:flex;gap:5px;padding:7px;
-flex-wrap:wrap;pointer-events:none}
-.tg{background:rgba(0,0,0,.78);backdrop-filter:blur(6px);color:#fff;border-radius:5px;
-padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255,.14)}
-.tg.gold{color:var(--gold);border-color:rgba(255,209,102,.4)}
-.tg.blue{color:#93c5fd;border-color:rgba(147,197,253,.35)}
-.body{padding:10px 11px 13px}
-.fname{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
-font-size:13px;font-weight:700;line-height:1.45;cursor:pointer;min-height:38px;
-transition:color .18s}
-.fname:hover{color:var(--red)}
-.size-tag{position:absolute;right:7px;bottom:7px;z-index:2;pointer-events:none;
-background:rgba(0,0,0,.78);backdrop-filter:blur(6px);color:#fff;border-radius:5px;
-padding:3px 7px;font-size:10px;font-weight:800;border:1px solid rgba(255,255,255,.14)}
-.tinfo{display:none;align-items:center;gap:5px;flex-shrink:0}
-.tsize{background:rgba(229,9,20,.14);color:var(--red);border:1px solid rgba(229,9,20,.35);
-border-radius:5px;padding:3px 7px;font-size:10px;font-weight:800;white-space:nowrap}
-/* Text mode: सिर्फ़ नाम + meta वाली कॉम्पैक्ट लिस्ट, कोई thumbnail नहीं */
-.grid.mode-text{display:block}
-.grid.mode-text .card{display:flex;align-items:center;gap:6px;padding:9px 11px;
-margin-bottom:8px;border-radius:8px}
-.grid.mode-text .poster{display:none}
-.grid.mode-text .body{display:flex;align-items:center;justify-content:space-between;
-gap:10px;padding:0;flex:1;min-width:0}
-.grid.mode-text .fname{display:block;flex:1;min-width:0;min-height:0;
-white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:1}
-.grid.mode-text .tinfo{display:flex}
-.grid.mode-text .tg{font-size:9px;padding:2px 5px}
-@media(max-width:599px){.grid.mode-text .tinfo .tg{display:none}}
-.state{grid-column:1/-1;text-align:center;padding:70px 20px;color:var(--mut);
-font-weight:600;line-height:1.7}
 .more{display:none;margin:28px auto 0;padding:11px 30px;border-radius:8px;
 background:var(--bg3);border:1px solid var(--line);color:var(--txt);font-weight:800;
 cursor:pointer;font-family:inherit}
@@ -223,16 +244,20 @@ font-weight:700;color:var(--mut);gap:10px;flex-wrap:wrap}
 .fsel{flex:1;width:100%;min-width:0}
 }
 @media(max-width:520px){.spin{display:none!important}
-.auth-card{padding:24px}.grid{gap:8px}}
+.auth-card{padding:24px}.vgrid{gap:8px}}
+
 """
+
+SITE_CSS += VIDEO_CARD_CSS
+
 
 
 
 # ─────────────────────────────────────────────────────────────
 # 🧭 APP SHELL — JoneySin/v5 (web/web_assets.py) जैसा sidebar
 #    Home · Database Stats · Profile Settings + footer में Sign Out.
-#    "#<tg_id> · ADMIN" identity भी v5 की तरह sidebar header + Profile
-#    Settings में दिखती है (topbar वाला badge "जैसा है वैसा" बना रहा)।
+#    Identity badge अब सिर्फ़ Profile Settings में — desktop topbar/
+#    sidebar में "#<tg_id> · ADMIN" नहीं दिखता।
 # ─────────────────────────────────────────────────────────────
 APP_CSS = """
 /* ── v5-style sidebar / app shell ── */
@@ -327,7 +352,7 @@ border:1px solid var(--line);border-radius:8px;padding:12px 14px}
 font-weight:800;font-size:13px;cursor:pointer;font-family:inherit}
 .prof-save:hover{background:var(--red2)}
 @media(max-width:520px){.stat-grid{grid-template-columns:1fr}.stat-hero-num{font-size:38px}
-.scard{padding:20px}.tbadge{display:none}}
+.scard{padding:20px}}
 """
 
 # Theme + sidebar — सभी logged-in pages पर एक ही script (v5 की तरह shared head)
@@ -362,14 +387,15 @@ def nav_shell(tg_id: int, role: str, active_tab: str = "") -> str:
         for tab, href, label in NAV_MENU
         if role == "admin" or tab != "stats"      # Database Stats admin-only (v5)
     )
-    badge = identity_badge(tg_id, role)
+    # ℹ️ desktop topbar से "#<tg_id> · ADMIN" badge हटा दिया गया — identity
+    #    अब सिर्फ़ Profile Settings पर दिखती है (sidebar में भी ID नहीं)।
     role_txt = "ADMIN" if role == "admin" else "USER"
     return (
         '<div class="sidebar-overlay" id="sbOverlay" onclick="closeSidebar()"></div>'
         '<div class="sidebar" id="sidebar">'
           '<div class="sb-header"><div class="sb-logo"><span class="nfi">F</span> FAST FINDER</div>'
           '<button class="sb-close" onclick="closeSidebar()" aria-label="Close menu">&#10005;</button></div>'
-          f'<div class="sb-user"><span class="sb-uid">{badge}</span>'
+          f'<div class="sb-user"><span class="sb-uid">Account</span>'
           f'<span class="sb-role">{role_txt}</span></div>'
           f'<nav class="sb-nav"><div class="sb-section">Menu</div>{links}</nav>'
           '<div class="sb-footer"><a href="/logout" class="sb-logout">Sign Out</a></div>'
@@ -379,7 +405,6 @@ def nav_shell(tg_id: int, role: str, active_tab: str = "") -> str:
             '<span class="ham-line"></span><span class="ham-line"></span><span class="ham-line"></span>'
           '</button>'
           '<a class="logo" href="/search"><span class="nfi">F</span> FAST FINDER</a>'
-          f'<span class="tbadge">{badge}</span>'
           '<div class="topbar-right">'
             '<button class="tbtn" onclick="toggleTheme()">Theme</button>'
           '</div>'
@@ -516,15 +541,13 @@ SEARCH_BODY = """<div class="search-zone">
     </div>
     <div class="filters">
       <div class="fwrap">
-        <span class="flabel">Mode</span>
-        <select class="fsel" id="modeSel" onchange="setMode(this.value)">
+        <select class="fsel" id="modeSel" aria-label="Mode" title="Mode" onchange="setMode(this.value)">
           <option value="poster">🖼️ Poster</option>
           <option value="text">📄 Text</option>
         </select>
       </div>
       <div class="fwrap">
-        <span class="flabel">Filter</span>
-        <select class="fsel" id="groupSel" onchange="setGroup(this.value)">
+        <select class="fsel" id="groupSel" aria-label="Filter" title="Filter" onchange="setGroup(this.value)">
           <option value="all">All</option>
           <option value="group">Group</option>
           <option value="ungroup">UnGroup</option>
@@ -535,7 +558,7 @@ SEARCH_BODY = """<div class="search-zone">
 </div>
 
 <div class="main">
-  <div class="grid" id="grid"></div>
+  <div class="vgrid" id="grid"></div>
   <button class="more" id="more" onclick="load(false)">और दिखाओ ⬇</button>
 </div>
 
@@ -573,25 +596,25 @@ $('#q').addEventListener('input',()=>{clearTimeout(debounce);debounce=setTimeout
 
 function card(f){
   const fid=encodeURIComponent(f.file_id);
-  const dur=f.duration?`<span class="tg gold">${esc(f.duration)}</span>`:'';
-  const q=f.quality&&f.quality!=='unknown'?`<span class="tg blue">${esc(f.quality)}</span>`:'';
-  const res=f.res?`<span class="tg">${esc(f.res)}</span>`:'';
+  const type=f.type?`<span class="vtag">${esc(f.type)}</span>`:'';
+  const dur=f.duration?`<span class="vtag gold">${esc(f.duration)}</span>`:'';
+  const q=f.quality&&f.quality!=='unknown'?`<span class="vtag blue">${esc(f.quality)}</span>`:'';
+  const res=f.res?`<span class="vtag">${esc(f.res)}</span>`:'';
   // Text mode में thumbnail request ही न जाए — src तभी लगाओ जब Poster mode हो
-  const thumbUrl=encodeURI(f.thumb);
+  const thumbUrl=f.thumb?encodeURI(f.thumb):'';
   const imgAttr=viewMode==='poster'?`src="${thumbUrl}"`:`data-src="${thumbUrl}"`;
-  return `<div class="card">
-    <div class="poster" id="pb-${fid}">
-      <img ${imgAttr} alt="" loading="lazy" data-thumb="${thumbUrl}" data-retry="0"
+  const size=f.size?`<span class="vsize">${esc(f.size)}</span>`:'';
+  return `<div class="vcard" role="button" tabindex="0" data-fid="${fid}" `
+    + `data-name="${esc(f.name)}" aria-label="Play ${esc(f.name)}">
+    <div class="vposter" id="pb-${fid}">
+      <img class="vimg" ${imgAttr} alt="" loading="lazy" data-thumb="${thumbUrl}" data-retry="0"
            onload="this.classList.add('on')" onerror="thumbFail(this)">
-      <div class="ph"><b>▶</b><span>NO THUMBNAIL</span></div>
-      <div class="chips"><span class="tg">${esc(f.type)}</span>${q}${res}${dur}</div>
-      <span class="size-tag">${esc(f.size)}</span>
+      <div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>
+      <div class="vchips">${type}${q}${res}${dur}</div>${size}
+      <span class="vplay">▶</span>
     </div>
-    <div class="body">
-      <div class="fname" data-fid="${fid}" data-name="${esc(f.name)}"
-           title="Stream करने के लिए क्लिक करें">${esc(f.name)}</div>
-      <div class="tinfo"><span class="tg">${esc(f.type)}</span>${q}${res}${dur}<span class="tsize">${esc(f.size)}</span></div>
-    </div></div>`;
+    <div class="vbody"><div class="vtitle">${esc(f.name)}</div>
+      <div class="vsub">▶ Click to play</div></div></div>`;
 }
 // v5 के reloadThumb(fileId) जैसा: पहली बार poster serial warmup queue में
 // एक-एक करके निकलता है, इसलिए 404 पर `retry=true&t=...` से धीरे-धीरे दोबारा
@@ -610,7 +633,7 @@ function thumbFail(img){
     return;
   }
   img.classList.add('hidden');
-  const p=img.closest('.poster');if(p)p.classList.add('no-thumb');
+  const p=img.closest('.vposter');if(p)p.classList.add('no-thumb');
 }
 
 async function load(reset){
@@ -637,8 +660,15 @@ async function load(reset){
 }
 
 $('#grid').addEventListener('click',e=>{
-  const el=e.target.closest('.fname');if(!el)return;
+  const el=e.target.closest('.vcard[data-fid]');if(!el)return;
   play(decodeURIComponent(el.dataset.fid),el.dataset.name);
+});
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Enter'&&e.key!==' ')return;
+  const a=document.activeElement;
+  const el=a&&a.closest?a.closest('.vcard[data-fid]'):null;
+  if(!el)return;
+  e.preventDefault();play(decodeURIComponent(el.dataset.fid),el.dataset.name);
 });
 
 applyMode();

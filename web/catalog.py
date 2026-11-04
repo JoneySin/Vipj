@@ -29,10 +29,13 @@ server से raw HTML strings भेजती थी।
   regex-fallback pipeline को हर term पर चलाकर results merge/dedupe/paginate
   करते हैं। **Post पर यह block बिल्कुल नहीं है** — वहाँ Videos tab में सिर्फ़
   attached `videos[]` दिखते हैं (API भी `disabled` लौटाता है)।
-* **📐 Fixed grid** — `.cat-grid` (listing) + `.cat-vgrid` (Videos tab): 📱 mobile
-  **1 card/row**, tablet 2, 🖥️ desktop (≥1024px) **बिल्कुल 3 cards/row** —
-  `#catVideos` और `#catMediaResults` दोनों पर, Actor + Post दोनों kinds पर।
-  Search page के 1/2/3 pattern के साथ consistent; पुरानी 4-column rule हटाई।
+* **📐 Two grids, दोनों fixed** — 🎬 **video**: shared `.vgrid` (`/search` +
+  `#catVideos` + `#catMediaResults`) 📱 **1/row**, tablet 2, 🖥️ **3/row**.
+  📝🎭 **Post/Actor listing**: `.cat-grid` 📱 **2/row**, tablet 3–4, 🖥️ **5/row**.
+* **🎴 One video card everywhere** — `web.web_assets.VIDEO_CARD_CSS` का `.vcard`
+  contract `/search`, Post attached videos और Actor tag-results तीनों में एक ही
+  markup/CSS: poster + chips + size + play overlay, नाम के नीचे **compact**
+  `.vbody` padding (पुराना extra खाली space हटाया), एक ही `/api/stream` modal.
 * **▶ Shared Click-to-Play** — Videos tab की हर card (attached `#catVideos` और
   Actor के tag-results `#catMediaResults`) अब **main `/search` वाला ही छोटा
   player modal** खोलती है: `web.web_assets` का `PLAYER_MODAL_HTML` + `PLAYER_JS`
@@ -157,6 +160,31 @@ def clean_url(value, allow_tg=True) -> str:
 _MEDIA_ID_RE = re.compile(r"^[A-Za-z0-9_\-=]{2,256}$")
 
 
+
+def video_card_html(fid: str, name: str, poster: str, chips: str = "",
+                    sub: str = "▶ Click to play") -> str:
+    '''🎴 SHARED VIDEO CARD — `web.web_assets.VIDEO_CARD_CSS` का `.vcard` contract.
+
+    यही markup `/search` की `card(f)` JS और Actor के `mediaCard(f)` JS भी
+    बनाती हैं → हर जगह video card बिल्कुल एक जैसा, नाम के नीचे compact space.
+    '''
+    e = html.escape
+    onload = "onload=\"this.classList.add('on')\""
+    onerror = ("onerror=\"this.classList.add('hidden');"
+               "this.closest('.vposter').classList.add('no-thumb')\"")
+    return (
+        f'<div class="vcard enter" role="button" tabindex="0" '
+        f'data-fid="{e(fid, quote=True)}" data-name="{e(name, quote=True)}" '
+        f'aria-label="Play {e(name, quote=True)}">'
+        f'<div class="vposter">'
+        f'<img class="vimg" src="{e(poster, quote=True)}" alt="" loading="lazy" '
+        f'{onload} {onerror}>'
+        f'<div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>'
+        f'<div class="vchips">{chips}</div><span class="vplay">▶</span></div>'
+        f'<div class="vbody"><div class="vtitle">{e(name)}</div>'
+        f'<div class="vsub">{e(sub)}</div></div></div>'
+    )
+
 def clean_media_id(value) -> str:
     """Linked media हमेशा Telegram `file_id` हो — URL/`javascript:`/control chars reject।
 
@@ -274,9 +302,11 @@ border-radius:50%;animation:catSpin .65s linear infinite}
 padding:11px 12px;font:700 12px inherit;font-family:inherit;cursor:pointer;outline:none}
 .cat-select:focus{border-color:var(--red)}
 /* ── grid + cards ── */
-.cat-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
-@media(min-width:620px){.cat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
-@media(min-width:1024px){.cat-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}
+/* 📝/🎭 listing: 📱 mobile 2/row · 🖥️ desktop 5/row (video grids अलग .vgrid = 1/2/3) */
+.cat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media(min-width:620px){.cat-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}
+@media(min-width:900px){.cat-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}}
+@media(min-width:1024px){.cat-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}}
 .cat-grid.mode-text{display:flex;flex-direction:column;gap:8px}
 .cat-card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;
 cursor:pointer;position:relative;transition:transform .28s cubic-bezier(.25,.8,.25,1),border-color .22s,box-shadow .28s}
@@ -304,9 +334,9 @@ color:#fff;font-size:10px;font-weight:800;padding:4px 9px;border-radius:6px;
 letter-spacing:.4px;backdrop-filter:blur(6px);box-shadow:0 2px 10px rgba(0,0,0,.45)}
 .cat-grad{position:absolute;bottom:0;left:0;right:0;z-index:2;padding:32px 12px 12px;
 background:linear-gradient(to top,rgba(0,0,0,.95),rgba(0,0,0,.6) 45%,transparent)}
-.cat-name{color:#fff;font-size:14px;font-weight:900;white-space:nowrap;overflow:hidden;
+.cat-name{color:#fff;font-size:13px;font-weight:900;white-space:nowrap;overflow:hidden;
 text-overflow:ellipsis;text-shadow:0 2px 8px rgba(0,0,0,.9)}
-.cat-meta{padding:10px 12px 12px;display:flex;flex-direction:column;gap:5px}
+.cat-meta{padding:8px 10px 9px;display:flex;flex-direction:column;gap:4px}
 .cat-meta-main{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cat-meta-sub{font-size:11px;color:var(--mut);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cat-actions{position:absolute;bottom:0;left:0;right:0;z-index:3;display:flex;gap:6px;padding:8px;
@@ -447,31 +477,8 @@ vertical-align:middle;transition:background .2s,color .2s}
 .cat-panel .cat-card.enter{opacity:1!important}
 
 /* 🎬 Video tab */
-.cat-vgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
-@media(min-width:620px){.cat-vgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
-@media(min-width:1024px){.cat-vgrid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}
-.cat-vgrid>.cat-vempty{grid-column:1/-1}
-.cat-vcard{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;
-overflow:hidden;text-decoration:none;color:var(--txt);position:relative;opacity:0;cursor:pointer;
-transform:translateY(18px) scale(.97);transition:transform .28s,border-color .22s,box-shadow .28s}
-.cat-vcard:focus-visible{outline:2px solid var(--red);outline-offset:2px}
-.cat-vcard.in{animation:catIn .5s cubic-bezier(.34,1.2,.64,1) forwards}
-.cat-vcard:hover{transform:translateY(-5px) scale(1.015);border-color:var(--red);
-box-shadow:0 14px 34px rgba(0,0,0,.45)}
-.cat-vposter{position:relative;aspect-ratio:16/9;background:var(--bg3);overflow:hidden}
-.cat-vposter img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .35s,transform .35s}
-.cat-vposter img.on{opacity:1}.cat-vcard:hover .cat-vposter img{transform:scale(1.06)}
-.cat-vph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-font-size:32px;color:var(--mut)}
-.cat-vplay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-font-size:30px;background:linear-gradient(transparent,rgba(0,0,0,.5));opacity:0;transition:opacity .2s}
-.cat-vcard:hover .cat-vplay{opacity:1}
-.cat-vnum{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.7);color:#fff;
-border-radius:6px;padding:3px 8px;font-size:10px;font-weight:800}
-.cat-vinfo{padding:11px 12px}
-.cat-vtitle{font-size:12.5px;font-weight:800;line-height:1.35;
-display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.cat-vsub{font-size:10px;color:var(--mut);margin-top:5px;font-weight:700}
+/* 🎬 Videos tab: grid + card design अब `web.web_assets.VIDEO_CARD_CSS` का
+   shared `.vgrid` / `.vcard` है — बिल्कुल वैसा ही जैसा main /search पर। */
 .cat-vempty,.cat-gempty{background:var(--card);border:1px dashed var(--line);border-radius:12px;
 padding:34px 18px;text-align:center;color:var(--mut);font-size:13px;font-weight:700}
 
@@ -560,7 +567,7 @@ border:1px dashed var(--line);border-radius:12px;padding:14px;margin-bottom:16px
 @media(prefers-reduced-motion:reduce){
 .cat-card,.cat-card.enter,.cat-card.enter.in,.cat-hero,.cat-modal,.cat-mcard,.cat-toast,
 .cat-lightbox,.cat-lightbox img,.cat-gal img,.cat-poster,.cat-skel,.cat-poster-wrap,
-.cat-panel,.cat-vcard,.cat-galitem,.cat-vrow,.cat-gthumb,.cat-tab,.cat-tab::after,
+.cat-panel,.vcard,.vcard.enter,.vcard.enter.in,.cat-galitem,.cat-vrow,.cat-gthumb,.cat-tab,.cat-tab::after,
 .cat-toast,.cat-tagpill{
 animation:none!important;transition:none!important;opacity:1!important;transform:none!important}
 .cat-card.enter{opacity:1!important}
@@ -1054,7 +1061,7 @@ function switchTab(name, init){
   if(!['overview','videos','gallery'].includes(name)) name='overview';
   document.querySelectorAll('.cat-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
   document.querySelectorAll('.cat-panel').forEach(p=>p.classList.toggle('active',p.id==='cp-'+name));
-  if(name==='videos'){ stagger('#catVideos .cat-vcard'); if(D.tagMedia && !mediaLoaded) loadMedia(0); }
+  if(name==='videos'){ stagger('#catVideos .vcard'); if(D.tagMedia && !mediaLoaded) loadMedia(0); }
   if(name==='gallery') stagger('#catGallery .cat-galitem');
   if(!init){
     const u=new URL(location.href); u.searchParams.set('tab',name);
@@ -1072,14 +1079,23 @@ function stagger(sel){
 
 /* ── 🏷️ v5 का tag-driven Linked Media, पर fsv1 की JSON API से ── */
 function mediaCard(f){
-  const meta=[f.size,f.duration,f.res].filter(Boolean).join(' · ');
-  return '<div class="cat-vcard" role="button" tabindex="0" data-fid="'+esc(f.file_id)+'" '
+  const chips=[f.quality&&f.quality!=='unknown'
+      ? '<span class="vtag blue">'+esc(f.quality)+'</span>' : '',
+    f.res?'<span class="vtag">'+esc(f.res)+'</span>':'',
+    f.duration?'<span class="vtag gold">'+esc(f.duration)+'</span>':''].join('');
+  return '<div class="vcard enter" role="button" tabindex="0" data-fid="'+esc(f.file_id)+'" '
     + 'data-name="'+esc(f.name)+'" aria-label="Play '+esc(f.name)+'">'
-    + '<div class="cat-vposter"><div class="cat-vph">🎬</div>'
-    + '<img src="'+esc(f.thumb)+'" alt="" loading="lazy" onerror="this.remove()">'
-    + '<span class="cat-vnum">'+esc(f.quality||'VIDEO')+'</span><span class="cat-vplay">▶</span></div>'
-    + '<div class="cat-vinfo"><div class="cat-vtitle">'+esc(f.name)+'</div>'
-    + '<div class="cat-vsub">'+esc(meta ? meta+' · ▶ Click to play' : '▶ Click to play')+'</div></div></div>';
+    + '<div class="vposter">'
+    + '<img class="vimg" src="'+esc(f.thumb)+'" alt="" loading="lazy" '
+    + `onload="this.classList.add('on')" `
+    + `onerror="this.classList.add('hidden');this.closest('.vposter')`
+    + `.classList.add('no-thumb')">`
+    + '<div class="vph"><b>▶</b><span>NO THUMBNAIL</span></div>'
+    + '<div class="vchips">'+chips+'</div>'
+    + (f.size?'<span class="vsize">'+esc(f.size)+'</span>':'')
+    + '<span class="vplay">▶</span></div>'
+    + '<div class="vbody"><div class="vtitle">'+esc(f.name)+'</div>'
+    + '<div class="vsub">▶ Click to play</div></div></div>';
 }
 /* ▶ main page जैसा ही shared player — नाम/card पर click → छोटा modal */
 function playCard(c){
@@ -1087,7 +1103,7 @@ function playCard(c){
   if(typeof window.play==='function') window.play(c.dataset.fid, c.dataset.name||'Video');
 }
 document.addEventListener('click',e=>{
-  const c=e.target.closest('.cat-vcard[data-fid]');
+  const c=e.target.closest('.vcard[data-fid]');
   if(c) playCard(c);
 });
 async function loadMedia(offset){
@@ -1124,7 +1140,7 @@ async function loadMedia(offset){
       const lbl=document.getElementById('catMediaPage');
       if(lbl) lbl.textContent='Page '+(Math.floor(mediaOffset/D.limit)+1);
     }
-    stagger('#catMediaResults .cat-vcard');
+    stagger('#catMediaResults .vcard');
   }catch(e){ if(info) info.textContent='⚠️ Load नहीं हुआ'; }
 }
 function mediaPage(step){
@@ -1196,13 +1212,13 @@ async function deleteDetail(id){
   const d=await r.json();
   if(d.ok) location.href=D.base; else toast('Delete failed','err');
 }
-document.querySelectorAll('.cat-vposter img,.cat-galitem img').forEach(img=>{
+document.querySelectorAll('.vposter img,.cat-galitem img').forEach(img=>{
   img.addEventListener('load',()=>img.classList.add('on'));
 });
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){ closeLight(); if(window.closePlayer) window.closePlayer(); }
   const focused=document.activeElement||{};
-  if((e.key==='Enter'||e.key===' ') && focused.classList && focused.classList.contains('cat-vcard')){
+  if((e.key==='Enter'||e.key===' ') && focused.classList && focused.classList.contains('vcard')){
     e.preventDefault(); playCard(focused); return;
   }
   const tag=focused.tagName;
@@ -1328,15 +1344,10 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
             fid = str(v.get("file_id") or "")
             poster = "/api/thumb?file_id=" + quote(fid, safe="") + "&v=1"
             label = str(v.get("label") or f"Video {i+1}")
-            vids_html += (
-                f'<div class="cat-vcard" role="button" tabindex="0" '
-                f'data-fid="{esc(fid)}" data-name="{esc(label)}" '
-                f'aria-label="Play {esc(label)}">'
-                f'<div class="cat-vposter"><div class="cat-vph">🎬</div>'
-                f'<img src="{esc(poster)}" alt="" loading="lazy" onerror="this.remove()">'
-                f'<span class="cat-vnum">#{i+1}</span><span class="cat-vplay">▶</span></div>'
-                f'<div class="cat-vinfo"><div class="cat-vtitle">{esc(label)}</div>'
-                f'<div class="cat-vsub">📌 Attached · ▶ Click to play</div></div></div>'
+            vids_html += video_card_html(
+                fid, label, poster,
+                chips=f'<span class="vtag">#{i+1}</span>',
+                sub="📌 Attached · ▶ Click to play",
             )
     else:
         vids_html = (
@@ -1361,7 +1372,7 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
       <button class="cat-btn ghost" style="padding:9px 14px;font-size:11px" onclick="loadMedia(0)">🔍 Search</button>
     </div>
     <div class="cat-mediainfo" id="catMediaInfo">Videos tab खोलते ही Tags से search…</div>
-    <div class="cat-vgrid" id="catMediaResults"></div>
+    <div class="cat-vgrid vgrid" id="catMediaResults"></div>
     <div class="cat-mediapg" id="catMediaPg" style="display:none">
       <button id="catMediaPrev" onclick="mediaPage(-1)">◀ Prev</button>
       <span id="catMediaPage">Page 1</span>
@@ -1444,7 +1455,7 @@ def _detail_body(kind: str, role: str, item: dict) -> str:
 
   <section class="cat-panel" id="cp-videos">
     <div class="cat-subhead"><h3>{videos_heading}</h3><span class="cat-hint">Editor से जोड़े गए · {len(videos)}</span></div>
-    <div class="cat-vgrid" id="catVideos">{vids_html}</div>
+    <div class="cat-vgrid vgrid" id="catVideos">{vids_html}</div>
     {tag_section}
   </section>
 

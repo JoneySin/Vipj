@@ -13,21 +13,22 @@ Telegram Auto-Filter Bot (`fsv1`) अब **web पर लॉगिन करक�
 |---|---|
 | 🔐 Login / Register | Email + Password, registration Telegram bot PM में **OTP** से, forgot-password OTP reset, HttpOnly cookie session (RAM + MongoDB यानी restart पर भी login बना रहे) |
 | 🔍 Web Search | `/search` → `/api/search` → MongoDB text search + regex fallback, **टाइप करते ही auto-search** (Search बटन नहीं), **21 results प्रति पेज** (3 columns × 7 rows desktop), "और दिखाओ" pagination, खाली query पर **Recently Added** grid (अब कोई "Recently Added / Database Stats" टेक्स्ट लाइन नहीं — गिनती सिर्फ़ **Database Stats** पेज पर) |
-| 🧭 v5 Sidebar | हर logged-in पेज पर hamburger sidebar — **Home · 📝 Posts · 🎭 Actors · Database Stats (admin-only) · Profile Settings**, header में `#ID · ADMIN`, footer में **Sign Out** (बिल्कुल `JoneySin/v5` जैसा)। Main/topbar पर दोबारा **Sign Out नहीं** है |
+| 🧭 Sidebar | हर logged-in पेज पर hamburger sidebar — **Home · 📝 Posts · 🎭 Actors · Database Stats (admin-only) · Profile Settings**, footer में **Sign Out**। Desktop topbar/sidebar से **`#ID · ADMIN` badge हटा दिया गया** — identity अब सिर्फ़ `/profile` पर। Main/topbar पर दोबारा **Sign Out नहीं** है |
 | 📊 Database Stats | `/stats` — v5 जैसे animated stat cards; **"🆕 Recently Added Files"** की गिनती यहीं, search पेज की meta लाइन में नहीं |
 | ⚙️ Profile Settings | `/profile` — v5 जैसा Account Settings: `#ID · ADMIN` identity, Account Status (👑 Admin / 💎 Premium / 🆓 Free), Telegram ID, Email + Password बदलना (tabs, show/hide, strength meter) |
 | 📝 Posts + 🎭 Actors | `/posts` (Movies / Web Series / App Video / Other) और `/actors` (Actor / App / Website) — **एक ही shared catalog engine** से दोनों। Poster/Text view, category filter, live search, pagination, detail pages (`/post/<id>`, `/actor/<id>`) |
 | 🗂️ Tabs | Actor: `ℹ️ Overview · 🎬 Videos · 🖼️ Gallery` · Post: `ℹ️ Overview · 🎬 Videos · 📸 Screenshots` — **Post में Gallery की जगह Screenshots tab** है, उसी tab में screenshots आते हैं। Count badges, `?tab=` deep-link (Post `?tab=screenshots`), ← → nav, staggered entrance, lightbox |
 | 🏷️ Tag-driven Videos (सिर्फ़ Actor) | Actor का Videos tab **Search Tags** (`tags[]`) से Library में खोजकर videos दिखाता है — v5 के `get_actor_search_results(name\|tags)` जैसा। Tags की pills, `🏷️ N tags से M videos` info, ऊपर 'Search inside this profile…' box (कुछ टाइप करते ही tags ignore), pagination. Tags न हों तो title fallback. **Post में यह search block हटा दिया गया** — वहाँ Videos tab पर सिर्फ़ attached videos हैं, `/media` API भी `disabled` लौटाता है |
-| 📐 Responsive grid | `/posts`–`/actors` listing **और** Videos tab — 📱 **mobile = 1 card/row**, tablet 2, 🖥️ **desktop (≥1024px) = बिल्कुल 3 cards/row** (पहले listing wide desktop पर 4 थी)। `#catVideos` (attached) और `#catMediaResults` (tag results) दोनों पर, Actor + Post दोनों में |
+| 📐 Responsive grids | 🎬 **सभी video grids** (`/search` + `#catVideos` + `#catMediaResults`): 📱 **1/row** · tablet 2 · 🖥️ **3/row** — shared `.vgrid`। 📝🎭 **Post/Actor listing** (`.cat-grid`): 📱 **2/row** · tablet 3–4 · 🖥️ **5/row** |
 | 🎬 Multiple Videos | Editor में `videos[]` — **कितने भी (50 तक)**: Library picker एक search में कई files जोड़ता है और खुला रहता है, `➕ Add Video`, ▲▼ reorder, per-row ✕, duplicate guard, live count. पुराने posts के `links` में रखे episodes **auto-migrate** होते हैं |
 | 🖼️ Photos / 📸 Screenshots | **Actor Gallery tab पर सीधे photo upload** (`multiple`, v5 जैसा form) और Post Screenshots tab पर सीधे screenshots upload। Editor में भी visual thumbnail grid, URL add, per-image remove. Telegram uploads **एक-एक करके** (rate-limit safe), detail tab से **बिना page reload** add/delete |
 | ✏️ Inline Edit + Animations | Admin को listing पर ही **modal editor**: create / edit / delete बिना page reload, live cover preview + Telegram image upload, library से linked-media picker, unsaved-changes guard, `Ctrl/Cmd+S`, `Esc`, **Undo** वाला delete toast (पुराने deep-links बचे रहते हैं)। Animations: staggered card entrance (IntersectionObserver), 3D hover, poster zoom, shimmer skeleton, modal spring, button ripple, save-flash, toast slide, lightbox zoom — सब `prefers-reduced-motion` का सम्मान करते हैं, बिना किसी CDN के |
 | 📐 Responsive Grid | 🖥️ Desktop ≥1024px: **3 वीडियो / row** · 📟 Tablet: 2 · 📱 Mobile: **1 वीडियो / row** |
-| 🎛️ View / Filter | 2 dropdowns — **Poster / Text** mode (Text में सिर्फ़ नाम + meta की कॉम्पैक्ट लिस्ट, कोई thumbnail request नहीं) और **All / Group / UnGroup** (एक ही टाइटल की 2+ फाइलें = Group, अकेली फाइल = UnGroup)। 🖥️ **Desktop:** search bar के साथ **एक ही लाइन में** · 📱 **Mobile:** search bar के ठीक नीचे **दोनों एक ही लाइन में** (अलग-अलग rows नहीं)। दोनों चुनाव browser में याद रहते हैं |
+| 🎛️ View / Filter | main पेज पर **सिर्फ़ 2 filter buttons/dropdowns** — कोई `Mode` / `Filter` टेक्स्ट label नहीं (सिर्फ़ `aria-label`/`title` accessibility के लिए)। **Poster / Text** mode (Text में सिर्फ़ नाम, कोई thumbnail request नहीं) और **All / Group / UnGroup**। 🖥️ **Desktop:** search bar के साथ **एक ही लाइन में** · 📱 **Mobile:** ठीक नीचे **दोनों एक लाइन में**। चुनाव browser में याद रहते हैं |
 | 📏 Size Chip | **File size thumbnail के अंदर** (नीचे-दाएँ badge) — फाइल नाम के नीचे की size/Stream लाइन हटा दी गई |
 | 📸 Real Thumbnails | **DB में सिर्फ़ Telegram का thumbnail file_id** — v5 की तरह `thumb_url: "TG_ID:<file_id>"` string. **Image bytes न DB में, न server RAM में** (Koyeb free पर RAM भर जाता है)। `/api/thumb` पहले से locked ID वाली फाइलों को Telegram से लाकर तुरंत response देता है और `ETag` + `Cache-Control` से **ब्राउज़र की अपनी memory/disk cache** में रखवाता है (`If-None-Match` → 304, दोबारा कोई server/Telegram call नहीं); पहली बार वाली फाइलें नीचे वाले serial warmup से आती हैं |
 | 🖼️ First-time Thumbnail Warmup (v5 logic) | पहली बार 21 नई फाइलें एक साथ खुलने पर **FLOOD_WAIT** न लगे इसलिए `send_cached_media` **एक-एक करके** चलता है (global lock + 1.2–3.0s random anti-flood gap), **FLOOD_WAIT/420** पर `wait + extra` सोकर 5 attempts तक retry, ID DB में `TG_ID:` lock, बिना poster वाली फाइल `NO_THUMB` mark। `/api/thumb` पहली बार serial queue में डालकर 404 + `Retry-After` देता है और browser `retry=true&t=…` से posters अपने आप एक-एक करके दिखा देता है (v5 के `reloadThumb` जैसा)। Bulk के लिए admin command **`/warmup_thumbs`** |
+| 🎴 One Video Card | `web/web_assets.py` का `VIDEO_CARD_CSS` — `/search`, Post attached videos, Actor tag-results **तीनों बिल्कुल एक ही `.vcard`**: 16:9 poster, quality/res/duration chips, size chip, hover play overlay, 2-line नाम और नीचे **सिर्फ़ 3px gap + 9px padding** (पहले वाला बड़ा खाली space हटाया)। सब एक ही `/api/stream` modal खोलते हैं |
 | ▶ Click-to-Stream (Shared) | **`/search` + Post/Actor दोनों Videos tabs — एक ही छोटा player modal.** फाइल/वीडियो नाम या card पर क्लिक → `POST /api/stream` → BIN_CHANNEL में cached media → **HMAC-signed** `/watch/<id>` + `/download/<id>` → `<video>` player (Range/seek supported), Download, Player page, Copy link, `Esc`/✕ से बंद। `web/web_assets.py` का `PLAYER_MODAL_HTML` + `PLAYER_JS` shared component, cards पर `data-fid`/`data-name` (keyboard `Enter`/`Space` भी), कोई नई tab नहीं |
 | 🔗 Signed Links | `e` (expiry) + `s` (signature) — बिना सही signature के message-id guess करके file नहीं निकाली जा सकती। Telegram bot के Watch/Download buttons भी अब signed links बनाते हैं |
 | ⚡ Seek Performance | `media_info` cache (5 मिनट) से हर Range request पर `get_messages()` नहीं लगती; Range parser + `StreamResponse` hardened, आख़िरी chunk सही कटता है |
@@ -167,8 +168,9 @@ database/ia_filterdb.py          → save_file में `thumb_url` (सिर�
                                    update_file_meta() (सिर्फ ID backfill)
 utils.py                         → temp.USER_SESSIONS / REG_PENDING
 web/web_assets.py                → get_auth(), CSS, login shell, search UI; auto-search,
-                                   Poster/Text + All/Group/UnGroup dropdowns, size-in-poster;
-                                   PLAYER_MODAL_HTML + PLAYER_JS (shared /search + catalog player)
+                                   Poster/Text + All/Group/UnGroup dropdowns (बिना labels);
+                                   VIDEO_CARD_CSS (shared video card/grid), PLAYER_MODAL_HTML +
+                                   PLAYER_JS (shared /search + catalog player); कोई #ID badge नहीं
 web/auth_routes.py               → login/register/OTP/logout routes (नया)
 web/thumb_engine.py              → Telegram fetch (बिना किसी cache के), DB में सिर्फ ID backfill
 web/search_routes.py             → /search, /api/search (group filter), /api/thumb, /api/stream (नया)
@@ -179,7 +181,7 @@ web/stream_routes.py             → landing, signed watch/download, hardened Ra
 database/catalog_db.py           → एक CatalogStore: catalog_posts + catalog_actors,
                                    short-hex ids, PyMongo→to_thread, in-memory fallback (नया)
 web/catalog.py                   → एक CATALOGS config + shared CSS/JS/detail/editor engine,
-                                   Videos cards → shared /api/stream player modal (नया)
+                                   video_card_html() + .vgrid (listing 2/5, videos 1/3), shared player modal
 web/catalog_routes.py            → pages + generic JSON API + upload/photo (नया)
 web/thumb_engine.py              → Telegram fetch (बिना किसी cache के), DB में सिर्फ ID backfill,
                                    catalog images के लिए get_image_bytes()
